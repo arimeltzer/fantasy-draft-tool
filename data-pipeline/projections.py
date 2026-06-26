@@ -1,0 +1,135 @@
+#!/usr/bin/env python3
+"""
+projections.py — give players_base.json real forecasts
+======================================================
+nflverse's FREE fantasy data publishes RANKINGS (FantasyPros ECR), not
+stat-line projections. So this adapter does two things:
+
+  1. Auto-pulls ECR (expert consensus rank) for every player  -> player["ecr"]
+     Current, free, real. Your market baseline for spotting value vs reaches.
+
+  2. If you pass --proj-csv (a FantasyPros / any projections export), it maps
+     the component columns into player["proj"]  -> true, scoring-aware forecasts.
+
+Without --proj-csv the pipeline still runs on whatever `proj` is already there
+(e.g. the ingest baseline), now annotated with real consensus ranks.
+
+INSTALL  pip install nflreadpy pandas pyarrow
+RUN
+  python projections.py --base data/players_base.json --out data/players_base.json
+  python projections.py --base data/players_base.json --out data/players_base.json --proj-csv fp_2026.csv
+"""
+import argparse, csv, json, re
+import nflreadpy as nfl
+
+FANTASY_POS = {"QB", "RB", "WR", "TE"}
+SUFFIX = re.compile(r"\b(jr|sr|ii|iii|iv|v)\b\.?", re.I)
+
+def norm(n):
+    n = (n or "").lower()
+    n = re.sub(r"[.'`’]", "", n)
+    n = SUFFIX.sub("", n)
+    n = re.sub(r"[^a-z ]", " ", n)
+    return re.sub(r"\s+", " ", n).strip()
+
+def _pd(df):
+    return df.to_pandas() if hasattr(df, "to_pandas") else df
+
+def _col(df, *names):
+    for n in names:
+        if n in df.columns:
+            return n
+    return None
+
+# projection-CSV header synonyms -> engine `proj` fields (lowercased match)
+PROJ_SYN = {
+    "passYd": ["pass_yds", "passing_yards", "pass_yards", "payds", "pass yds"],
+    "passTD": ["pass_tds", "passing_tds", "pass_td", "patd", "pass tds"],
+    "int":    ["int", "ints", "interceptions"],
+    "rushYd": ["rush_yds", "rushing_yards", "ruyds", "rush yds"],
+    "rushTD": ["rush_tds", "rushing_tds", "rutd", "rush tds"],
+    "rec":    ["rec", "receptions", "rec_rec"],
+    "recYd":  ["rec_yds", "receiving_yards", "reyds", "rec yds"],
+    "recTD":  ["rec_tds", "receiving_tds", "retd", "rec tds"],
+}
+
+def load_ecr():
+    """{(norm_name, pos): best_ecr} from FantasyPros consensus ranks."""
+    try:
+        df = _pd(nfl.load_ff_rankings())
+    except Exception as e:
+        print(f"  ! load_ff_rankings unavailable ({e}); skipping ECR")
+        return {}
+    name, pos = _col(df, "player", "player_name"), _col(df, "pos", "position")
+    if not (name and pos and "ecr" in df.columns):
+        print("  ! ECR columns not found; skipping")
+        return {}
+    sub = df[df[pos].isin(FANTASY_POS)][[name, pos, "ecr"]].dropna()
+    out = {}
+    for nm, ps, ecr in zip(sub[name], sub[pos], sub["ecr"]):
+        k = (norm(nm), ps)
+        ecr = float(ecr)
+        if k not in out or ecr < out[k]:   # best (overall) ranking per player
+            out[k] = ecr
+    return out
+
+def load_proj_csv(path):
+    """{(norm_name, pos): {engine proj components}} from a projections export."""
+    with open(path, newline="") as f:
+        rdr = csv.DictReader(f)
+        headers = {h.lower().strip(): h for h in (rdr.fieldnames or [])}
+        fmap = {}
+        for eng, syns in PROJ_SYN.items():
+            for s in syns:
+                if s in headers:
+                    fmap[eng] = headers[s]; break
+        nmcol = next((headers[h] for h in ["player", "name", "player name"] if h in headers), None)
+        poscol = next((headers[h] for h in ["pos", "position"] if h in headers), None)
+        if not nmcol:
+            print("  ! projections CSV has no player/name column; skipping")
+            return {}
+        out = {}
+        for row in rdr:
+            nm = row.get(nmcol, "")
+            ps = re.sub(r"[^A-Z]", "", (row.get(poscol, "") or "").upper()) if poscol else ""
+            def num(eng):
+                c = fmap.get(eng)
+                v = (row.get(c, "") or "").replace(",", "") if c else ""
+                try: return float(v)
+                except ValueError: return 0.0
+            out[(norm(nm), ps)] = {eng: num(eng) for eng in PROJ_SYN}
+        print(f"  mapped projection columns: {sorted(fmap.keys()) or 'NONE — check headers'}")
+        return out
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--base", required=True)
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--proj-csv", default=None)
+    args = ap.parse_args()
+
+    players = json.load(open(args.base))
+    print(f"Loaded {len(players)} players from {args.base}")
+
+    print("Pulling FantasyPros ECR from nflverse…")
+    ecr = load_ecr()
+    proj = load_proj_csv(args.proj_csv) if args.proj_csv else {}
+
+    n_ecr = n_proj = 0
+    for p in players:
+        k = (norm(p.get("name")), p.get("pos"))
+        if k in ecr:
+            p["ecr"] = round(ecr[k], 1); n_ecr += 1
+        if k in proj:
+            p["proj"] = proj[k]; n_proj += 1
+
+    json.dump(players, open(args.out, "w"), indent=2)
+    print(f"  ✓ ECR matched: {n_ecr}/{len(players)}")
+    if args.proj_csv:
+        print(f"  ✓ projections matched: {n_proj}/{len(players)}")
+    else:
+        print("  • no --proj-csv given; `proj` left as-is (export FantasyPros projections for real forecasts)")
+    print(f"Wrote {args.out}")
+
+if __name__ == "__main__":
+    main()
