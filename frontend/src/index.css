@@ -4,7 +4,9 @@
 
 @layer base {
   body {
-    @apply bg-slate-950 text-slate-100 font-sans antialiased;
+    @apply bg-white text-gray-900 font-sans antialiased;
+    font-size: 16px;
+    line-height: 1.6;
   }
   * {
     @apply box-border;
