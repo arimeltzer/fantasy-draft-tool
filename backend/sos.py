@@ -37,10 +37,12 @@ DEFAULT_SOS_PARAMS: dict[str, Any] = {
     "playoffWeight": 1.2,
 }
 
-# nflverse weekly player stats, CSV (gzipped) — same source nflreadpy uses.
+# nflverse weekly player stats, gzipped CSV — same source/release nflreadpy
+# uses (release tag `stats_player`; nflreadpy itself defaults to the .parquet
+# sibling, which we avoid to keep the backend parquet-parser-free).
 NFLVERSE_WEEKLY_URL = (
     "https://github.com/nflverse/nflverse-data/releases/download/"
-    "player_stats/stats_player_week_{season}.csv.gz"
+    "stats_player/stats_player_week_{season}.csv.gz"
 )
 
 
@@ -143,16 +145,35 @@ def build_sos_logs_from_csv(text: str):
             for (w, o, d, p), v in agg.items()]
 
 
-async def fetch_sos_logs(log_season: int, ca_bundle: str | None = None):
-    """Fetch a season of weekly stats from nflverse and build SOS logs."""
-    url = NFLVERSE_WEEKLY_URL.format(season=log_season)
+async def fetch_sos_logs(log_season: int, ca_bundle: str | None = None,
+                         fallback: int = 2) -> tuple[list, int]:
+    """Fetch weekly stats from nflverse and build SOS logs.
+
+    Tries `log_season`, then steps back up to `fallback` seasons if a file
+    isn't published yet (404). Returns (logs, season_actually_used).
+    """
     verify = ca_bundle if ca_bundle else True
+    last_err = "?"
     async with httpx.AsyncClient(timeout=90, follow_redirects=True,
                                  trust_env=True, verify=verify) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        text = gzip.decompress(resp.content).decode("utf-8", "replace")
-    return build_sos_logs_from_csv(text)
+        for season in range(log_season, log_season - fallback - 1, -1):
+            try:
+                resp = await client.get(NFLVERSE_WEEKLY_URL.format(season=season))
+                if resp.status_code == 404:
+                    last_err = f"{season}: not published"
+                    continue
+                resp.raise_for_status()
+                text = gzip.decompress(resp.content).decode("utf-8", "replace")
+                logs = build_sos_logs_from_csv(text)
+                if logs:
+                    return logs, season
+                last_err = f"{season}: empty after parse"
+            except httpx.HTTPError as e:
+                last_err = f"{season}: {e}"
+    raise RuntimeError(
+        f"no nflverse weekly stats found (tried {log_season} down to "
+        f"{log_season - fallback}); last error: {last_err}"
+    )
 
 
 def recompute(schedule: dict, sos_logs: list, params=DEFAULT_SOS_PARAMS) -> dict:

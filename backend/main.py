@@ -534,13 +534,12 @@ async def reload_sos(
     for r in sched_rows:
         schedule.setdefault(r.team, []).append({"week": r.week, "opp": r.opp})
 
-    # 2. fetch prior-season logs + recompute (network + CPU off the event loop)
+    # 2. fetch prior-season logs + recompute (network + CPU off the event loop).
+    #    Falls back to an earlier season if the requested one isn't published.
     try:
-        logs = await sos_engine.fetch_sos_logs(log_season)
+        logs, log_season = await sos_engine.fetch_sos_logs(log_season)
     except Exception as e:  # noqa: BLE001 — surface a clean error to the admin
         raise HTTPException(status_code=502, detail=f"nflverse fetch failed: {e}")
-    if not logs:
-        raise HTTPException(status_code=502, detail=f"No {log_season} weekly logs returned.")
     new_mult = await asyncio.to_thread(sos_engine.recompute, schedule, logs)
 
     # 3. diff against what's live now
