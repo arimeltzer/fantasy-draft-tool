@@ -498,6 +498,87 @@ async def trigger_refresh(_: User = Depends(require_admin)):
     return {"status": "pipeline triggered"}
 
 
+@app.post("/api/admin/reload-sos")
+async def reload_sos(
+    season: int = 2026,
+    log_season: int | None = None,
+    dry_run: bool = False,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(db_dep),
+) -> dict:
+    """Re-apply the tuned SOS parameters to fantasy_sos for `season`.
+
+    Self-contained: fetches the prior season's weekly stats from the public
+    nflverse data release over HTTPS, rebuilds league-wide position-vs-defense
+    logs, recomputes multipliers with sos.DEFAULT_SOS_PARAMS (kept in sync with
+    the JS engine), and upserts. No local pipeline run required.
+
+    Pass `dry_run=true` to preview the changes (max/mean shift, samples) without
+    writing anything.
+    """
+    import asyncio
+    import sos as sos_engine
+
+    log_season = log_season or (season - 1)
+
+    # 1. schedule for the target season (must already be loaded)
+    sched_rows = list((await db.execute(
+        select(Schedule).where(Schedule.season == season)
+    )).scalars())
+    if not sched_rows:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No schedule rows for season {season}; load the schedule first.",
+        )
+    schedule: dict[str, list[dict]] = {}
+    for r in sched_rows:
+        schedule.setdefault(r.team, []).append({"week": r.week, "opp": r.opp})
+
+    # 2. fetch prior-season logs + recompute (network + CPU off the event loop)
+    try:
+        logs = await sos_engine.fetch_sos_logs(log_season)
+    except Exception as e:  # noqa: BLE001 — surface a clean error to the admin
+        raise HTTPException(status_code=502, detail=f"nflverse fetch failed: {e}")
+    if not logs:
+        raise HTTPException(status_code=502, detail=f"No {log_season} weekly logs returned.")
+    new_mult = await asyncio.to_thread(sos_engine.recompute, schedule, logs)
+
+    # 3. diff against what's live now
+    current = {(r.team, r.pos): r.mult for r in (await db.execute(
+        select(SosMult).where(SosMult.season == season)
+    )).scalars()}
+    new_rows = [(t, p, m) for t, pm in new_mult.items() for p, m in pm.items()]
+    diffs = [abs(m - current.get((t, p), 1.0)) for t, p, m in new_rows]
+    changed = sum(1 for d in diffs if d > 1e-6)
+    samples = sorted(new_rows, key=lambda r: -abs(r[2] - current.get((r[0], r[1]), 1.0)))[:8]
+    summary = {
+        "season": season,
+        "log_season": log_season,
+        "params": {**sos_engine.DEFAULT_SOS_PARAMS,
+                   "playoffWeeks": sorted(sos_engine.DEFAULT_SOS_PARAMS["playoffWeeks"])},
+        "rows": len(new_rows),
+        "rows_changed": changed,
+        "max_shift": round(max(diffs), 4) if diffs else 0.0,
+        "mean_shift": round(sum(diffs) / len(diffs), 4) if diffs else 0.0,
+        "largest_changes": [
+            {"team": t, "pos": p, "old": round(current.get((t, p), 1.0), 3),
+             "new": round(m, 3)} for t, p, m in samples
+        ],
+        "dry_run": dry_run,
+        "written": False,
+    }
+    if dry_run:
+        return summary
+
+    # 4. upsert (replace the season's rows)
+    await db.execute(delete(SosMult).where(SosMult.season == season))
+    db.add_all([SosMult(season=season, team=t, pos=p, mult=m) for t, p, m in new_rows])
+    await db.commit()
+    summary["written"] = True
+    log.info("reload-sos: wrote %d rows for season %s (%d changed)", len(new_rows), season, changed)
+    return summary
+
+
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
