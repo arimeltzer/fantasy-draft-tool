@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Gavel, Zap, Trash2, LogOut, ChevronRight } from "lucide-react";
+import { Plus, Gavel, Zap, Trash2, LogOut, ChevronRight, Download } from "lucide-react";
 import { useLeagues } from "@/hooks/useLeague";
 import { api, clearToken, LeagueSettings } from "@/lib/api";
+import ImportLeagueModal from "@/components/ImportLeagueModal";
 
 const DEFAULT_SETTINGS: LeagueSettings = {
   teams: 12,
@@ -19,6 +20,7 @@ export default function LeagueList() {
   const qc = useQueryClient();
   const { data: leagues, isLoading } = useLeagues();
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [name, setName] = useState("");
   const [format, setFormat] = useState<"auction" | "snake">("snake");
 
@@ -140,14 +142,24 @@ export default function LeagueList() {
             </div>
           </div>
         ) : (
-          <button
-            onClick={() => setCreating(true)}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line py-3.5 text-sm text-muted transition-colors hover:border-brand/40 hover:text-brand"
-          >
-            <Plus className="h-4 w-4" /> New League
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCreating(true)}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-dashed border-line py-3.5 text-sm text-muted transition-colors hover:border-brand/40 hover:text-brand"
+            >
+              <Plus className="h-4 w-4" /> New League
+            </button>
+            <button
+              onClick={() => setImporting(true)}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-dashed border-line py-3.5 text-sm text-muted transition-colors hover:border-brand/40 hover:text-brand"
+            >
+              <Download className="h-4 w-4" /> Import ESPN / Yahoo
+            </button>
+          </div>
         )}
       </div>
+
+      {importing && <ImportLeagueModal onClose={() => setImporting(false)} />}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request, status
@@ -18,6 +18,8 @@ from models import (
     DraftPick, League, LeagueFormat, Player, PlayerLog,
     Schedule, SosMult, User,
 )
+from integrations import espn as espn_provider, yahoo as yahoo_provider
+from integrations.matching import build_index, match_player
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -418,6 +420,121 @@ async def delete_league(
     league = await _get_league_owned(league_id, user.id, db)
     await db.delete(league)
     await db.commit()
+
+
+# ── League import (ESPN / Yahoo) ───────────────────────────────────────────────
+
+class ImportRequest(BaseModel):
+    provider: Literal["espn", "yahoo"]
+    ext_id: str                       # ESPN leagueId or Yahoo league_key (nfl.l.123)
+    season: int = 2026                # player pool to match against / ESPN league season
+    name: Optional[str] = None        # optional override for the league name
+    # ESPN private leagues
+    espn_s2: Optional[str] = None
+    swid: Optional[str] = None
+    my_team: Optional[str] = None     # ESPN team id or name to flag as "mine"
+    # Yahoo (token obtained via the OAuth helper routes below)
+    access_token: Optional[str] = None
+    my_guid: Optional[str] = None     # Yahoo manager guid to flag as "mine"
+
+
+@app.post("/api/leagues/import", response_model=dict, status_code=201)
+async def import_league(
+    data: ImportRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(db_dep),
+):
+    """Create a league from an ESPN or Yahoo league: settings + rosters mapped
+    onto our player pool. Returns the new league plus a mapping report."""
+    # 1. Pull a normalized league from the provider.
+    try:
+        if data.provider == "espn":
+            norm = await espn_provider.fetch_league(
+                data.ext_id, data.season,
+                espn_s2=data.espn_s2, swid=data.swid, my_team=data.my_team)
+        else:
+            if not data.access_token:
+                raise HTTPException(status_code=400, detail="Yahoo import needs an access_token (connect Yahoo first).")
+            norm = await yahoo_provider.fetch_league(data.ext_id, data.access_token, my_guid=data.my_guid)
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001 — surface provider errors cleanly
+        raise HTTPException(status_code=502, detail=f"{data.provider} fetch failed: {e}")
+
+    # 2. Build the player index for the matching season.
+    rows = (await db.execute(
+        select(Player.id, Player.name, Player.pos, Player.team).where(Player.season == data.season)
+    )).all()
+    if not rows:
+        raise HTTPException(status_code=409, detail=f"No players loaded for season {data.season}; import needs the player pool.")
+    index = build_index([{"id": r.id, "name": r.name, "pos": r.pos, "team": r.team} for r in rows])
+
+    # 3. Create the league.
+    league = League(user_id=user.id, name=data.name or norm.name,
+                    format=LeagueFormat(norm.fmt), settings=norm.settings)
+    db.add(league)
+    await db.flush()
+
+    # 4. Map each rostered player to a pick.
+    overall = matched = 0
+    unmatched: list[str] = []
+    for team in norm.teams:
+        for np in team.players:
+            if not np.name:
+                continue
+            pid = match_player(index, np)
+            if pid is None:
+                unmatched.append(f"{np.name} ({np.pos or '?'}{'/' + np.team if np.team else ''})")
+                continue
+            overall += 1
+            matched += 1
+            db.add(DraftPick(league_id=league.id, player_id=pid, overall_pick=overall,
+                             mine=team.is_mine, price=np.bid, slot=None))
+    await db.commit()
+    await db.refresh(league)
+
+    return {
+        "league": LeagueOut.model_validate(league).model_dump(mode="json"),
+        "report": {
+            "provider": norm.provider,
+            "format": norm.fmt,
+            "teams": len(norm.teams),
+            "players_matched": matched,
+            "players_unmatched": len(unmatched),
+            "unmatched_sample": unmatched[:30],
+            "mine_found": any(t.is_mine for t in norm.teams),
+        },
+    }
+
+
+@app.get("/api/integrations/yahoo/auth-url")
+async def yahoo_auth_url(_: User = Depends(get_current_user)) -> dict:
+    """Return the Yahoo OAuth consent URL to open in the browser."""
+    try:
+        return {"url": yahoo_provider.authorize_url(state="import")}
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+class YahooExchange(BaseModel):
+    code: str
+
+
+@app.post("/api/integrations/yahoo/exchange")
+async def yahoo_exchange(body: YahooExchange, _: User = Depends(get_current_user)) -> dict:
+    """Exchange a Yahoo auth code for an access token (+ manager guid)."""
+    try:
+        tok = await yahoo_provider.exchange_code(body.code)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Yahoo token exchange failed: {e}")
+    return {
+        "access_token": tok.get("access_token"),
+        "refresh_token": tok.get("refresh_token"),
+        "guid": tok.get("xoauth_yahoo_guid"),
+        "expires_in": tok.get("expires_in"),
+    }
 
 
 # ── Draft picks ───────────────────────────────────────────────────────────────

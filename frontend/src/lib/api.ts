@@ -32,6 +32,16 @@ export interface ApiPick {
   ts: string;
 }
 
+export interface ImportReport {
+  provider: string;
+  format: "auction" | "snake";
+  teams: number;
+  players_matched: number;
+  players_unmatched: number;
+  unmatched_sample: string[];
+  mine_found: boolean;
+}
+
 export interface LeagueSettings {
   teams: number;
   budget: number;
@@ -102,6 +112,25 @@ export const api = {
   patchLeague: (id: number, data: Partial<{ name: string; settings: LeagueSettings }>) =>
     req<ApiLeague>(`/api/leagues/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteLeague: (id: number) => req<void>(`/api/leagues/${id}`, { method: "DELETE" }),
+
+  importLeague: (data: {
+    provider: "espn" | "yahoo";
+    ext_id: string;
+    season?: number;
+    name?: string;
+    espn_s2?: string;
+    swid?: string;
+    my_team?: string;
+    access_token?: string;
+    my_guid?: string;
+  }) => req<{ league: ApiLeague; report: ImportReport }>("/api/leagues/import", {
+    method: "POST", body: JSON.stringify(data),
+  }),
+  yahooAuthUrl: () => req<{ url: string }>("/api/integrations/yahoo/auth-url"),
+  yahooExchange: (code: string) =>
+    req<{ access_token: string; refresh_token: string; guid: string; expires_in: number }>(
+      "/api/integrations/yahoo/exchange", { method: "POST", body: JSON.stringify({ code }) }
+    ),
 
   picks: (leagueId: number) => req<ApiPick[]>(`/api/leagues/${leagueId}/picks`),
   addPick: (leagueId: number, data: { player_id?: number; mine: boolean; price?: number; slot?: string }) =>
