@@ -4,3 +4,4 @@ pyarrow
 scikit-learn
 scipy
 numpy
+psycopg2-binary
