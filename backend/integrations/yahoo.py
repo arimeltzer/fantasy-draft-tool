@@ -61,7 +61,15 @@ async def _token_request(payload: dict, ca_bundle: str | None = None) -> dict:
             headers={"Authorization": f"Basic {basic}",
                      "Content-Type": "application/x-www-form-urlencoded"},
         )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            # Surface Yahoo's OAuth error so failures are diagnosable
+            # (invalid_grant = expired/used code or redirect mismatch, etc.).
+            try:
+                body = resp.json()
+                detail = body.get("error_description") or body.get("error") or body
+            except Exception:
+                detail = resp.text[:300]
+            raise RuntimeError(f"{resp.status_code} {detail}")
         return resp.json()
 
 
