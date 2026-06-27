@@ -46,6 +46,12 @@ def authorize_url(state: str = "") -> str:
         raise RuntimeError("Yahoo app not configured (YAHOO_CLIENT_ID / YAHOO_REDIRECT_URI).")
     from urllib.parse import urlencode
     q = {"client_id": cid, "redirect_uri": redirect, "response_type": "code", "language": "en-us"}
+    # Some Yahoo Fantasy credentials require an explicit scope (e.g. "fspt-r"
+    # for fantasy-sports read). Set YAHOO_SCOPE to request it; left unset, the
+    # app's configured permissions apply.
+    scope = os.getenv("YAHOO_SCOPE", "")
+    if scope:
+        q["scope"] = scope
     if state:
         q["state"] = state
     return f"{AUTH_URL}?{urlencode(q)}"
