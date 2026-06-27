@@ -31,6 +31,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
   const [accessToken, setAccessToken] = useState("");
   const [guid, setGuid] = useState("");
   const [connecting, setConnecting] = useState(false);
+  const [yahooList, setYahooList] = useState<{ key: string; name: string; season: number; num_teams: number }[]>([]);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -53,6 +54,12 @@ export default function ImportLeagueModal({ onClose }: Props) {
       const tok = await api.yahooExchange(yahooCode.trim());
       setAccessToken(tok.access_token);
       setGuid(tok.guid);
+      // Pull the account's leagues (all seasons) so the user can pick one.
+      try {
+        const { leagues } = await api.yahooLeagues(tok.access_token);
+        setYahooList(leagues);
+        if (leagues.length === 1) setYahooKey(leagues[0].key);
+      } catch { /* fall back to manual key entry */ }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Yahoo code exchange failed");
     } finally {
@@ -161,27 +168,38 @@ export default function ImportLeagueModal({ onClose }: Props) {
                   </div>
                 )}
               </>
+            ) : !accessToken ? (
+              <div className="space-y-2 rounded-lg border border-line bg-sunken p-3">
+                <button onClick={connectYahoo} className="btn-ghost w-full py-2 text-xs">1. Authorize with Yahoo (opens a tab)</button>
+                <Field label="2. Paste the code Yahoo gives you" hint="from the redirect URL">
+                  <div className="flex gap-2">
+                    <input className="field font-mono text-xs" value={yahooCode} onChange={(e) => setYahooCode(e.target.value)} placeholder="auth code" />
+                    <button onClick={exchangeYahoo} disabled={!yahooCode.trim() || connecting} className="btn-ghost px-3 text-xs">
+                      {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Connect"}
+                    </button>
+                  </div>
+                </Field>
+              </div>
             ) : (
               <>
-                <Field label="Yahoo league key" hint="e.g. nfl.l.123456 (League → Settings)">
-                  <input className="field" value={yahooKey} onChange={(e) => setYahooKey(e.target.value)} placeholder="nfl.l.123456" />
-                </Field>
-                {accessToken ? (
-                  <div className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
-                    <Check className="h-3.5 w-3.5" /> Yahoo connected
-                  </div>
+                <div className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                  <Check className="h-3.5 w-3.5" /> Yahoo connected
+                </div>
+                {yahooList.length > 0 ? (
+                  <Field label="Pick your league" hint="includes past seasons">
+                    <select className="field" value={yahooKey} onChange={(e) => setYahooKey(e.target.value)}>
+                      <option value="">Select a league…</option>
+                      {yahooList.map((l) => (
+                        <option key={l.key} value={l.key}>
+                          {l.name} — {l.season} ({l.num_teams} tm)
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
                 ) : (
-                  <div className="space-y-2 rounded-lg border border-line bg-sunken p-3">
-                    <button onClick={connectYahoo} className="btn-ghost w-full py-2 text-xs">1. Authorize with Yahoo (opens a tab)</button>
-                    <Field label="2. Paste the code Yahoo gives you">
-                      <div className="flex gap-2">
-                        <input className="field font-mono text-xs" value={yahooCode} onChange={(e) => setYahooCode(e.target.value)} placeholder="auth code" />
-                        <button onClick={exchangeYahoo} disabled={!yahooCode.trim() || connecting} className="btn-ghost px-3 text-xs">
-                          {connecting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Connect"}
-                        </button>
-                      </div>
-                    </Field>
-                  </div>
+                  <Field label="Yahoo league key" hint="e.g. nfl.l.123456">
+                    <input className="field" value={yahooKey} onChange={(e) => setYahooKey(e.target.value)} placeholder="nfl.l.123456" />
+                  </Field>
                 )}
               </>
             )}

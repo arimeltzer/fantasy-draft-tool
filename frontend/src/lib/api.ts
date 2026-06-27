@@ -131,6 +131,10 @@ export const api = {
     req<{ access_token: string; refresh_token: string; guid: string; expires_in: number }>(
       "/api/integrations/yahoo/exchange", { method: "POST", body: JSON.stringify({ code }) }
     ),
+  yahooLeagues: (access_token: string) =>
+    req<{ leagues: { key: string; name: string; season: number; num_teams: number }[] }>(
+      "/api/integrations/yahoo/leagues", { method: "POST", body: JSON.stringify({ access_token }) }
+    ),
 
   picks: (leagueId: number) => req<ApiPick[]>(`/api/leagues/${leagueId}/picks`),
   addPick: (leagueId: number, data: { player_id?: number; mine: boolean; price?: number; slot?: string }) =>

@@ -537,6 +537,21 @@ async def yahoo_exchange(body: YahooExchange, _: User = Depends(get_current_user
     }
 
 
+class YahooToken(BaseModel):
+    access_token: str
+
+
+@app.post("/api/integrations/yahoo/leagues")
+async def yahoo_leagues(body: YahooToken, _: User = Depends(get_current_user)) -> dict:
+    """List all NFL leagues (every season) for the connected Yahoo account, so the
+    user can pick the exact league key — including unrenewed/past-season leagues."""
+    try:
+        leagues = await yahoo_provider.fetch_my_leagues(body.access_token)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Yahoo leagues fetch failed: {e}")
+    return {"leagues": leagues}
+
+
 # ── Draft picks ───────────────────────────────────────────────────────────────
 
 @app.get("/api/leagues/{league_id}/picks", response_model=list[PickOut])

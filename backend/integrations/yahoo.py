@@ -191,6 +191,50 @@ def parse_teams(teams_node, my_guid: str | None = None) -> list[NormTeam]:
 
 # ── fetch ───────────────────────────────────────────────────────────────────
 
+def parse_my_leagues(data) -> list[dict]:
+    """Walk users -> games -> leagues from the `users;use_login=1/games/leagues`
+    response into a flat [{key, name, season, num_teams}], newest season first."""
+    out: list[dict] = []
+    users = flatten((data.get("fantasy_content") or {}).get("users", {}))
+    for uk, uv in users.items():
+        if uk == "count" or not isinstance(uv, dict):
+            continue
+        user = flatten(uv.get("user"))
+        games = flatten(user.get("games", {}))
+        for gk, gv in games.items():
+            if gk == "count" or not isinstance(gv, dict):
+                continue
+            game = flatten(gv.get("game"))
+            season = game.get("season")
+            leagues = flatten(game.get("leagues", {}))
+            for lk, lv in leagues.items():
+                if lk == "count" or not isinstance(lv, dict):
+                    continue
+                lg = flatten(lv.get("league"))
+                if not lg.get("league_key"):
+                    continue
+                out.append({
+                    "key": lg.get("league_key"),
+                    "name": lg.get("name", "League"),
+                    "season": int(lg.get("season") or season or 0),
+                    "num_teams": int(lg.get("num_teams") or 0),
+                })
+    out.sort(key=lambda x: -(x["season"] or 0))
+    return out
+
+
+async def fetch_my_leagues(access_token: str, ca_bundle: str | None = None) -> list[dict]:
+    """All NFL leagues the token owner has played, across seasons."""
+    verify = ca_bundle if ca_bundle else True
+    headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+    url = f"{API}/users;use_login=1/games;game_codes=nfl/leagues?format=json"
+    async with httpx.AsyncClient(timeout=30, trust_env=True, verify=verify, headers=headers) as client:
+        r = await client.get(url)
+        if r.status_code >= 400:
+            raise RuntimeError(f"{r.status_code} {r.text[:200]}")
+        return parse_my_leagues(r.json())
+
+
 async def fetch_league(league_key: str, access_token: str, my_guid: str | None = None,
                        ca_bundle: str | None = None) -> NormLeague:
     verify = ca_bundle if ca_bundle else True

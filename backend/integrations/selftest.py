@@ -126,10 +126,29 @@ def test_yahoo():
     assert p.name == "A.J. Brown" and p.pos == "WR" and p.team == "PHI"
 
 
+def test_yahoo_leagues():
+    data = {"fantasy_content": {"users": {"count": 1, "0": {"user": [
+        {"guid": "MEGUID"},
+        {"games": {"count": 2,
+            "0": {"game": [{"game_key": "449", "code": "nfl", "season": "2025"},
+                           {"leagues": {"count": 1, "0": {"league": [
+                               {"league_key": "449.l.82486", "name": "Friends", "season": "2025", "num_teams": "12"}]}}}]},
+            "1": {"game": [{"game_key": "423", "code": "nfl", "season": "2024"},
+                           {"leagues": {"count": 1, "0": {"league": [
+                               {"league_key": "423.l.82486", "name": "Friends", "season": "2024", "num_teams": "12"}]}}}]},
+        }},
+    ]}}}}
+    leagues = yahoo.parse_my_leagues(data)
+    assert len(leagues) == 2 and leagues[0]["season"] == 2025  # newest first
+    assert leagues[0]["key"] == "449.l.82486" and leagues[1]["key"] == "423.l.82486"
+    assert leagues[1]["num_teams"] == 12
+
+
 def main():
     test_matching(); print("✓ matching")
     test_espn(); print("✓ espn parse")
     test_yahoo(); print("✓ yahoo parse")
+    test_yahoo_leagues(); print("✓ yahoo leagues list")
     print("\nALL INTEGRATION SELFTESTS PASS")
 
 
