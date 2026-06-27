@@ -59,11 +59,28 @@ export default function ImportLeagueModal({ onClose }: Props) {
         const { leagues } = await api.yahooLeagues(tok.access_token);
         setYahooList(leagues);
         if (leagues.length === 1) setYahooKey(leagues[0].key);
-      } catch { /* fall back to manual key entry */ }
+        else if (leagues.length === 0) setError("Connected, but Yahoo returned no NFL leagues for this account.");
+      } catch (le) {
+        setError("Connected, but listing your leagues failed: " +
+          (le instanceof Error ? le.message : "error") +
+          ". You can still type a league key below.");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Yahoo code exchange failed");
     } finally {
       setConnecting(false);
+    }
+  };
+
+  const loadLeagues = async () => {
+    if (!accessToken) return;
+    setError("");
+    try {
+      const { leagues } = await api.yahooLeagues(accessToken);
+      setYahooList(leagues);
+      if (leagues.length === 0) setError("Yahoo returned no NFL leagues for this account.");
+    } catch (e) {
+      setError("Listing leagues failed: " + (e instanceof Error ? e.message : "error"));
     }
   };
 
@@ -197,9 +214,14 @@ export default function ImportLeagueModal({ onClose }: Props) {
                     </select>
                   </Field>
                 ) : (
-                  <Field label="Yahoo league key" hint="e.g. nfl.l.123456">
-                    <input className="field" value={yahooKey} onChange={(e) => setYahooKey(e.target.value)} placeholder="nfl.l.123456" />
-                  </Field>
+                  <>
+                    <button onClick={loadLeagues} className="btn-ghost w-full py-2 text-xs">
+                      Reload my leagues
+                    </button>
+                    <Field label="…or enter the league key manually" hint="lowercase L: nfl.l.123456">
+                      <input className="field" value={yahooKey} onChange={(e) => setYahooKey(e.target.value)} placeholder="nfl.l.123456" />
+                    </Field>
+                  </>
                 )}
               </>
             )}
