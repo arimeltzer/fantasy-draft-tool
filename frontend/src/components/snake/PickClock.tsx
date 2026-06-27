@@ -12,11 +12,11 @@ export default function PickClock({ draftSlot, teams, overallPick }: Props) {
   const untilMine = nextMine != null ? nextMine - overallPick : null;
 
   return (
-    <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 font-mono text-xs">
-      <span className="text-slate-500">Pick</span>
-      <span className="text-slate-200">{overallPick}</span>
+    <div className="hidden items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 font-mono text-xs shadow-card sm:flex">
+      <span className="text-faint">Pick</span>
+      <span className="font-semibold text-ink">{overallPick}</span>
       {untilMine != null && (
-        <span className="text-emerald-400">· you in {untilMine === 0 ? "now!" : untilMine}</span>
+        <span className="text-brand">· you in {untilMine === 0 ? "now!" : untilMine}</span>
       )}
     </div>
   );

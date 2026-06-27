@@ -34,35 +34,33 @@ export default function NeedsPanel({ mine, settings, draftedCount, untilMine }: 
   const hasNeeds = Object.values(needs).some((n) => n > 0);
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-      <div className="flex items-center gap-2 mb-2">
-        <TrendingUp className="w-4 h-4 text-slate-400" />
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-300">Still need</h2>
+    <div className="card p-3.5">
+      <div className="mb-2.5 flex items-center gap-2">
+        <TrendingUp className="h-3.5 w-3.5 text-faint" />
+        <h2 className="eyebrow">Still need</h2>
       </div>
-      <div className="flex flex-wrap gap-1.5 mb-3">
+      <div className="mb-3 flex flex-wrap gap-1.5">
         {(Object.entries(needs) as [string, number][]).filter(([, n]) => n > 0).map(([pos, n]) => {
           const st = posStyle(pos === "FLEX" ? "RB" : pos);
           return (
             <span
               key={pos}
-              className={`text-[11px] font-mono px-2 py-1 rounded border ${
-                pos === "FLEX" ? "bg-slate-800 border-slate-700 text-slate-300" : st.chip
-              }`}
+              className={`chip font-mono ${pos === "FLEX" ? "border-line bg-raised text-muted" : st.chip}`}
             >
               {pos} ×{n}
             </span>
           );
         })}
-        {!hasNeeds && <span className="text-[11px] text-slate-500">Starters filled — draft for depth.</span>}
+        {!hasNeeds && <span className="text-xs text-muted">Starters filled — draft for depth.</span>}
       </div>
-      <div className="pt-2.5 border-t border-slate-800 grid grid-cols-2 gap-2 text-center">
+      <div className="grid grid-cols-2 gap-2 border-t border-hair pt-3 text-center">
         <div>
-          <div className="font-mono text-base text-slate-200">{draftedCount}</div>
-          <div className="text-[9px] uppercase text-slate-600">picks made</div>
+          <div className="font-mono text-xl tnum text-ink">{draftedCount}</div>
+          <div className="text-2xs uppercase tracking-wide text-faint">picks made</div>
         </div>
         <div>
-          <div className="font-mono text-base text-emerald-400">{untilMine ?? "—"}</div>
-          <div className="text-[9px] uppercase text-slate-600">till your turn</div>
+          <div className="font-mono text-xl tnum text-brand">{untilMine ?? "—"}</div>
+          <div className="text-2xs uppercase tracking-wide text-faint">till your turn</div>
         </div>
       </div>
     </div>

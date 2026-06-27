@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
-import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, RotateCcw } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { auctionValues, applyInflation, maxBid } from "@/engine/valuation-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
@@ -94,27 +94,27 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   const pprLabel = settings.ppr === 1 ? "PPR" : settings.ppr === 0.5 ? "Half-PPR" : "Std";
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans">
-      <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3 flex-wrap">
-          <button onClick={() => nav("/")} className="text-slate-500 hover:text-slate-300 mr-1">
-            <ArrowLeft className="w-4 h-4" />
+    <div className="min-h-screen bg-paper text-ink font-sans">
+      <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-3">
+          <button onClick={() => nav("/")} className="rounded-md p-1 text-faint hover:bg-raised hover:text-ink">
+            <ArrowLeft className="h-4 w-4" />
           </button>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded bg-amber-500/15 border border-amber-500/40 grid place-items-center">
-              <Gavel className="w-4 h-4 text-amber-400" />
+          <div className="flex items-center gap-2.5">
+            <div className="grid h-8 w-8 place-items-center rounded-lg bg-gold/10 ring-1 ring-gold/25">
+              <Gavel className="h-4 w-4 text-gold" />
             </div>
             <div>
-              <h1 className="text-sm font-semibold tracking-tight leading-none">{league.name}</h1>
-              <p className="text-[11px] text-slate-500 leading-none mt-0.5 font-mono">
+              <h1 className="text-sm font-semibold leading-none tracking-tight">{league.name}</h1>
+              <p className="mt-1 font-mono text-2xs leading-none text-faint">
                 {settings.teams}×${settings.budget} · {rosterSize}-man · {pprLabel}
               </p>
             </div>
           </div>
-          <div className="ml-auto flex items-center gap-2 text-xs">
+          <div className="ml-auto flex items-center gap-2">
             <InflationBadge factor={inflation.factor} />
-            <button onClick={() => setShowSettings((v) => !v)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-slate-900 border border-slate-800 hover:border-slate-700">
-              <Settings className="w-3.5 h-3.5" /> League
+            <button onClick={() => setShowSettings((v) => !v)} className="btn-ghost px-2.5 py-1.5 text-xs">
+              <Settings className="h-3.5 w-3.5" /> League
             </button>
           </div>
         </div>
@@ -128,26 +128,26 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
         />
       )}
 
-      <main className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+      <main className="mx-auto grid max-w-6xl grid-cols-1 gap-4 px-4 py-5 lg:grid-cols-[1fr_300px]">
         <section>
           <BoardControls
             query={query} onQuery={setQuery}
             posFilter={posFilter} onPos={setPosFilter}
             hideLabel="hide sold" hideChecked={hideDrafted} onHide={setHideDrafted}
-            accentColor="accent-amber-500"
+            accentColor="accent-gold"
           />
 
-          <div className="rounded-lg border border-slate-800 overflow-hidden">
-            <div className="grid grid-cols-[40px_1fr_64px_110px] sm:grid-cols-[44px_1fr_60px_64px_64px_150px] gap-2 px-3 py-2 bg-slate-900/80 text-[10px] uppercase tracking-wider text-slate-500 font-mono">
+          <div className="card overflow-hidden">
+            <div className="grid grid-cols-[44px_1fr_64px_112px] items-center gap-2 border-b border-line bg-raised px-3 py-2 font-mono text-2xs uppercase tracking-wider text-faint sm:grid-cols-[48px_1fr_64px_60px_60px_150px]">
               <span>Pos</span><span>Player</span>
-              <span className="text-right hidden sm:block">VBD</span>
-              <span className="text-right hidden sm:block">$Par</span>
+              <span className="hidden text-right sm:block">VBD</span>
+              <span className="hidden text-right sm:block">$Par</span>
               <span className="text-right">$Live</span>
               <span className="text-right">Bid / buy</span>
             </div>
 
-            <div className="divide-y divide-slate-800/70 max-h-[62vh] overflow-y-auto">
-              {filtered.map((p) => {
+            <div className="scroll-tidy max-h-[62vh] overflow-y-auto">
+              {filtered.map((p, i) => {
                 const st = posStyle(p.pos);
                 const pickEntry = picks.find((pk) => pk.playerId === (p.id as number));
                 const sold = !!pickEntry;
@@ -157,29 +157,37 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                   ? Math.round(board.findIndex((b) => b.id === p.id) + 1 - p.ecr)
                   : null;
 
+                const rowBg = sold
+                  ? pickEntry?.mine
+                    ? "bg-amber-50/70 opacity-80"
+                    : "bg-sunken opacity-55"
+                  : i % 2 === 1
+                  ? "bg-stripe hover:bg-hover"
+                  : "bg-surface hover:bg-hover";
+
                 return (
                   <div
                     key={p.id}
-                    className={`grid grid-cols-[40px_1fr_64px_110px] sm:grid-cols-[44px_1fr_60px_64px_64px_150px] gap-2 px-3 py-2 items-center text-sm ${sold ? "opacity-40" : "hover:bg-slate-900/40"}`}
+                    className={`grid grid-cols-[44px_1fr_64px_112px] items-center gap-2 border-b border-l-[3px] border-b-hair px-3 py-2 text-sm transition-colors sm:grid-cols-[48px_1fr_64px_60px_60px_150px] ${st.accent} ${rowBg}`}
                   >
-                    <span className="flex items-center gap-1 text-[10px] font-mono">
-                      <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-                      <span className={st.text}>{p.pos}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
+                      <span className={`font-mono text-2xs font-semibold ${st.text}`}>{p.pos}</span>
                     </span>
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
-                        {pickEntry?.mine && <Crown className="w-3 h-3 text-amber-400 shrink-0" />}
-                        <span className="font-medium truncate">{p.name}</span>
-                        <span className="font-mono text-[11px] text-slate-500">{p.team}</span>
-                        {p.tier && <span className="text-[9px] font-mono bg-slate-800 px-1 rounded text-slate-500">T{p.tier}</span>}
-                        {p.risk >= 0.4 && <AlertTriangle className="w-3 h-3 text-amber-500/70" aria-label={`risk ${p.risk}`} />}
+                        {pickEntry?.mine && <Crown className="h-3 w-3 shrink-0 text-gold" />}
+                        <span className="truncate font-medium text-ink">{p.name}</span>
+                        <span className="font-mono text-2xs text-faint">{p.team}</span>
+                        {p.tier && <span className="chip border-line bg-raised text-muted">T{p.tier}</span>}
+                        {p.risk >= 0.4 && <AlertTriangle className="h-3 w-3 text-amber-500" aria-label={`risk ${p.risk}`} />}
                         {typeof p.id === "number" && <CommonOpponentsPopover playerId={p.id} />}
                       </div>
-                      <div className="text-[10px] text-slate-500 font-mono tabular-nums">
+                      <div className="font-mono text-2xs tnum text-faint">
                         {p.valuePoints}pt{p.priorEquiv != null ? ` · '25 pace ${p.priorEquiv}` : " · no '25"}
                         {mktDiff != null && (
-                          <span className={`ml-1 ${mktDiff > 0 ? "text-emerald-500/70" : "text-rose-500/70"}`}>
+                          <span className={`ml-1 ${mktDiff > 0 ? "text-emerald-600" : "text-rose-500"}`}>
                             mkt {mktDiff > 0 ? "+" : ""}{mktDiff}
                           </span>
                         )}
@@ -190,9 +198,9 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                       <ValueBar pos={p.pos} vbd={p.vbd} maxVbd={maxVbd} />
                     </div>
 
-                    <span className="text-right font-mono text-[11px] text-slate-500 hidden sm:block">${p.parValue}</span>
+                    <span className="hidden text-right font-mono text-2xs tnum text-faint sm:block">${p.parValue}</span>
 
-                    <span className={`text-right font-mono text-sm tabular-nums ${overMax && !sold ? "text-rose-300" : "text-amber-200"}`}>
+                    <span className={`text-right font-mono text-sm tnum ${overMax && !sold ? "text-rose-600" : "text-gold"}`}>
                       ${live}
                     </span>
 
@@ -200,7 +208,11 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                       {sold ? (
                         <button
                           onClick={() => pickEntry && undo(pickEntry.pickId)}
-                          className="text-[10px] font-mono px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-400 hover:text-slate-200"
+                          className={`btn px-2 py-1 font-mono text-2xs ${
+                            pickEntry?.mine
+                              ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                              : "border-line bg-raised text-muted hover:text-ink"
+                          }`}
                         >
                           ${pickEntry?.price} ✕
                         </button>
@@ -210,17 +222,17 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                             type="number"
                             value={prices[p.id as number] ?? live}
                             onChange={(e) => setPrices((pr) => ({ ...pr, [p.id as number]: Number(e.target.value) }))}
-                            className="w-12 px-1.5 py-1 rounded bg-slate-950 border border-slate-700 text-right font-mono text-xs text-slate-200 focus:outline-none focus:border-amber-600"
+                            className="w-12 rounded-md border border-line bg-sunken px-1.5 py-1 text-right font-mono text-xs text-ink focus:border-gold focus:outline-none focus:ring-2 focus:ring-gold/15"
                           />
                           <button
                             onClick={() => buy(p, true)}
-                            className="px-1.5 py-1 rounded text-[11px] bg-amber-500/15 border border-amber-500/40 text-amber-300 hover:bg-amber-500/25"
+                            className="btn border-gold bg-gold px-2 py-1 text-2xs text-white hover:bg-gold/90"
                           >
                             Mine
                           </button>
                           <button
                             onClick={() => buy(p, false)}
-                            className="px-1.5 py-1 rounded text-[11px] bg-slate-900 border border-slate-700 text-slate-400 hover:text-slate-200"
+                            className="btn border-line bg-surface px-2 py-1 text-2xs text-muted hover:bg-raised hover:text-ink"
                           >
                             Out
                           </button>
@@ -231,7 +243,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                 );
               })}
               {filtered.length === 0 && (
-                <div className="px-3 py-8 text-center text-sm text-slate-500">No players match.</div>
+                <div className="px-3 py-10 text-center text-sm text-faint">No players match.</div>
               )}
             </div>
           </div>

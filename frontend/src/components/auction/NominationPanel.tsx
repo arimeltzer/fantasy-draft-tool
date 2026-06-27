@@ -19,23 +19,23 @@ export default function NominationPanel({ factor, targets, myMax, remainingMoney
       : "Even market. Nominate non-targets early; pounce when a tier is about to empty.";
 
   return (
-    <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-      <div className="flex items-center gap-2 mb-2">
-        <TrendingUp className="w-4 h-4 text-slate-400" />
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-300">Nomination & targets</h2>
+    <div className="card p-3.5">
+      <div className="mb-2.5 flex items-center gap-2">
+        <TrendingUp className="h-3.5 w-3.5 text-faint" />
+        <h2 className="eyebrow">Nomination &amp; targets</h2>
       </div>
-      <p className="text-[11px] text-slate-500 leading-snug mb-2">{advice}</p>
+      <p className="mb-3 text-xs leading-snug text-muted">{advice}</p>
 
-      <div className="space-y-1">
+      <div className="space-y-0.5">
         {targets.map((p) => {
           const st = posStyle(p.pos);
           const live = p.adjValue ?? p.parValue ?? 1;
           return (
-            <div key={p.id} className="flex items-center gap-2 text-xs">
-              <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-              <span className="truncate flex-1">{p.name}</span>
-              <span className="font-mono text-amber-200">${live}</span>
-              <span className={`font-mono text-[10px] ${live > myMax ? "text-rose-400" : "text-emerald-400"}`}>
+            <div key={p.id} className={`flex items-center gap-2 rounded-md border-l-[3px] px-2 py-1.5 text-xs ${st.accent} ${st.rail}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
+              <span className="flex-1 truncate text-ink">{p.name}</span>
+              <span className="font-mono text-2xs text-gold">${live}</span>
+              <span className={`font-mono text-[10px] ${live > myMax ? "text-rose-500" : "text-emerald-600"}`}>
                 {live > myMax ? "over max" : "in reach"}
               </span>
             </div>
@@ -43,14 +43,14 @@ export default function NominationPanel({ factor, targets, myMax, remainingMoney
         })}
       </div>
 
-      <div className="mt-2 pt-2 border-t border-slate-800 grid grid-cols-2 gap-2 text-center text-[11px] font-mono">
+      <div className="mt-3 grid grid-cols-2 gap-2 border-t border-hair pt-3 text-center font-mono text-xs">
         <div>
-          <div className="text-slate-300">${remainingMoney}</div>
-          <div className="text-[9px] uppercase text-slate-600">room $ left</div>
+          <div className="tnum text-ink">${remainingMoney}</div>
+          <div className="text-2xs uppercase text-faint">room $ left</div>
         </div>
         <div>
-          <div className="text-slate-300">{remainingSpots}</div>
-          <div className="text-[9px] uppercase text-slate-600">spots left</div>
+          <div className="tnum text-ink">{remainingSpots}</div>
+          <div className="text-2xs uppercase text-faint">spots left</div>
         </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { Search } from "lucide-react";
+import { posStyle } from "@/lib/posStyles";
 
 const POSITIONS = ["ALL", "QB", "RB", "WR", "TE", "K", "DST"] as const;
 
@@ -14,32 +15,47 @@ interface Props {
 }
 
 export default function BoardControls({
-  query, onQuery, posFilter, onPos, hideLabel, hideChecked, onHide, accentColor = "accent-amber-500",
+  query, onQuery, posFilter, onPos, hideLabel, hideChecked, onHide, accentColor = "accent-brand",
 }: Props) {
   return (
-    <div className="flex items-center gap-2 mb-2 flex-wrap">
-      <div className="relative flex-1 min-w-[160px]">
-        <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+    <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="relative min-w-[180px] flex-1">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-faint" />
         <input
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           placeholder="Search player or team"
-          className="w-full pl-8 pr-3 py-1.5 rounded bg-slate-900 border border-slate-800 text-sm focus:outline-none focus:border-slate-600"
+          className="field pl-9"
         />
       </div>
-      <div className="flex items-center gap-1 text-[11px]">
-        {POSITIONS.map((pos) => (
-          <button
-            key={pos}
-            onClick={() => onPos(pos)}
-            className={`px-2 py-1.5 rounded border font-mono ${posFilter === pos ? "bg-slate-700 border-slate-600 text-white" : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"}`}
-          >
-            {pos}
-          </button>
-        ))}
+
+      <div className="flex items-center gap-1 rounded-lg border border-line bg-surface p-1 shadow-card">
+        {POSITIONS.map((pos) => {
+          const active = posFilter === pos;
+          const st = pos === "ALL" ? null : posStyle(pos);
+          return (
+            <button
+              key={pos}
+              onClick={() => onPos(pos)}
+              className={`rounded-md px-2 py-1 font-mono text-2xs font-semibold transition-colors ${
+                active
+                  ? "bg-ink text-white"
+                  : `text-muted hover:bg-raised ${st ? st.text : ""}`
+              }`}
+            >
+              {pos}
+            </button>
+          );
+        })}
       </div>
-      <label className={`flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer select-none`}>
-        <input type="checkbox" checked={hideChecked} onChange={(e) => onHide(e.target.checked)} className={accentColor} />
+
+      <label className="flex cursor-pointer select-none items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-2 text-xs text-muted shadow-card">
+        <input
+          type="checkbox"
+          checked={hideChecked}
+          onChange={(e) => onHide(e.target.checked)}
+          className={`h-3.5 w-3.5 ${accentColor}`}
+        />
         {hideLabel}
       </label>
     </div>

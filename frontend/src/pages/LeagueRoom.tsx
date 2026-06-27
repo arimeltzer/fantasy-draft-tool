@@ -32,19 +32,19 @@ export default function LeagueRoom() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-slate-500" />
+      <div className="flex min-h-screen items-center justify-center bg-paper">
+        <Loader2 className="h-6 w-6 animate-spin text-faint" />
       </div>
     );
   }
 
   if (leagueError || !league) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-paper">
         <div className="text-center">
-          <p className="text-slate-400 mb-4">League not found.</p>
-          <button onClick={() => nav("/")} className="text-sm text-slate-500 hover:text-slate-300 flex items-center gap-1">
-            <ArrowLeft className="w-4 h-4" /> Back to leagues
+          <p className="mb-4 text-muted">League not found.</p>
+          <button onClick={() => nav("/")} className="mx-auto flex items-center gap-1 text-sm text-muted hover:text-ink">
+            <ArrowLeft className="h-4 w-4" /> Back to leagues
           </button>
         </div>
       </div>
