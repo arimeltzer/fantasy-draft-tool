@@ -67,9 +67,11 @@ def _num(r, k):
 
 def fantasy_points(row):
     fum = _num(row, "rushing_fumbles_lost") + _num(row, "receiving_fumbles_lost")
+    # nflverse renamed `interceptions` -> `passing_interceptions`; support both.
+    ints = _num(row, "interceptions") or _num(row, "passing_interceptions")
     return round(
         _num(row, "passing_yards")*SCORING["passYd"] + _num(row, "passing_tds")*SCORING["passTD"]
-        + _num(row, "interceptions")*SCORING["intc"]
+        + ints*SCORING["intc"]
         + _num(row, "rushing_yards")*SCORING["rushYd"] + _num(row, "rushing_tds")*SCORING["rushTD"]
         + _num(row, "receptions")*SCORING["rec"] + _num(row, "receiving_yards")*SCORING["recYd"]
         + _num(row, "receiving_tds")*SCORING["recTD"]
@@ -82,14 +84,16 @@ def load_seasons(years):
     for y in years:
         print(f"  loading {y}…", end=" ", flush=True)
         try:
-            df = _pd(nfl.load_player_stats(y, summary_level="season"))
+            # nflreadpy API: summary_level is 'reg'|'post'|'reg+post'|'week'
+            # (the old 'season' value was removed); pass seasons as a list.
+            df = _pd(nfl.load_player_stats([y], summary_level="reg"))
             typ = _col(df, "season_type")
             if typ:
                 df = df[df[typ] == "REG"]
             df = df[df[_col(df, "position", "pos")].isin(FANTASY_POS)].copy()
             team = _col(df, "team", "recent_team")
             df = df[df[team].notna()]
-            df["gp"] = df[_col(df, "games_played", "gp")].fillna(0).astype(int)
+            df["gp"] = df[_col(df, "games_played", "games", "gp")].fillna(0).astype(int)
             df["fp"] = df.apply(fantasy_points, axis=1)
             pos = _col(df, "position", "pos")
             for g in df[["season", _col(df, "player_id", "gsis_id"), _col(df, "player_display_name", "player_name"), pos, "gp", "fp"]].itertuples():

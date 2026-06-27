@@ -31,16 +31,29 @@
    but resist letting schedule outweigh talent — it shouldn't.
    ===================================================================== */
 
+/* Defaults below are EMPIRICALLY TUNED, not guesses. See
+ * data-pipeline/SOS_TUNING_RESULTS.md and `python sos_backtest.py`
+ * (10 seasons, 2015–2024, fully out-of-sample). Headline findings:
+ *   - Year-over-year retention of opponent-adjusted defense softness is the
+ *     MSE-optimal shrink (= regression slope of this year on last). It is low
+ *     and varies by position: QB/RB ≈0.30, WR ≈0.26, TE ≈0.11 (TE defense is
+ *     ~noise year to year). Predictive skill overall: Pearson r≈0.27, R²≈0.07.
+ *   - A full-season schedule moves a player ≤3% even at calibrated weights
+ *     (p95≈1.5%), so SOS is correctly a SECONDARY signal; the cap is a guard-
+ *     rail that rarely binds.
+ *   - Playoff weeks (15–17) are LESS predictable from last year than the full
+ *     season (r 0.10 vs 0.27), so the playoff up-weight is kept mild. */
 export const DEFAULT_SOS_PARAMS = {
   iterations: 12,            // SRS-style solve; converges fast
-  // How much of a 2025 defensive rating carries to 2026. Low on purpose:
-  // defensive fantasy-points-allowed is weakly autocorrelated (~0.3–0.4).
-  // Scalar, or per-position object e.g. { RB:0.40, WR:0.35, TE:0.30, QB:0.30 }.
-  yoyRetention: 0.35,
-  sosWeight: 0.5,            // how strongly schedule nudges value
-  cap: 0.06,                 // hard limit: SOS moves a player ±6% at most
+  // How much of a 2025 defensive rating carries to 2026. Empirically the
+  // MSE-optimal shrink (regression slope, out-of-sample). Scalar, or per-
+  // position object — defense softness barely repeats, and not at all for TE.
+  yoyRetention: { QB: 0.30, RB: 0.30, WR: 0.26, TE: 0.11 },
+  sosWeight: 0.8,            // game-level calibrated response of production to
+                             // predicted softness; small `rel` keeps it modest
+  cap: 0.04,                 // guardrail: real season spread is ≤3% (p99≈2%)
   playoffWeeks: [15, 16, 17],
-  playoffWeight: 1.5,        // those matchups count more
+  playoffWeight: 1.2,        // mild: weeks 15–17 are noisier to predict
 };
 
 const mean = (a) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0);
