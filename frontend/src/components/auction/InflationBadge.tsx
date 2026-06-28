@@ -6,12 +6,12 @@ export default function InflationBadge({ factor }: Props) {
   const hot  = factor > 1.05;
   const cold = factor < 0.95;
   return (
-    <div className={`hidden items-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-mono text-xs sm:flex ${
-      hot  ? "border-rose-200 bg-rose-50 text-rose-600" :
-      cold ? "border-emerald-200 bg-emerald-50 text-emerald-600" :
-             "border-line bg-surface text-muted"
+    <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded border font-mono text-xs ${
+      hot  ? "bg-rose-50 border-rose-200 text-rose-600" :
+      cold ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700" :
+             "bg-gray-50 border-gray-200 text-gray-600"
     }`}>
-      <Flame className="h-3.5 w-3.5" />
+      <Flame className="w-3.5 h-3.5" />
       inflation ×{factor.toFixed(2)}
     </div>
   );

@@ -20,12 +20,8 @@ from pathlib import Path
 
 # ── SOS math: Python port of strength-of-schedule.js ─────────────────────────
 
-# Empirically tuned — see SOS_TUNING_RESULTS.md / sos_backtest.py (kept in sync
-# with DEFAULT_SOS_PARAMS in frontend/src/engine/strength-of-schedule.js).
-_P = dict(iterations=12,
-          yoyRetention={"QB": 0.30, "RB": 0.30, "WR": 0.26, "TE": 0.11},
-          sosWeight=0.8, cap=0.04,
-          playoffWeeks={15, 16, 17}, playoffWeight=1.2)
+_P = dict(iterations=12, yoyRetention=0.35, sosWeight=0.5, cap=0.06,
+          playoffWeeks={15, 16, 17}, playoffWeight=1.5)
 
 def _mean(vals):
     return sum(vals) / len(vals) if vals else 0.0
@@ -55,8 +51,7 @@ def _adjusted_defense_ratings(logs):
 
 def _regress_yoy(ratings):
     ret = _P["yoyRetention"]
-    get = (lambda pos: ret.get(pos, 0.30)) if isinstance(ret, dict) else (lambda pos: ret)
-    return {"def": {pos: {t: round(v * get(pos), 3) for t, v in defn.items()}
+    return {"def": {pos: {t: round(v * ret, 3) for t, v in defn.items()}
                     for pos, defn in ratings["def"].items()},
             "leagueAvg": ratings["leagueAvg"]}
 

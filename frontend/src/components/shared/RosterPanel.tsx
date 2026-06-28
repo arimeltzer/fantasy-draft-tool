@@ -43,58 +43,52 @@ export default function RosterPanel({ picks, board, settings, onReset, mode }: P
   }
 
   const bench = pool.filter((p) => !used.has(p.playerId!));
-  const priceColor = mode === "auction" ? "text-gold" : "text-muted";
 
   return (
-    <div className="card p-3.5">
-      <div className="mb-3 flex items-center justify-between">
+    <div className="rounded-lg border border-gray-200 bg-gray-100 p-3">
+      <div className="flex items-center justify-between mb-2.5">
         <div className="flex items-center gap-2">
-          <Crown className="h-3.5 w-3.5 text-faint" />
-          <h2 className="eyebrow">My roster</h2>
+          <Crown className="w-4 h-4 text-gray-500" />
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">My roster</h2>
         </div>
-        <button onClick={onReset} title="Reset draft" className="rounded-md p-1 text-faint hover:bg-raised hover:text-ink">
-          <RotateCcw className="h-3.5 w-3.5" />
+        <button onClick={onReset} title="Reset draft" className="text-gray-500 hover:text-gray-600">
+          <RotateCcw className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      <div className="space-y-0.5">
+      <div className="space-y-1">
         {slots.map((row, i) => {
           const st = row.player ? posStyle(row.player.player!.pos) : null;
           return (
-            <div
-              key={i}
-              className={`flex items-center gap-2 rounded-md border-l-[3px] px-2 py-1.5 text-xs ${
-                row.player ? `${st!.accent} ${st!.rail}` : "border-l-transparent"
-              }`}
-            >
-              <span className="w-9 font-mono text-2xs font-semibold text-faint">{row.slot}</span>
+            <div key={i} className="flex items-center gap-2 text-xs">
+              <span className="font-mono text-xs text-gray-500 w-9">{row.slot}</span>
               {row.player ? (
                 <>
-                  <span className={`h-1.5 w-1.5 rounded-full ${st!.dot}`} />
-                  <span className="flex-1 truncate text-ink">{row.player.player!.name}</span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${st!.dot}`} />
+                  <span className="truncate flex-1">{row.player.player!.name}</span>
                   {mode === "auction" && row.player.price != null && (
-                    <span className={`font-mono text-2xs ${priceColor}`}>${row.player.price}</span>
+                    <span className="font-mono text-amber-700 text-xs">${row.player.price}</span>
                   )}
                 </>
               ) : (
-                <span className="italic text-faint">empty</span>
+                <span className="text-gray-400 italic">empty</span>
               )}
             </div>
           );
         })}
 
         {bench.length > 0 && (
-          <div className="mt-2 border-t border-hair pt-2">
-            <div className="mb-1 px-2 font-mono text-2xs uppercase text-faint">Bench</div>
+          <div className="pt-1.5 mt-1.5 border-t border-gray-200">
+            <div className="font-mono text-xs text-gray-400 mb-1">BENCH</div>
             {bench.map((p) => {
               const st = posStyle(p.player!.pos);
               return (
-                <div key={p.playerId} className={`flex items-center gap-2 rounded-md border-l-[3px] px-2 py-1.5 text-xs ${st.accent} ${st.rail}`}>
-                  <span className="w-9 font-mono text-2xs font-semibold text-faint">{p.player!.pos}</span>
-                  <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
-                  <span className="flex-1 truncate text-ink">{p.player!.name}</span>
+                <div key={p.playerId} className="flex items-center gap-2 text-xs">
+                  <span className="font-mono text-xs w-9 text-gray-500">{p.player!.pos}</span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+                  <span className="truncate flex-1">{p.player!.name}</span>
                   {mode === "auction" && p.price != null && (
-                    <span className={`font-mono text-2xs ${priceColor}`}>${p.price}</span>
+                    <span className="font-mono text-amber-700 text-xs">${p.price}</span>
                   )}
                 </div>
               );
@@ -103,7 +97,7 @@ export default function RosterPanel({ picks, board, settings, onReset, mode }: P
         )}
 
         {mine.length === 0 && (
-          <div className="px-2 py-1 text-xs italic text-faint">No picks yet.</div>
+          <div className="text-xs text-gray-500 italic">No picks yet.</div>
         )}
       </div>
     </div>

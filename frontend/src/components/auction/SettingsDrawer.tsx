@@ -17,56 +17,56 @@ export default function SettingsDrawer({ settings, onSave, onClose }: Props) {
 
   const numField = (label: string, value: number, onChange: (v: number) => void, step = 1) => (
     <label key={label} className="flex items-center justify-between gap-2 text-xs">
-      <span className="text-muted">{label}</span>
+      <span className="text-gray-500">{label}</span>
       <input
         type="number"
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className="w-20 rounded-md border border-line bg-sunken px-2 py-1 text-right font-mono text-ink focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/15"
+        className="w-20 px-2 py-1 rounded bg-gray-50 border border-gray-300 text-right font-mono text-gray-700 focus:outline-none focus:border-gray-400"
       />
     </label>
   );
 
   return (
-    <div className="border-b border-line bg-surface shadow-card">
-      <div className="mx-auto grid max-w-6xl gap-6 px-4 py-5 sm:grid-cols-3">
-        <div className="space-y-2.5">
-          <h3 className="eyebrow">Auction</h3>
+    <div className="border-b border-gray-200 bg-gray-50">
+      <div className="max-w-6xl mx-auto px-4 py-4 grid sm:grid-cols-3 gap-5">
+        <div className="space-y-2">
+          <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Auction</h3>
           {numField("Teams", local.teams, (v) => set({ teams: v }))}
           {numField("Budget / team ($)", local.budget, (v) => set({ budget: v }))}
           {numField("Points / reception", local.ppr, (v) => set({ ppr: v }), 0.5)}
           <label className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-muted">Superflex</span>
+            <span className="text-gray-500">Superflex</span>
             <input
               type="checkbox"
               checked={local.superflex}
               onChange={(e) => set({ superflex: e.target.checked, roster: { ...local.roster, SF: e.target.checked ? 1 : 0 } })}
-              className="h-4 w-4 accent-brand"
+              className="accent-amber-500 w-4 h-4"
             />
           </label>
         </div>
 
-        <div className="space-y-2.5">
-          <h3 className="eyebrow">Roster (per team)</h3>
+        <div className="space-y-2">
+          <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Roster (per team)</h3>
           {(["QB","RB","WR","TE","FLEX","K","DST","BENCH"] as const).map((k) =>
             numField(k, local.roster[k] ?? 0, (v) => setRoster(k, v))
           )}
         </div>
 
-        <div className="space-y-2.5">
-          <h3 className="eyebrow">Your draft slot</h3>
+        <div className="space-y-2">
+          <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Your draft slot</h3>
           {numField("Draft slot", local.draftSlot ?? 1, (v) => set({ draftSlot: v }))}
         </div>
       </div>
 
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-4 pb-4">
-        <button onClick={onClose} className="flex items-center gap-1 text-xs text-muted hover:text-ink">
-          <X className="h-3.5 w-3.5" /> Cancel
+      <div className="max-w-6xl mx-auto px-4 pb-3 flex items-center justify-between">
+        <button onClick={onClose} className="flex items-center gap-1 text-gray-500 hover:text-gray-600 text-xs">
+          <X className="w-3.5 h-3.5" /> Cancel
         </button>
         <button
           onClick={() => { onSave(local); onClose(); }}
-          className="btn-brand px-3.5 py-1.5 text-xs"
+          className="text-xs px-3 py-1.5 rounded bg-amber-50 border border-amber-300 text-amber-700 hover:bg-amber-100"
         >
           Save settings
         </button>
