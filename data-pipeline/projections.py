@@ -110,30 +110,52 @@ def main():
     ap.add_argument("--scoring", default="HALF", help="STD | HALF | PPR (FantasyPros API)")
     ap.add_argument("--fp-api", action="store_true",
                     help="force the FantasyPros API (otherwise auto-on when FANTASYPROS_API_KEY is set)")
+    ap.add_argument("--no-fp-proj", action="store_true",
+                    help="skip FantasyPros API projections (keep the baseline `proj`)")
     args = ap.parse_args()
 
     players = json.load(open(args.base))
     print(f"Loaded {len(players)} players from {args.base}")
 
-    # ECR/ADP source: FantasyPros API when a key is present, else free nflverse.
+    # FantasyPros API when a key is present (or --fp-api), else free nflverse.
+    use_api = bool(args.fp_api or os.getenv("FANTASYPROS_API_KEY"))
+    fp_mod = None
+    if use_api:
+        try:
+            import fantasypros as fp_mod
+        except Exception as e:
+            print(f"  ! could not import fantasypros ({e})")
+
+    # --- ECR / ADP ---
     ecr: dict = {}
     adp: dict = {}
     source = "nflverse load_ff_rankings"
-    if args.fp_api or os.getenv("FANTASYPROS_API_KEY"):
+    if fp_mod:
         try:
-            import fantasypros
-            fp = fantasypros.fetch_rankings(args.season, args.scoring)
+            fp = fp_mod.fetch_rankings(args.season, args.scoring)
             ecr = {k: v["ecr"] for k, v in fp.items() if v.get("ecr") is not None}
             adp = {k: v["adp"] for k, v in fp.items() if v.get("adp") is not None}
             source = f"FantasyPros API ({args.scoring}, {args.season})"
             print(f"Pulling ECR/ADP from {source}…  {len(ecr)} ranked players")
         except Exception as e:
-            print(f"  ! FantasyPros API failed ({e}); falling back to nflverse ECR")
+            print(f"  ! FantasyPros rankings failed ({e}); falling back to nflverse ECR")
     if not ecr:
         print("Pulling FantasyPros ECR from nflverse…")
         ecr = load_ecr()
 
-    proj = load_proj_csv(args.proj_csv) if args.proj_csv else {}
+    # --- projections (proj) --- explicit CSV wins; else the API; else baseline.
+    proj: dict = {}
+    proj_source = "baseline (unchanged)"
+    if args.proj_csv:
+        proj = load_proj_csv(args.proj_csv)
+        proj_source = args.proj_csv
+    elif fp_mod and not args.no_fp_proj:
+        try:
+            proj = fp_mod.fetch_projections(args.season, args.scoring)
+            proj_source = f"FantasyPros API projections ({args.scoring}, {args.season})"
+            print(f"Pulling projections from {proj_source}…  {len(proj)} players")
+        except Exception as e:
+            print(f"  ! FantasyPros projections failed ({e}); proj left as baseline")
 
     n_ecr = n_adp = n_proj = 0
     for p in players:
@@ -149,10 +171,11 @@ def main():
     print(f"  ✓ ECR matched: {n_ecr}/{len(players)}  (source: {source})")
     if n_adp:
         print(f"  ✓ ADP matched: {n_adp}/{len(players)}")
-    if args.proj_csv:
-        print(f"  ✓ projections matched: {n_proj}/{len(players)}")
+    if proj:
+        print(f"  ✓ projections matched: {n_proj}/{len(players)}  (source: {proj_source})")
     else:
-        print("  • no --proj-csv given; `proj` left as-is (export FantasyPros projections for real forecasts)")
+        print("  • projections: none applied; `proj` left as baseline "
+              "(set FANTASYPROS_API_KEY, or pass --proj-csv, for real forecasts)")
     print(f"Wrote {args.out}")
 
 if __name__ == "__main__":

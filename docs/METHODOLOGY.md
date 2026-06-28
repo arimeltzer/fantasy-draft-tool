@@ -19,7 +19,7 @@ Source of truth: `frontend/src/engine/valuation-engine.js` and
 |---|---|---|
 | Player universe, teams, ages | nflverse (`ingest_nflverse.py`) | players who matter for fantasy |
 | `last` (prior-season actual stat line + games played) | nflverse weekly/season stats | per-game pace basis |
-| `proj` (this-season projected stat line) | baseline from ingest, or a FantasyPros projections CSV (`projections.py --proj-csv`) | component stats (pass/rush/rec yds, TDs, etc.) |
+| `proj` (this-season projected stat line) | **FantasyPros API** (auto when `FANTASYPROS_API_KEY` is set) or a projections CSV (`projections.py --proj-csv`); else the ingest baseline | component stats (pass/rush/rec yds, TDs, etc.) |
 | `ecr` (expert consensus rank), `adp` | FantasyPros — free nflverse `load_ff_rankings()`, or the FantasyPros API (`fantasypros.py`, scoring-aware) | market baseline |
 | Schedule (2026 opponents per week) | nflverse | drives SOS |
 | Game logs (2025 weekly fantasy pts vs each defense) | nflverse | drives SOS opponent adjustment |

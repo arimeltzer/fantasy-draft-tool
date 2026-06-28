@@ -30,8 +30,8 @@ frontend/           React + TS + Vite + Tailwind (light design system)
   src/components/, pages/, hooks/, lib/api.ts, lib/posStyles.ts
 data-pipeline/      offline data prep -> JSON -> Postgres
   ingest_nflverse.py  pull players/schedule/logs from nflverse
-  projections.py      ECR/ADP enrichment (nflverse free OR FantasyPros API)
-  fantasypros.py      FantasyPros public API client (x-api-key)
+  projections.py      ECR/ADP + projections enrichment (nflverse free OR FantasyPros API)
+  fantasypros.py      FantasyPros public API client (x-api-key): rankings + projections
   load_to_db.py       load JSON into Postgres (also bakes SOS multipliers)
   sos_backtest.py / sos_engine.py   empirical SOS tuning (validated vs JS)
 ```

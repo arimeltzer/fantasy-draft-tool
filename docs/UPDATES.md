@@ -8,10 +8,12 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ## 2026-06 — FantasyPros API + project docs
 - **FantasyPros enrichment.** `data-pipeline/fantasypros.py` pulls current,
-  scoring-aware consensus ECR/ADP via the public API (`x-api-key`,
-  `FANTASYPROS_API_KEY`). `projections.py` uses it automatically when the key is
-  set, else falls back to the free nflverse snapshot. Parser fixture-tested;
-  live call validated where the key lives (sandbox egress blocks the API).
+  scoring-aware consensus ECR/ADP **and component projections** via the public
+  API (`x-api-key`, `FANTASYPROS_API_KEY`). `projections.py` uses it
+  automatically when the key is set — filling real `proj` stat lines (the value
+  blend's accuracy ceiling) plus ECR/ADP — else falls back to the free nflverse
+  snapshot. Both parsers fixture-tested; live calls validated where the key
+  lives (sandbox egress blocks the API). `--no-fp-proj` keeps the baseline proj.
 - **Docs.** Added `CLAUDE.md` (architecture/env/deploy/gotchas/status), this log,
   and `README.md`.
 
