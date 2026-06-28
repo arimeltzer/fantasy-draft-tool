@@ -38,6 +38,8 @@ cd backend  && python -m integrations.selftest   # import-layer tests
 
 - **`CLAUDE.md`** — architecture, env vars, deploy, gotchas, current status.
   Start here.
+- **`docs/METHODOLOGY.md`** — how player values are computed (sourcing +
+  formulas + parameters); self-contained for analysis.
 - **`docs/UPDATES.md`** — running changelog.
 - **`backend/INTEGRATIONS.md`** — ESPN/Yahoo import setup.
 - **`data-pipeline/SOS_TUNING_RESULTS.md`** — SOS backtest method + results.
