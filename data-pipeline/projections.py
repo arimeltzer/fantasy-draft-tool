@@ -19,7 +19,7 @@ RUN
   python projections.py --base data/players_base.json --out data/players_base.json
   python projections.py --base data/players_base.json --out data/players_base.json --proj-csv fp_2026.csv
 """
-import argparse, csv, json, re
+import argparse, csv, json, os, re
 import nflreadpy as nfl
 
 FANTASY_POS = {"QB", "RB", "WR", "TE"}
@@ -106,29 +106,76 @@ def main():
     ap.add_argument("--base", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--proj-csv", default=None)
+    ap.add_argument("--season", type=int, default=2026, help="season for the FantasyPros API")
+    ap.add_argument("--scoring", default="HALF", help="STD | HALF | PPR (FantasyPros API)")
+    ap.add_argument("--fp-api", action="store_true",
+                    help="force the FantasyPros API (otherwise auto-on when FANTASYPROS_API_KEY is set)")
+    ap.add_argument("--no-fp-proj", action="store_true",
+                    help="skip FantasyPros API projections (keep the baseline `proj`)")
     args = ap.parse_args()
 
     players = json.load(open(args.base))
     print(f"Loaded {len(players)} players from {args.base}")
 
-    print("Pulling FantasyPros ECR from nflverse…")
-    ecr = load_ecr()
-    proj = load_proj_csv(args.proj_csv) if args.proj_csv else {}
+    # FantasyPros API when a key is present (or --fp-api), else free nflverse.
+    use_api = bool(args.fp_api or os.getenv("FANTASYPROS_API_KEY"))
+    fp_mod = None
+    if use_api:
+        try:
+            import fantasypros as fp_mod
+        except Exception as e:
+            print(f"  ! could not import fantasypros ({e})")
 
-    n_ecr = n_proj = 0
+    # --- ECR / ADP ---
+    ecr: dict = {}
+    adp: dict = {}
+    source = "nflverse load_ff_rankings"
+    if fp_mod:
+        try:
+            fp = fp_mod.fetch_rankings(args.season, args.scoring)
+            ecr = {k: v["ecr"] for k, v in fp.items() if v.get("ecr") is not None}
+            adp = {k: v["adp"] for k, v in fp.items() if v.get("adp") is not None}
+            source = f"FantasyPros API ({args.scoring}, {args.season})"
+            print(f"Pulling ECR/ADP from {source}…  {len(ecr)} ranked players")
+        except Exception as e:
+            print(f"  ! FantasyPros rankings failed ({e}); falling back to nflverse ECR")
+    if not ecr:
+        print("Pulling FantasyPros ECR from nflverse…")
+        ecr = load_ecr()
+
+    # --- projections (proj) --- explicit CSV wins; else the API; else baseline.
+    proj: dict = {}
+    proj_source = "baseline (unchanged)"
+    if args.proj_csv:
+        proj = load_proj_csv(args.proj_csv)
+        proj_source = args.proj_csv
+    elif fp_mod and not args.no_fp_proj:
+        try:
+            proj = fp_mod.fetch_projections(args.season, args.scoring)
+            proj_source = f"FantasyPros API projections ({args.scoring}, {args.season})"
+            print(f"Pulling projections from {proj_source}…  {len(proj)} players")
+        except Exception as e:
+            print(f"  ! FantasyPros projections failed ({e}); proj left as baseline")
+
+    n_ecr = n_adp = n_proj = 0
     for p in players:
         k = (norm(p.get("name")), p.get("pos"))
         if k in ecr:
             p["ecr"] = round(ecr[k], 1); n_ecr += 1
+        if k in adp:
+            p["adp"] = round(adp[k], 1); n_adp += 1
         if k in proj:
             p["proj"] = proj[k]; n_proj += 1
 
     json.dump(players, open(args.out, "w"), indent=2)
-    print(f"  ✓ ECR matched: {n_ecr}/{len(players)}")
-    if args.proj_csv:
-        print(f"  ✓ projections matched: {n_proj}/{len(players)}")
+    print(f"  ✓ ECR matched: {n_ecr}/{len(players)}  (source: {source})")
+    if n_adp:
+        print(f"  ✓ ADP matched: {n_adp}/{len(players)}")
+    if proj:
+        print(f"  ✓ projections matched: {n_proj}/{len(players)}  (source: {proj_source})")
     else:
-        print("  • no --proj-csv given; `proj` left as-is (export FantasyPros projections for real forecasts)")
+        print("  • projections: none applied; `proj` left as baseline "
+              "(set FANTASYPROS_API_KEY, or pass --proj-csv, for real forecasts)")
     print(f"Wrote {args.out}")
 
 if __name__ == "__main__":
