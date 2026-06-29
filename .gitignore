@@ -1,5 +1,6 @@
 frontend/node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo
 backend/__pycache__/
 data-pipeline/__pycache__/
 data-pipeline/data/
