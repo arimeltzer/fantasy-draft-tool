@@ -27,6 +27,9 @@ export const DEFAULT_PARAMS = {
   },
   ageClamp: [0.85, 1.06],
 
+  // FLEX spots split across RB/WR/TE when computing replacement level.
+  flexShare: { RB: 0.50, WR: 0.42, TE: 0.08 },
+
   // Projection methodology (ported from the offline research model). Player
   // value is projected client-side from two prior seasons + age + ADP, rather
   // than trusting an external `proj` field. Tune here to change every board.
