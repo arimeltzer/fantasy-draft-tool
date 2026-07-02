@@ -17,6 +17,9 @@ import NominationPanel from "@/components/auction/NominationPanel";
 import InflationBadge from "@/components/auction/InflationBadge";
 import RosterPanel from "@/components/shared/RosterPanel";
 import CommonOpponentsPopover from "@/components/shared/CommonOpponentsPopover";
+import DraftOverview from "@/components/shared/DraftOverview";
+import DraftLogModal from "@/components/shared/DraftLogModal";
+import Tip from "@/components/shared/Tip";
 import SettingsDrawer from "./SettingsDrawer";
 
 interface Props {
@@ -36,6 +39,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   const [hideDrafted, setHideDrafted] = useState(true);
   const [prices, setPrices] = useState<Record<number, number>>({});
   const [showSettings, setShowSettings] = useState(false);
+  const [showLog, setShowLog] = useState(false);
 
   const rosterSize = useMemo(() => {
     const r = settings.roster;
@@ -205,10 +209,18 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           <div className="rounded-lg border border-gray-200 overflow-hidden">
             <div className="grid grid-cols-[40px_1fr_64px_110px] sm:grid-cols-[44px_1fr_60px_64px_64px_150px] gap-2 px-3 py-2 bg-white/80 text-xs uppercase tracking-wider text-gray-500 font-mono">
               <span>Pos</span><span>Player</span>
-              <span className="text-right hidden sm:block">VBD</span>
-              <span className="text-right hidden sm:block">$Par</span>
-              <span className="text-right">$Live</span>
-              <span className="text-right">Bid / buy</span>
+              <span className="text-right hidden sm:block">
+                <Tip tip="Value Based Drafting: projected points above a replacement-level player at the same position. The bigger the number, the more this player wins you over a waiver-wire fill-in.">VBD</Tip>
+              </span>
+              <span className="text-right hidden sm:block">
+                <Tip tip="Par value: the player's fair auction price before the draft starts — the league's total budget split among draftable players in proportion to VBD.">$Par</Tip>
+              </span>
+              <span className="text-right">
+                <Tip tip="Live value: par price repriced for how the room is actually spending. If teams have overpaid so far, remaining players are worth more (inflation), and vice versa. Red means it's above the max you can bid.">$Live</Tip>
+              </span>
+              <span className="text-right">
+                <Tip tip="Type the final winning price, then hit Mine if you won the player or pick the opponent who did.">Bid / buy</Tip>
+              </span>
             </div>
 
             <div className="divide-y divide-gray-200 max-h-[62vh] overflow-y-auto">
@@ -237,14 +249,24 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                         {pickEntry?.mine && <Crown className="w-3 h-3 text-amber-400 shrink-0" />}
                         <span className="font-medium truncate">{p.name}</span>
                         <span className="font-mono text-xs text-gray-500">{p.team}</span>
-                        {p.tier && <span className="text-xs font-mono bg-gray-100 px-1 rounded text-gray-500">T{p.tier}</span>}
-                        {p.risk >= 0.4 && <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />}
+                        {p.tier && <span className="text-xs font-mono bg-gray-100 px-1 rounded text-gray-500" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
+                        {p.risk >= 0.4 && (
+                          <span title={`Elevated risk (${p.risk} of 1) from week-to-week volatility, injury history, or age — expect a wider range of outcomes`}>
+                            <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />
+                          </span>
+                        )}
                         {typeof p.id === "number" && <CommonOpponentsPopover playerId={p.id} />}
                       </div>
                       <div className="text-xs text-gray-500 font-mono tabular-nums">
-                        {p.valuePoints}pt{p.priorEquiv != null ? ` · '25 pace ${p.priorEquiv}` : " · no '25"}
+                        <span title="Projected fantasy points this season under your league's scoring">{p.valuePoints}pt</span>
+                        <span title={p.priorEquiv != null ? "Last season's scoring pace over a full 17 games — a reality check on the projection" : "No 2025 stats — rookie or missed season, so the projection leans on market rankings"}>
+                          {p.priorEquiv != null ? ` · '25 pace ${p.priorEquiv}` : " · no '25"}
+                        </span>
                         {mktDiff != null && (
-                          <span className={`ml-1 ${mktDiff > 0 ? "text-emerald-600" : "text-rose-500"}`}>
+                          <span
+                            className={`ml-1 ${mktDiff > 0 ? "text-emerald-600" : "text-rose-500"}`}
+                            title={`This tool ranks the player ${Math.abs(mktDiff)} spot${Math.abs(mktDiff) === 1 ? "" : "s"} ${mktDiff > 0 ? "lower than" : "higher than"} expert consensus — ${mktDiff > 0 ? "the market likes them more (they'll cost extra)" : "a potential bargain the market is sleeping on"}`}
+                          >
                             mkt {mktDiff > 0 ? "+" : ""}{mktDiff}
                           </span>
                         )}
@@ -255,9 +277,12 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                       <ValueBar pos={p.pos} vbd={p.vbd} maxVbd={maxVbd} />
                     </div>
 
-                    <span className="text-right font-mono text-xs text-gray-500 hidden sm:block">${p.parValue}</span>
+                    <span className="text-right font-mono text-xs text-gray-500 hidden sm:block" title="Pre-draft fair price (par value)">${p.parValue}</span>
 
-                    <span className={`text-right font-mono text-sm tabular-nums ${overMax && !sold ? "text-rose-600" : "text-amber-700"}`}>
+                    <span
+                      className={`text-right font-mono text-sm tabular-nums ${overMax && !sold ? "text-rose-600" : "text-amber-700"}`}
+                      title={overMax && !sold ? `Inflation-adjusted value — above your current max bid of $${myMax}` : "What the player is worth right now, adjusted for draft-room inflation"}
+                    >
                       ${live}
                     </span>
 
@@ -315,6 +340,14 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
             maxBid={myMax}
           />
 
+          <DraftOverview
+            picks={picks}
+            board={board}
+            settings={settings}
+            mode="auction"
+            onEditLog={() => setShowLog(true)}
+          />
+
           <RosterPanel
             picks={picks}
             board={board}
@@ -334,6 +367,16 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           />
         </aside>
       </main>
+
+      {showLog && (
+        <DraftLogModal
+          picks={picks}
+          board={board}
+          settings={settings}
+          mode="auction"
+          onClose={() => setShowLog(false)}
+        />
+      )}
     </div>
   );
 }

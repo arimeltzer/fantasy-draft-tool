@@ -1,5 +1,6 @@
 import { TrendingUp } from "lucide-react";
 import { posStyle } from "@/lib/posStyles";
+import Tip from "@/components/shared/Tip";
 import { LeagueSettings } from "@/lib/api";
 import { BoardPlayer } from "@/engine/valuation-engine.js";
 
@@ -37,7 +38,9 @@ export default function NeedsPanel({ mine, settings, draftedCount, untilMine }: 
     <div className="rounded-lg border border-gray-200 bg-gray-100 p-3">
       <div className="flex items-center gap-2 mb-2">
         <TrendingUp className="w-4 h-4 text-gray-500" />
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Still need</h2>
+        <Tip tip="Starting-lineup spots you haven't filled yet, by position. Bench depth doesn't count against these.">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Still need</h2>
+        </Tip>
       </div>
       <div className="flex flex-wrap gap-1.5 mb-3">
         {(Object.entries(needs) as [string, number][]).filter(([, n]) => n > 0).map(([pos, n]) => {
@@ -56,11 +59,11 @@ export default function NeedsPanel({ mine, settings, draftedCount, untilMine }: 
         {!hasNeeds && <span className="text-xs text-gray-500">Starters filled — draft for depth.</span>}
       </div>
       <div className="pt-2.5 border-t border-gray-200 grid grid-cols-2 gap-2 text-center">
-        <div>
+        <div title="Total players drafted by all teams so far">
           <div className="font-mono text-base text-gray-700">{draftedCount}</div>
           <div className="text-xs uppercase text-gray-400">picks made</div>
         </div>
-        <div>
+        <div title="Picks by other teams before you're on the clock again (based on your draft slot and the snake order)">
           <div className="font-mono text-base text-emerald-600">{untilMine ?? "—"}</div>
           <div className="text-xs uppercase text-gray-400">till your turn</div>
         </div>

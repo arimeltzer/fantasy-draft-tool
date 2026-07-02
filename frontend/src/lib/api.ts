@@ -142,6 +142,8 @@ export const api = {
   picks: (leagueId: number) => req<ApiPick[]>(`/api/leagues/${leagueId}/picks`),
   addPick: (leagueId: number, data: { player_id?: number; mine: boolean; team_id?: number; price?: number; slot?: string }) =>
     req<ApiPick>(`/api/leagues/${leagueId}/picks`, { method: "POST", body: JSON.stringify(data) }),
+  updatePick: (leagueId: number, pickId: number, data: Partial<{ player_id: number | null; mine: boolean; team_id: number | null; price: number | null; slot: string | null }>) =>
+    req<ApiPick>(`/api/leagues/${leagueId}/picks/${pickId}`, { method: "PATCH", body: JSON.stringify(data) }),
   deletePick: (leagueId: number, pickId: number) =>
     req<void>(`/api/leagues/${leagueId}/picks/${pickId}`, { method: "DELETE" }),
 };

@@ -1,5 +1,6 @@
 import { Target, Check } from "lucide-react";
 import { posStyle } from "@/lib/posStyles";
+import Tip from "@/components/shared/Tip";
 import { pickScore } from "@/engine/snake-engine.js";
 import type { BoardPlayer, SnakeLiveState } from "@/engine/snake-engine.js";
 
@@ -26,8 +27,12 @@ export default function Recommendations({ board, draftedIds, live, onDraft }: Pr
     <div className="mb-4 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.04] p-3">
       <div className="flex items-center gap-2 mb-2.5">
         <Target className="w-4 h-4 text-emerald-600" />
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Recommended now</h2>
-        <span className="text-xs text-gray-500">need-adjusted</span>
+        <Tip tip="The model's best picks for you right now — not just the highest-ranked players, but the best mix of value, your open roster spots, and how fast each position is drying up.">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Recommended now</h2>
+        </Tip>
+        <Tip tip="Scores are adjusted for what your roster still needs — a position you've filled scores lower even if the player ranks higher overall.">
+          <span className="text-xs text-gray-500">need-adjusted</span>
+        </Tip>
       </div>
       <div className="grid sm:grid-cols-2 gap-2">
         {recs.map((p, i) => {
@@ -44,12 +49,13 @@ export default function Recommendations({ board, draftedIds, live, onDraft }: Pr
                   <div className="text-xs text-gray-500 truncate">{p.reasons.join(" · ")}</div>
                 )}
               </div>
-              <div className="text-right">
+              <div className="text-right" title="Projected points above a replacement-level player at this position">
                 <div className="font-mono text-xs text-gray-700 tabular-nums">{p.vbd}</div>
                 <div className="text-xs text-gray-400 uppercase">vbd</div>
               </div>
               <button
                 onClick={() => onDraft(p)}
+                title="Draft this player to your team"
                 className="ml-1 p-1.5 rounded bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-100"
               >
                 <Check className="w-3.5 h-3.5" />

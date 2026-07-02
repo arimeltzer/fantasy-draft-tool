@@ -1,5 +1,6 @@
 import { Crown, RotateCcw } from "lucide-react";
 import { posStyle } from "@/lib/posStyles";
+import Tip from "@/components/shared/Tip";
 import { BoardPlayer } from "@/engine/valuation-engine.js";
 import { LeagueSettings } from "@/lib/api";
 import { DraftEntry } from "@/store/draftStore";
@@ -49,9 +50,11 @@ export default function RosterPanel({ picks, board, settings, onReset, mode }: P
       <div className="flex items-center justify-between mb-2.5">
         <div className="flex items-center gap-2">
           <Crown className="w-4 h-4 text-gray-500" />
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">My roster</h2>
+          <Tip tip="Your picks, auto-arranged into the best starting lineup (highest projected points fill each slot first); everyone left goes to the bench.">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">My roster</h2>
+          </Tip>
         </div>
-        <button onClick={onReset} title="Reset draft" className="text-gray-500 hover:text-gray-600">
+        <button onClick={onReset} title="Clear every pick in this draft and start over (asks for confirmation)" className="text-gray-500 hover:text-gray-600">
           <RotateCcw className="w-3.5 h-3.5" />
         </button>
       </div>

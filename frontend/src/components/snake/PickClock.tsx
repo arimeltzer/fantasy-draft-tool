@@ -12,7 +12,9 @@ export default function PickClock({ draftSlot, teams, overallPick }: Props) {
   const untilMine = nextMine != null ? nextMine - overallPick : null;
 
   return (
-    <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 font-mono text-xs">
+    <div
+      title={`The draft is on overall pick ${overallPick}.${untilMine != null ? ` Your next turn is pick ${nextMine} — ${untilMine === 0 ? "you're up now" : `${untilMine} pick${untilMine === 1 ? "" : "s"} away`}.` : " You have no picks left."}`}
+      className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 font-mono text-xs cursor-help">
       <span className="text-gray-500">Pick</span>
       <span className="text-gray-700">{overallPick}</span>
       {untilMine != null && (

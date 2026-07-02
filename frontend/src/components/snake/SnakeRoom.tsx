@@ -11,6 +11,9 @@ import BoardControls from "@/components/board/BoardControls";
 import ValueBar from "@/components/board/ValueBar";
 import RosterPanel from "@/components/shared/RosterPanel";
 import CommonOpponentsPopover from "@/components/shared/CommonOpponentsPopover";
+import DraftOverview from "@/components/shared/DraftOverview";
+import DraftLogModal from "@/components/shared/DraftLogModal";
+import Tip from "@/components/shared/Tip";
 import PickClock from "./PickClock";
 import NeedsPanel, { computeNeeds } from "./NeedsPanel";
 import Recommendations from "./Recommendations";
@@ -32,6 +35,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   const [posFilter, setPosFilter] = useState("ALL");
   const [hideTaken, setHideTaken] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [showLog, setShowLog] = useState(false);
 
   const draftedIds = useMemo(() => new Set(picks.map((p) => p.playerId).filter(Boolean) as number[]), [picks]);
   const overallPick = picks.length + 1;
@@ -176,8 +180,12 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
               <span>#</span>
               <span className="hidden sm:block">Pos</span>
               <span>Player</span>
-              <span className="hidden sm:block text-right">VBD</span>
-              <span className="text-right">Action</span>
+              <span className="hidden sm:block text-right">
+                <Tip tip="Value Based Drafting: projected points above a replacement-level player at the same position. The bigger the number, the more this player wins you over a waiver-wire fill-in.">VBD</Tip>
+              </span>
+              <span className="text-right">
+                <Tip tip="✓ = you drafted the player · ✕ = another team took them. Either way they come off the board.">Action</Tip>
+              </span>
             </div>
 
             <div className="divide-y divide-gray-200 max-h-[60vh] overflow-y-auto">
@@ -211,15 +219,22 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
                         {mine && <Crown className="w-3 h-3 text-emerald-600 shrink-0" />}
                         <span className="font-medium truncate">{p.name}</span>
                         <span className="font-mono text-xs text-gray-500">{p.team}</span>
-                        {p.tier && <span className="text-xs font-mono bg-gray-100 px-1 rounded text-gray-500">T{p.tier}</span>}
-                        {p.risk >= 0.4 && <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />}
+                        {p.tier && <span className="text-xs font-mono bg-gray-100 px-1 rounded text-gray-500" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
+                        {p.risk >= 0.4 && (
+                          <span title={`Elevated risk (${p.risk} of 1) from week-to-week volatility, injury history, or age — expect a wider range of outcomes`}>
+                            <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />
+                          </span>
+                        )}
                         {typeof p.id === "number" && <CommonOpponentsPopover playerId={p.id} />}
                       </div>
                       <div className="text-xs text-gray-500 font-mono tabular-nums sm:hidden">
                         {p.pos} · vbd {p.vbd} · {p.valuePoints}pt{p.age ? ` · ${p.age}y` : ""}
                       </div>
                       {mktDiff != null && (
-                        <div className={`text-xs font-mono hidden sm:block ${mktDiff > 0 ? "text-emerald-600" : "text-rose-500"}`}>
+                        <div
+                          className={`text-xs font-mono hidden sm:block ${mktDiff > 0 ? "text-emerald-600" : "text-rose-500"}`}
+                          title={`This tool ranks the player ${Math.abs(mktDiff)} spot${Math.abs(mktDiff) === 1 ? "" : "s"} ${mktDiff > 0 ? "lower than" : "higher than"} expert consensus — ${mktDiff > 0 ? "they'll likely still be there later" : "a potential value the market is sleeping on"}`}
+                        >
                           mkt {mktDiff > 0 ? "+" : ""}{mktDiff}
                         </div>
                       )}
@@ -267,6 +282,14 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
         </section>
 
         <aside className="space-y-3">
+          <DraftOverview
+            picks={picks}
+            board={board}
+            settings={settings}
+            mode="snake"
+            onEditLog={() => setShowLog(true)}
+          />
+
           <RosterPanel
             picks={picks}
             board={board}
@@ -283,6 +306,16 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
           />
         </aside>
       </main>
+
+      {showLog && (
+        <DraftLogModal
+          picks={picks}
+          board={board}
+          settings={settings}
+          mode="snake"
+          onClose={() => setShowLog(false)}
+        />
+      )}
     </div>
   );
 }

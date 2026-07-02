@@ -18,6 +18,7 @@ interface DraftState {
 
   hydrate: (leagueId: number) => Promise<void>;
   addPick: (data: { playerId?: number; mine: boolean; teamId?: number; price?: number; slot?: string }) => Promise<void>;
+  updatePick: (pickId: number, data: Partial<{ playerId: number | null; mine: boolean; teamId: number | null; price: number | null }>) => Promise<void>;
   removePick: (pickId: number) => Promise<void>;
   clear: () => void;
 }
@@ -60,6 +61,18 @@ export const useDraftStore = create<DraftState>((set, get) => ({
       slot: data.slot,
     });
     set((s) => ({ picks: [...s.picks, mapPick(serverPick)] }));
+  },
+
+  updatePick: async (pickId, data) => {
+    const { leagueId } = get();
+    if (!leagueId) return;
+    const body: Parameters<typeof api.updatePick>[2] = {};
+    if ("playerId" in data) body.player_id = data.playerId;
+    if ("mine" in data) body.mine = data.mine;
+    if ("teamId" in data) body.team_id = data.teamId;
+    if ("price" in data) body.price = data.price;
+    const serverPick = await api.updatePick(leagueId, pickId, body);
+    set((s) => ({ picks: s.picks.map((p) => (p.pickId === pickId ? mapPick(serverPick) : p)) }));
   },
 
   removePick: async (pickId) => {
