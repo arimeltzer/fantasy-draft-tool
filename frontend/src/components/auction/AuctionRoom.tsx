@@ -197,7 +197,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
         />
       )}
 
-      <main className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+      <main className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-1 lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_300px_300px] gap-4">
         <section>
           <BoardControls
             query={query} onQuery={setQuery}
@@ -207,7 +207,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           />
 
           <div className="rounded-lg border border-gray-200 overflow-hidden">
-            <div className="grid grid-cols-[40px_1fr_64px_110px] sm:grid-cols-[44px_1fr_60px_64px_64px_150px] gap-2 px-3 py-2 bg-white/80 text-xs uppercase tracking-wider text-gray-500 font-mono">
+            <div className="grid grid-cols-[40px_1fr_64px_128px] sm:grid-cols-[44px_1fr_60px_64px_64px_160px] gap-2 px-3 py-2 bg-white/80 text-xs uppercase tracking-wider text-gray-500 font-mono">
               <span>Pos</span><span>Player</span>
               <span className="text-right hidden sm:block">
                 <Tip tip="Value Based Drafting: projected points above a replacement-level player at the same position. The bigger the number, the more this player wins you over a waiver-wire fill-in.">VBD</Tip>
@@ -237,7 +237,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                 return (
                   <div
                     key={p.id}
-                    className={`grid grid-cols-[40px_1fr_64px_110px] sm:grid-cols-[44px_1fr_60px_64px_64px_150px] gap-2 px-3 py-2 items-center text-sm ${sold ? "opacity-40" : "hover:bg-gray-100"}`}
+                    className={`grid grid-cols-[40px_1fr_64px_128px] sm:grid-cols-[44px_1fr_60px_64px_64px_160px] gap-2 px-3 py-2 items-center text-sm ${sold ? "opacity-40" : "hover:bg-gray-100"}`}
                   >
                     <span className="flex items-center gap-1 text-xs font-mono">
                       <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
@@ -300,21 +300,20 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                             type="number"
                             value={prices[p.id as number] ?? live}
                             onChange={(e) => setPrices((pr) => ({ ...pr, [p.id as number]: Number(e.target.value) }))}
-                            className="w-12 px-1.5 py-1 rounded bg-gray-50 border border-gray-300 text-right font-mono text-xs text-gray-700 focus:outline-none focus:border-amber-600"
+                            className="w-10 sm:w-12 px-1.5 py-1 rounded bg-gray-50 border border-gray-300 text-right font-mono text-xs text-gray-700 focus:outline-none focus:border-amber-600"
                           />
-                          <button
-                            onClick={() => buy(p, true)}
-                            className="px-1.5 py-1 rounded text-xs bg-amber-50 border border-amber-300 text-amber-700 hover:bg-amber-100"
-                          >
-                            Mine
-                          </button>
                           <select
                             value=""
-                            onChange={(e) => { if (e.target.value !== "") buy(p, false, Number(e.target.value)); }}
-                            title="Won by an opponent — pick which team"
-                            className="px-1 py-1 rounded text-xs bg-gray-50 border border-gray-300 text-gray-500 hover:text-gray-700 focus:outline-none focus:border-gray-400 max-w-[72px]"
+                            onChange={(e) => {
+                              if (e.target.value === "") return;
+                              if (e.target.value === "mine") buy(p, true);
+                              else buy(p, false, Number(e.target.value));
+                            }}
+                            title="Who won this player?"
+                            className="min-w-0 flex-1 px-1 py-1 rounded text-xs bg-gray-50 border border-gray-300 text-gray-600 hover:text-gray-800 focus:outline-none focus:border-amber-500"
                           >
-                            <option value="">Out ▾</option>
+                            <option value="" disabled>Winner…</option>
+                            <option value="mine">Mine</option>
                             {opponents.map((name, i) => (
                               <option key={i} value={i}>{name}</option>
                             ))}
@@ -355,7 +354,9 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
             onReset={resetDraft}
             mode="auction"
           />
+        </aside>
 
+        <aside className="space-y-3">
           <NominationPanel
             factor={inflation.factor}
             phase={phase}
