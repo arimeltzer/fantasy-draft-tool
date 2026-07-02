@@ -24,6 +24,11 @@ jobs:
       - name: Decide whether today's run should proceed
         id: gate
         run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Manual trigger -> always proceeds, regardless of cadence"
+            exit 0
+          fi
           month=$(date -u +%-m)
           dow=$(date -u +%u)   # 1=Monday .. 7=Sunday
           if [ "$month" = "8" ] || [ "$month" = "9" ]; then
