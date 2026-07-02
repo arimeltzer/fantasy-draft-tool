@@ -133,9 +133,16 @@ export function dollarValues(board, auctionLeague, P = DEFAULT_AUCTION_PARAMS) {
   });
 }
 
-/** Expected auction price from the logarithmic opponent curve, by ADP rank. */
-export function marketPrice(adpRank, auctionLeague, P = DEFAULT_AUCTION_PARAMS, pos) {
+/**
+ * Expected auction price for a player. Prefers real FantasyPros AAV (average
+ * auction value) when available — it already reflects true market behavior
+ * (recovery premiums, positional runs, etc.) that the modeled curve below can
+ * only approximate. Falls back to the logarithmic ADP-rank curve otherwise
+ * (e.g. deep sleepers/rookies FantasyPros hasn't priced, or no AAV pulled yet).
+ */
+export function marketPrice(adpRank, auctionLeague, P = DEFAULT_AUCTION_PARAMS, pos, aav) {
   const min = P.auction.minBid;
+  if (aav != null && aav > 0) return Math.max(min, Math.round(aav));
   if (!adpRank || adpRank < 1) return min;
   const { teams, rosterSize } = auctionLeague;
   const totalPicks = Math.max(2, teams * rosterSize);

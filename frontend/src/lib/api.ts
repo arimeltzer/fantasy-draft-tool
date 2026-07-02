@@ -12,6 +12,7 @@ export interface ApiPlayer {
   last2: Record<string, number> | null;
   ecr: number | null;
   adp: number | null;
+  aav: number | null;
 }
 
 export interface ApiLeague {

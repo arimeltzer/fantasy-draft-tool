@@ -78,7 +78,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   }, [board]);
   const marketById = useMemo(() => {
     const m: Record<number, number> = {};
-    for (const p of board) m[p.id as number] = marketPrice(adpRankById[p.id as number], al, undefined, p.pos);
+    for (const p of board) m[p.id as number] = marketPrice(adpRankById[p.id as number], al, undefined, p.pos, p.aav);
     return m;
   }, [board, adpRankById, al]);
 

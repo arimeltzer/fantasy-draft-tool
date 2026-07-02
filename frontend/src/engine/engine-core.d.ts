@@ -16,6 +16,7 @@ export interface Player {
   last2?: StatLine | null;
   ecr?: number | null;
   adp?: number | null;
+  aav?: number | null;
 }
 
 export interface Scoring {

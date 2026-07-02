@@ -79,7 +79,7 @@ export declare function dollarValues(
   board: BoardPlayer[], auctionLeague: AuctionLeague, P?: AuctionParams
 ): BoardPlayer[];
 export declare function marketPrice(
-  adpRank: number, auctionLeague: AuctionLeague, P?: AuctionParams, pos?: string
+  adpRank: number, auctionLeague: AuctionLeague, P?: AuctionParams, pos?: string, aav?: number | null
 ): number;
 export declare function suggestBid(
   player: BoardPlayer, myState: MyBidState, P?: AuctionParams

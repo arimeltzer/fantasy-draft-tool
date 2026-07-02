@@ -15,6 +15,7 @@ function toEnginePlayer(p: ApiPlayer) {
     last2: p.last2 ?? null,
     ecr: p.ecr ?? undefined,
     adp: p.adp ?? undefined,
+    aav: p.aav ?? undefined,
   };
 }
 

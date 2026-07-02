@@ -207,6 +207,7 @@ class PlayerOut(BaseModel):
     last2: Optional[dict]
     ecr: Optional[float]
     adp: Optional[float]
+    aav: Optional[float]
 
     model_config = {"from_attributes": True}
 

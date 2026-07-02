@@ -113,6 +113,51 @@ def fetch_rankings(season: int, scoring: str = "HALF", api_key: str | None = Non
     return parse_rankings(data)
 
 
+def parse_aav(data: dict) -> dict:
+    """API JSON (type=auction pull) -> {(norm_name, pos): aav}.
+
+    Defensive about field names, same spirit as parse_rankings — FantasyPros
+    has used auction_value / avg_auction_value / aav / rank_ave at various times.
+    """
+    players = data.get("players") or data.get("rankings") or []
+    out: dict[tuple, float] = {}
+    for p in players:
+        name = p.get("player_name") or p.get("name") or p.get("player")
+        pos = (p.get("player_position_id") or p.get("position") or p.get("pos") or "").upper()
+        pos = re.sub(r"[^A-Z]", "", pos)
+        if pos == "DEF":
+            pos = "DST"
+        if not name or pos not in ("QB", "RB", "WR", "TE", "K", "DST"):
+            continue
+        aav = _num(p, "auction_value", "player_auction_value", "avg_auction_value", "aav", "rank_ave")
+        if aav is not None and aav > 0:
+            out[(norm(name), pos)] = round(aav, 1)
+    return out
+
+
+def fetch_aav(season: int, scoring: str = "HALF", api_key: str | None = None,
+             position: str = "ALL", week: int = 0) -> dict:
+    """Fetch consensus AUCTION values (AAV) for a season. Returns parse_aav() output.
+
+    Same endpoint as fetch_rankings with type=auction — FantasyPros' auction-format
+    consensus rankings carry the average price paid, not just rank order.
+    """
+    api_key = api_key or os.getenv("FANTASYPROS_API_KEY")
+    if not api_key:
+        raise RuntimeError("FANTASYPROS_API_KEY not set")
+    sc = SCORING.get(scoring.upper(), "HALF")
+    url = BASE.format(season=season) + "?" + urlencode(
+        {"position": position, "scoring": sc, "type": "auction", "week": week})
+    req = urllib.request.Request(url, headers={
+        "x-api-key": api_key,
+        "Accept": "application/json",
+        "User-Agent": "fantasy-draft-tool/1.0",
+    })
+    with urllib.request.urlopen(req, timeout=30) as r:
+        data = json.load(r)
+    return parse_aav(data)
+
+
 def _extract_stats(player: dict) -> dict:
     """Pull engine `proj` component stats from a FantasyPros projection row.
 
@@ -175,10 +220,11 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Smoke-test a FantasyPros pull (needs FANTASYPROS_API_KEY).")
     ap.add_argument("--season", type=int, default=2026)
     ap.add_argument("--scoring", default="HALF")
-    ap.add_argument("--what", choices=["rankings", "projections"], default="rankings")
+    ap.add_argument("--what", choices=["rankings", "projections", "aav"], default="rankings")
     args = ap.parse_args()
-    data = fetch_projections(args.season, args.scoring) if args.what == "projections" \
-        else fetch_rankings(args.season, args.scoring)
+    data = (fetch_projections(args.season, args.scoring) if args.what == "projections"
+            else fetch_aav(args.season, args.scoring) if args.what == "aav"
+            else fetch_rankings(args.season, args.scoring))
     print(f"pulled {len(data)} players ({args.what}); sample:")
     for k, v in list(data.items())[:5]:
         print(" ", k, v)
