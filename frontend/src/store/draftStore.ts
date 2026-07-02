@@ -6,6 +6,7 @@ export interface DraftEntry {
   playerId: number | null;
   overallPick: number;
   mine: boolean;
+  teamId: number | null;
   price: number | null;
   slot: string | null;
 }
@@ -16,7 +17,7 @@ interface DraftState {
   syncing: boolean;
 
   hydrate: (leagueId: number) => Promise<void>;
-  addPick: (data: { playerId?: number; mine: boolean; price?: number; slot?: string }) => Promise<void>;
+  addPick: (data: { playerId?: number; mine: boolean; teamId?: number; price?: number; slot?: string }) => Promise<void>;
   removePick: (pickId: number) => Promise<void>;
   clear: () => void;
 }
@@ -27,6 +28,7 @@ function mapPick(p: ApiPick): DraftEntry {
     playerId: p.player_id,
     overallPick: p.overall_pick,
     mine: p.mine,
+    teamId: p.team_id,
     price: p.price,
     slot: p.slot,
   };
@@ -53,6 +55,7 @@ export const useDraftStore = create<DraftState>((set, get) => ({
     const serverPick = await api.addPick(leagueId, {
       player_id: data.playerId,
       mine: data.mine,
+      team_id: data.teamId,
       price: data.price,
       slot: data.slot,
     });

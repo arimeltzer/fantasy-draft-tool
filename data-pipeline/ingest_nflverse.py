@@ -118,14 +118,34 @@ def build_schedule(upcoming):
         out.setdefault(away, []).append({"week": wk, "opp": home})
     return out
 
-def build_players_base(df_last, upcoming, baseline_proj):
-    """Engine rows: name, pos, team(upcoming), age, last{components+gp}, proj{} or baseline."""
+def _agg_season(df):
+    """{player_id: {components + fumbles + gp}} — season totals for one completed season."""
+    if df is None:
+        return {}
+    have = [c for c in COMP if c in df.columns]
+    agg = (df.groupby(["player_id", "player_display_name", "position"])
+           .agg(gp=("week", "nunique"),
+                fum=("rushing_fumbles_lost", "sum"),
+                **{c: (c, "sum") for c in have})
+           .reset_index())
+    out = {}
+    for g in agg.itertuples():
+        gp = int(g.gp) or 1
+        d = {COMP[c]: round(float(getattr(g, c)), 1) for c in have}
+        d["fumbles"] = round(float(getattr(g, "fum", 0) or 0), 1)
+        d["gp"] = gp
+        out[g.player_id] = d
+    return out
+
+def build_players_base(df_last, df_last2, upcoming, baseline_proj):
+    """Engine rows: name, pos, team(upcoming), age, last{components+gp}, last2{...}, proj{} or baseline."""
     have = [c for c in COMP if c in df_last.columns]
     agg = (df_last.groupby(["player_id", "player_display_name", "position"])
            .agg(gp=("week", "nunique"),
                 fum=("rushing_fumbles_lost", "sum"),
                 **{c: (c, "sum") for c in have})
            .reset_index())
+    last2_by_id = _agg_season(df_last2)   # 2-years-ago season, keyed by player_id
 
     # 2026 team + age from rosters (offseason rosters exist by summer)
     team_by_id, age_by_id = {}, {}
@@ -157,7 +177,7 @@ def build_players_base(df_last, upcoming, baseline_proj):
         rows.append({
             "id": g.player_id, "name": g.player_display_name, "pos": g.position,
             "team": team_by_id.get(g.player_id, ""), "age": age_by_id.get(g.player_id),
-            "last": last, "proj": proj,
+            "last": last, "last2": last2_by_id.get(g.player_id), "proj": proj,
         })
     return rows
 
@@ -165,6 +185,8 @@ def build_players_base(df_last, upcoming, baseline_proj):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--last", type=int, default=2025, help="completed season to learn from")
+    ap.add_argument("--last2", type=int, default=None,
+                    help="second-prior completed season for the 2-year projection blend (default: --last minus 1)")
     ap.add_argument("--upcoming", type=int, default=2026, help="season being drafted")
     ap.add_argument("--out", default="./data")
     ap.add_argument("--baseline-proj", action="store_true",
@@ -175,11 +197,19 @@ def main():
     print(f"Loading {args.last} weekly player stats from nflverse…")
     df_last = load_weekly(args.last)
 
+    last2_season = args.last2 if args.last2 is not None else args.last - 1
+    print(f"Loading {last2_season} weekly player stats (2-year blend)…")
+    try:
+        df_last2 = load_weekly(last2_season)
+    except Exception as e:
+        print(f"  ! {last2_season} weekly stats unavailable ({e}); last2 will be blank")
+        df_last2 = None
+
     artifacts = {
         "sos_logs.json": build_sos_logs(df_last),
         "player_logs_2025.json": build_player_logs(df_last),
         "schedule_2026.json": build_schedule(args.upcoming),
-        "players_base.json": build_players_base(df_last, args.upcoming, args.baseline_proj),
+        "players_base.json": build_players_base(df_last, df_last2, args.upcoming, args.baseline_proj),
     }
     for fname, data in artifacts.items():
         path = os.path.join(args.out, fname)

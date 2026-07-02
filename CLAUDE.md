@@ -26,7 +26,11 @@ backend/            FastAPI + async SQLAlchemy (asyncpg) + Postgres, JWT auth
   sos.py              server-side SOS recompute for /api/admin/reload-sos
   integrations/       ESPN + Yahoo league import (see below)
 frontend/           React + TS + Vite + Tailwind (light design system)
-  src/engine/         valuation-engine.js (VBD/auction) + strength-of-schedule.js
+  src/engine/         engine-core.js (projection+VBD) · auction-engine.js
+                      (dollarValues/marketPrice/suggestBid/nominationScore) ·
+                      snake-engine.js (pickScore + per-slot configs) ·
+                      valuation-engine.js (back-compat re-export shim) ·
+                      strength-of-schedule.js
   src/components/, pages/, hooks/, lib/api.ts, lib/posStyles.ts
 data-pipeline/      offline data prep -> JSON -> Postgres
   ingest_nflverse.py  pull players/schedule/logs from nflverse
@@ -44,13 +48,16 @@ VBD/auction values client-side from the player rows + league settings.
 
 ## Database tables
 
-- `fantasy_players` `(season, name, pos, team, age, proj jsonb, last jsonb, ecr, adp)`, uniq `(season,name,pos,team)`
+- `fantasy_players` `(season, name, pos, team, age, proj jsonb, last jsonb, last2 jsonb, ecr, adp)`, uniq `(season,name,pos,team)` — `last2` = 2-years-ago totals for the projection blend
+- `fantasy_draft_picks` also has `team_id int` (opponent slot; index into `League.settings.opponents[]`, NULL for mine)
 - `fantasy_schedule` `(season, team, week, opp)`, uniq `(season,team,week)`
 - `fantasy_player_logs` `(season, player_id, week, opp, fp)`, uniq `(season,player_id,week)`
 - `fantasy_sos` `(season, team, pos, mult)` PK `(season,team,pos)`
 - plus `fantasy_users`, `fantasy_leagues`, `fantasy_draft_picks`
 - Schema is created with SQLAlchemy `create_all` — it does NOT alter existing
-  tables, so adding a column needs a manual migration on Railway.
+  tables, so adding a column needs a manual migration on Railway. Migrations live
+  in `backend/migrations/*.sql` — run the SQL on Railway **before** deploying code
+  that reads the new columns, or the ORM will 500 selecting a missing column.
 
 ## Key commands
 

@@ -166,6 +166,7 @@ class LeagueOut(BaseModel):
 class PickCreate(BaseModel):
     player_id: Optional[int] = None
     mine: bool
+    team_id: Optional[int] = None
     price: Optional[int] = None
     slot: Optional[str] = None
 
@@ -176,6 +177,7 @@ class PickOut(BaseModel):
     player_id: Optional[int]
     overall_pick: int
     mine: bool
+    team_id: Optional[int]
     price: Optional[int]
     slot: Optional[str]
     ts: datetime
@@ -192,6 +194,7 @@ class PlayerOut(BaseModel):
     age: Optional[int]
     proj: Optional[dict]
     last: Optional[dict]
+    last2: Optional[dict]
     ecr: Optional[float]
     adp: Optional[float]
 
@@ -586,6 +589,7 @@ async def add_pick(
         player_id=data.player_id,
         overall_pick=overall,
         mine=data.mine,
+        team_id=data.team_id,
         price=data.price,
         slot=data.slot,
     )

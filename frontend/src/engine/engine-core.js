@@ -27,8 +27,27 @@ export const DEFAULT_PARAMS = {
   },
   ageClamp: [0.85, 1.06],
 
-  // FLEX spots split across RB/WR/TE when computing replacement level.
-  flexShare: { RB: 0.50, WR: 0.42, TE: 0.08 },
+  // Projection methodology (ported from the offline research model). Player
+  // value is projected client-side from two prior seasons + age + ADP, rather
+  // than trusting an external `proj` field. Tune here to change every board.
+  projection: {
+    primaryWeight:     0.70,  // weight on the most recent season in the 2-year blend
+    primaryWeightUp:   0.80,  // if trending up  > trendThreshold pts/season, trust recent more
+    primaryWeightDown: 0.65,  // if trending down > trendThreshold, discount the down year (rebound)
+    trendThreshold:    50,    // pts/season pace delta that flips the weight
+    // Durability discount by games played last season: gp < threshold → mult.
+    durability: [[6, 0.60], [10, 0.74], [14, 0.88]],   // else 1.0
+    // Rookies / players with no recent stats: ADP-tier estimate (no NFL draft
+    // round available in the pipeline — coarse approximation, market `proj`
+    // used first when present).
+    rookieCeil:   { QB: 330, RB: 285, WR: 275, TE: 205, K: 130, DST: 130 },
+    rookieEraBonus: 1.12,
+    rookieAdpFloor: 0.15,     // min fraction of ceiling at deep ADP
+    rookieAdpSpan:  200,      // ADP at which the estimate reaches the floor
+    // WRs on teams with a fragile QB situation take a talent discount.
+    fragileQbTeams:  [],      // e.g. ["CLE", "NYG"] — manual upkeep
+    fragileQbWrMult: 0.85,
+  },
 
   // Kept here so valuation-engine.js shim stays backward-compatible with
   // callers that pass DEFAULT_PARAMS directly to auctionValues().
@@ -72,36 +91,85 @@ export function ageMultiplier(pos, age, P = DEFAULT_PARAMS) {
   return Math.min(P.ageClamp[1], Math.max(P.ageClamp[0], m));
 }
 
-export function projectValue(player, sc, P = DEFAULT_PARAMS) {
-  const projPts = points(player.proj || {}, sc);
+/** Games-played durability discount: first threshold gp falls under wins. */
+function durabilityMult(gp, table) {
+  for (const [thresh, mult] of table) if (gp < thresh) return mult;
+  return 1.0;
+}
 
-  let priorEquiv = null;
-  if (player.last && (player.last.gp || 0) > 0) {
-    const ppg = points(player.last, sc) / player.last.gp;
-    priorEquiv = ppg * P.projectedGames;
+/** Rookie / no-recent-stats projection: market `proj` if present, else ADP tier. */
+function rookieProjection(player, sc, PP) {
+  const marketPts = points(player.proj || {}, sc);
+  if (marketPts > 0) return marketPts;
+  const ceil = PP.rookieCeil[player.pos] ?? 150;
+  const adp = player.adp;
+  if (adp == null || adp <= 0) return ceil * PP.rookieAdpFloor * PP.rookieEraBonus;
+  const frac = Math.max(PP.rookieAdpFloor, 1 - Math.log(adp) / Math.log(PP.rookieAdpSpan));
+  return ceil * frac * PP.rookieEraBonus;
+}
+
+/**
+ * Project a player's full-season fantasy points from two prior seasons.
+ * Returns the breakdown so projectValue() can derive risk without recomputing.
+ *
+ *   pace(season) = points(season)/gp × projectedGames   (full-season equivalent)
+ *   blend        = w1·pace(last) + (1-w1)·pace(last2)    (w1 shifts on trend)
+ *   proj         = blend × durability × age × situation
+ */
+export function projectPoints(player, sc, P = DEFAULT_PARAMS) {
+  const PP = P.projection || DEFAULT_PARAMS.projection;
+  const G = P.projectedGames;
+
+  const pace = (season) =>
+    season && (season.gp || 0) > 0 ? (points(season, sc) / season.gp) * G : null;
+  const pace1 = pace(player.last);
+  const pace2 = pace(player.last2);
+  const ageMult = ageMultiplier(player.pos, player.age, P);
+
+  if (pace1 == null && pace2 == null) {
+    const proj = +(rookieProjection(player, sc, PP) * ageMult).toFixed(1);
+    return { proj, pace1: null, pace2: null, trend: null, durMult: 1, ageMult, rookie: true };
   }
 
-  const correction = priorEquiv == null
-    ? 0
-    : P.priorWeight * (1 - P.regressionStrength) * (priorEquiv - projPts);
+  let blended, trend = null;
+  if (pace1 != null && pace2 != null) {
+    trend = pace1 - pace2;
+    let w1 = PP.primaryWeight;
+    if (trend > PP.trendThreshold) w1 = PP.primaryWeightUp;
+    else if (trend < -PP.trendThreshold) w1 = PP.primaryWeightDown;
+    blended = w1 * pace1 + (1 - w1) * pace2;
+  } else {
+    blended = pace1 != null ? pace1 : pace2;
+  }
 
-  const blended = projPts + correction;
-  const ageMult = ageMultiplier(player.pos, player.age, P);
-  const valuePoints = +(blended * ageMult).toFixed(1);
+  const gp = (player.last && player.last.gp) || (player.last2 && player.last2.gp) || G;
+  const durMult = durabilityMult(gp, PP.durability);
 
-  const divergence = priorEquiv == null || projPts === 0
-    ? 0 : Math.min(1, Math.abs(priorEquiv - projPts) / projPts);
-  const injury = player.last
-    ? Math.min(1, Math.max(0, (P.projectedGames - (player.last.gp || P.projectedGames)) / P.projectedGames))
-    : 0;
-  const ageRisk = 1 - ageMult;
-  const risk = +Math.min(1, 0.5 * divergence + 0.3 * injury + 2 * Math.max(0, ageRisk)).toFixed(2);
+  const situ = (player.pos === "WR" && Array.isArray(PP.fragileQbTeams) &&
+                PP.fragileQbTeams.includes(player.team)) ? PP.fragileQbWrMult : 1;
+
+  const proj = +(blended * durMult * ageMult * situ).toFixed(1);
+  return { proj, pace1, pace2, trend, durMult, ageMult, rookie: false };
+}
+
+export function projectValue(player, sc, P = DEFAULT_PARAMS) {
+  const pp = projectPoints(player, sc, P);
+  const valuePoints = pp.proj;
+
+  const injuryRisk = Math.min(1, Math.max(0, (1 - pp.durMult) / 0.40));
+  const volatility = pp.pace1 != null && pp.pace2 != null && pp.pace1 !== 0
+    ? Math.min(1, Math.abs(pp.pace1 - pp.pace2) / pp.pace1)
+    : (pp.rookie ? 0.5 : 0.2);
+  const ageRisk = Math.max(0, 1 - pp.ageMult);
+  const risk = +Math.min(1, 0.45 * volatility + 0.35 * injuryRisk + 1.8 * ageRisk).toFixed(2);
 
   return {
-    projPts: +projPts.toFixed(1),
-    priorEquiv: priorEquiv == null ? null : +priorEquiv.toFixed(1),
+    projPts: valuePoints,
+    priorEquiv: pp.pace1 == null ? null : +pp.pace1.toFixed(1),
     valuePoints,
-    ageMult: +ageMult.toFixed(3),
+    ageMult: +pp.ageMult.toFixed(3),
+    trend: pp.trend == null ? null : +pp.trend.toFixed(1),
+    rookie: pp.rookie,
     risk,
   };
 }

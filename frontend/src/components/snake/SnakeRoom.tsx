@@ -1,8 +1,8 @@
 import { useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, X } from "lucide-react";
-import { snakePicks } from "@/engine/valuation-engine.js";
-import type { BoardPlayer } from "@/engine/valuation-engine.js";
+import { snakePicks, rankByAdp } from "@/engine/snake-engine.js";
+import type { BoardPlayer, SnakeLiveState } from "@/engine/snake-engine.js";
 import { LeagueSettings, ApiLeague } from "@/lib/api";
 import { useDraftStore } from "@/store/draftStore";
 import { usePatchLeague } from "@/hooks/useLeague";
@@ -54,6 +54,44 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   }, [picks, board]);
 
   const needs = useMemo(() => computeNeeds(minePlayers, settings), [minePlayers, settings]);
+
+  // Live draft state consumed by the ported pickScore() recommender.
+  const live = useMemo<SnakeLiveState>(() => {
+    const avail = board.filter((p) => !draftedIds.has(p.id as number));
+    const counts: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 };
+    minePlayers.forEach((p) => { if (p.pos in counts) counts[p.pos]++; });
+
+    const posRemaining: Record<string, number> = {};
+    for (const pos of ["QB", "RB", "WR", "TE", "K", "DST"])
+      posRemaining[pos] = avail.filter((p) => p.pos === pos && p.vbd > 0).length;
+
+    const bestVbd = avail.reduce((m, p) => Math.max(m, p.vbd), 1);
+
+    // Per-player VBD cliff to the next-best available at the same position.
+    const byPos: Record<string, BoardPlayer[]> = {};
+    for (const p of avail) (byPos[p.pos] ||= []).push(p);
+    const cliffById: Record<number, number> = {};
+    for (const pos in byPos) {
+      const list = byPos[pos].sort((a, b) => b.vbd - a.vbd);
+      list.forEach((p, i) => {
+        cliffById[p.id as number] = i + 1 < list.length ? +(p.vbd - list[i + 1].vbd).toFixed(1) : p.vbd;
+      });
+    }
+
+    return {
+      round: minePlayers.length + 1,
+      teams: settings.teams,
+      slot: settings.draftSlot,
+      counts,
+      roster: settings.roster as unknown as Record<string, number>,
+      needs,
+      bestVbd,
+      posRemaining,
+      adpRankById: rankByAdp(board),
+      cliffById,
+      poolSize: avail.length,
+    };
+  }, [board, draftedIds, minePlayers, needs, settings]);
 
   const draft = useCallback((p: BoardPlayer, mine: boolean) => {
     addPick({ playerId: p.id as number, mine });
@@ -122,8 +160,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
           <Recommendations
             board={board}
             draftedIds={draftedIds}
-            needs={needs}
-            teams={settings.teams}
+            live={live}
             onDraft={(p) => draft(p, true)}
           />
 

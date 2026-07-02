@@ -1,38 +1,26 @@
 import { Target, Check } from "lucide-react";
 import { posStyle } from "@/lib/posStyles";
-import { BoardPlayer } from "@/engine/valuation-engine.js";
-import { Needs } from "./NeedsPanel";
+import { pickScore } from "@/engine/snake-engine.js";
+import type { BoardPlayer, SnakeLiveState } from "@/engine/snake-engine.js";
 
 interface Props {
   board: BoardPlayer[];
   draftedIds: Set<number>;
-  needs: Needs;
-  teams: number;
+  live: SnakeLiveState;
   onDraft: (p: BoardPlayer) => void;
 }
 
-export default function Recommendations({ board, draftedIds, needs, teams, onDraft }: Props) {
+export default function Recommendations({ board, draftedIds, live, onDraft }: Props) {
   const avail = board.filter((p) => !draftedIds.has(p.id as number));
 
-  const scarce: Record<string, number> = {};
-  for (const pos of ["QB", "RB", "WR", "TE"]) {
-    scarce[pos] = avail.filter((p) => p.pos === pos && p.vbd > 0).length;
-  }
-
-  const recs = avail.map((p) => {
-    let bonus = 0;
-    const reasons: string[] = [];
-    const fillsStarter = (needs as Record<string, number>)[p.pos] > 0;
-    const fillsFlex = ["RB","WR","TE"].includes(p.pos) && needs.FLEX > 0 && !fillsStarter;
-    if (fillsStarter) { bonus += 8; reasons.push(`fills your ${p.pos}`); }
-    else if (fillsFlex) { bonus += 4; reasons.push("FLEX-eligible"); }
-    if (["QB","RB","WR","TE"].includes(p.pos) && scarce[p.pos] <= teams) {
-      bonus += 4; reasons.push(`${p.pos} getting thin`);
-    }
-    const nextSame = avail.filter((q) => q.pos === p.pos && q.id !== p.id).sort((a, b) => b.vbd - a.vbd)[0];
-    if (nextSame && (p.vbd - nextSame.vbd) > 18) reasons.push("last of tier");
-    return { ...p, score: p.vbd + bonus, reasons };
-  }).sort((a, b) => b.score - a.score).slice(0, 6);
+  const recs = avail
+    .map((p) => {
+      const { score, reasons, blocked } = pickScore(p, live);
+      return { ...p, score, reasons, blocked };
+    })
+    .filter((p) => !p.blocked && Number.isFinite(p.score))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6);
 
   return (
     <div className="mb-4 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.04] p-3">

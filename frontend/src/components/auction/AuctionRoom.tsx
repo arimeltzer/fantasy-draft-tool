@@ -1,8 +1,11 @@
 import { useMemo, useState, useCallback } from "react";
 import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, RotateCcw } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { auctionValues, applyInflation, maxBid } from "@/engine/valuation-engine.js";
-import type { BoardPlayer } from "@/engine/valuation-engine.js";
+import {
+  auctionValues, applyInflation, maxBid,
+  dollarValues, marketPrice, nominationScore, nominationPhase, suggestBid,
+} from "@/engine/auction-engine.js";
+import type { BoardPlayer } from "@/engine/auction-engine.js";
 import { LeagueSettings, ApiLeague } from "@/lib/api";
 import { useDraftStore } from "@/store/draftStore";
 import { usePatchLeague } from "@/hooks/useLeague";
@@ -39,9 +42,41 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     return r.QB + r.RB + r.WR + r.TE + r.FLEX + r.K + r.DST + r.BENCH + (settings.superflex ? (r.SF ?? 0) : 0);
   }, [settings]);
 
-  const al = useMemo(() => ({ teams: settings.teams, budget: settings.budget, rosterSize }), [settings, rosterSize]);
+  const al = useMemo(
+    () => ({ teams: settings.teams, budget: settings.budget, rosterSize, benchSpots: settings.roster.BENCH }),
+    [settings, rosterSize],
+  );
+
+  // Opponent labels + live per-opponent remaining budget (for nomination strategy).
+  const opponents = useMemo(
+    () => (settings.opponents?.length
+      ? settings.opponents
+      : Array.from({ length: Math.max(0, settings.teams - 1) }, (_, i) => `Team ${i + 2}`)),
+    [settings.opponents, settings.teams],
+  );
+  const oppBudgets = useMemo(() => {
+    const spent = opponents.map(() => 0);
+    for (const p of picks)
+      if (!p.mine && p.teamId != null && p.teamId >= 0 && p.teamId < spent.length)
+        spent[p.teamId] += p.price ?? 0;
+    return spent.map((s) => settings.budget - s);
+  }, [picks, opponents, settings.budget]);
 
   const withPar = useMemo(() => auctionValues(board, al), [board, al]);
+
+  // Position-allocation dollar values + market prices (ported strategy).
+  const withDollar = useMemo(() => dollarValues(board, al), [board, al]);
+  const adpRankById = useMemo(() => {
+    const ranked = board.filter((p) => p.adp != null && p.adp > 0).sort((a, b) => (a.adp! - b.adp!));
+    const m: Record<number, number> = {};
+    ranked.forEach((p, i) => { m[p.id as number] = i + 1; });
+    return m;
+  }, [board]);
+  const marketById = useMemo(() => {
+    const m: Record<number, number> = {};
+    for (const p of board) m[p.id as number] = marketPrice(adpRankById[p.id as number], al, undefined, p.pos);
+    return m;
+  }, [board, adpRankById, al]);
 
   const draftedPrices = useMemo(
     () => picks
@@ -65,9 +100,9 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
 
   const maxVbd = board.length ? Math.max(1, board[0].vbd) : 1;
 
-  const buy = useCallback((p: BoardPlayer, mine: boolean) => {
+  const buy = useCallback((p: BoardPlayer, mine: boolean, teamId?: number) => {
     const price = Math.max(1, Math.round(prices[p.id as number] ?? p.adjValue ?? p.parValue ?? 1));
-    addPick({ playerId: p.id as number, mine, price });
+    addPick({ playerId: p.id as number, mine, teamId, price });
     setPrices((prev) => { const n = { ...prev }; delete n[p.id as number]; return n; });
   }, [prices, addPick]);
 
@@ -86,10 +121,40 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     return true;
   }), [inflation.board, hideDrafted, draftedIds, posFilter, query]);
 
-  const targets = useMemo(() =>
-    board.filter((p) => !draftedIds.has(p.id as number) && ["QB","RB","WR","TE"].includes(p.pos)).slice(0, 4),
-    [board, draftedIds]
+  // Nomination strategy + value targets (ported model).
+  const fractionDone = picks.length / Math.max(1, settings.teams * rosterSize);
+  const richFrac = oppBudgets.length
+    ? oppBudgets.filter((b) => b > 40).length / oppBudgets.length : 0;
+  const phase = nominationPhase(richFrac);
+
+  const availDollar = useMemo(
+    () => withDollar.filter((p) => !draftedIds.has(p.id as number)),
+    [withDollar, draftedIds],
   );
+  const remainingDvSum = useMemo(
+    () => availDollar.reduce((s, p) => s + (p.dollarValue ?? 1), 0),
+    [availDollar],
+  );
+
+  const nominations = useMemo(() => {
+    const ds = { oppBudgets, marketById, fractionDone };
+    return availDollar
+      .map((p) => ({ p, ...nominationScore(p, ds) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+  }, [availDollar, oppBudgets, marketById, fractionDone]);
+
+  const valueTargets = useMemo(() => {
+    return availDollar
+      .filter((p) => ["QB", "RB", "WR", "TE"].includes(p.pos))
+      .map((p) => {
+        const market = marketById[p.id as number] ?? 1;
+        const sug = suggestBid(p, { budget: myBudgetLeft, openSpots: Math.max(1, myOpenSpots), remainingDvSum, market });
+        return { p, ...sug, surplus: (p.dollarValue ?? 1) - market };
+      })
+      .sort((a, b) => b.surplus - a.surplus)
+      .slice(0, 4);
+  }, [availDollar, marketById, myBudgetLeft, myOpenSpots, remainingDvSum]);
 
   const pprLabel = settings.ppr === 1 ? "PPR" : settings.ppr === 0.5 ? "Half-PPR" : "Std";
 
@@ -218,12 +283,17 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                           >
                             Mine
                           </button>
-                          <button
-                            onClick={() => buy(p, false)}
-                            className="px-1.5 py-1 rounded text-xs bg-gray-50 border border-gray-300 text-gray-500 hover:text-gray-700"
+                          <select
+                            value=""
+                            onChange={(e) => { if (e.target.value !== "") buy(p, false, Number(e.target.value)); }}
+                            title="Won by an opponent — pick which team"
+                            className="px-1 py-1 rounded text-xs bg-gray-50 border border-gray-300 text-gray-500 hover:text-gray-700 focus:outline-none focus:border-gray-400 max-w-[72px]"
                           >
-                            Out
-                          </button>
+                            <option value="">Out ▾</option>
+                            {opponents.map((name, i) => (
+                              <option key={i} value={i}>{name}</option>
+                            ))}
+                          </select>
                         </>
                       )}
                     </div>
@@ -255,10 +325,12 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
 
           <NominationPanel
             factor={inflation.factor}
-            targets={targets}
+            phase={phase}
+            nominations={nominations}
+            valueTargets={valueTargets}
             myMax={myMax}
-            remainingMoney={inflation.remainingMoney}
-            remainingSpots={inflation.remainingSpots}
+            oppBudgets={oppBudgets}
+            richThreshold={40}
           />
         </aside>
       </main>

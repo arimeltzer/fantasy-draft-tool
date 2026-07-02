@@ -1,57 +1,107 @@
-import { TrendingUp } from "lucide-react";
+import { TrendingUp, Gavel, Target } from "lucide-react";
 import { posStyle } from "@/lib/posStyles";
-import { BoardPlayer } from "@/engine/valuation-engine.js";
+import type { BoardPlayer } from "@/engine/auction-engine.js";
+
+interface NomItem {
+  p: BoardPlayer;
+  score: number;
+  isDump: boolean;
+  market: number;
+  effectiveDv: number;
+}
+
+interface TargetItem {
+  p: BoardPlayer;
+  market: number;
+  bid: number;
+  pass: boolean;
+  dollarValue: number;
+  surplus: number;
+}
 
 interface Props {
   factor: number;
-  targets: BoardPlayer[];
+  phase: "early" | "mid" | "late";
+  nominations: NomItem[];
+  valueTargets: TargetItem[];
   myMax: number;
-  remainingMoney: number;
-  remainingSpots: number;
+  oppBudgets: number[];
+  richThreshold: number;
 }
 
-export default function NominationPanel({ factor, targets, myMax, remainingMoney, remainingSpots }: Props) {
-  const advice =
-    factor > 1.05
-      ? "Room's overpaying — nominate pricey players you don't want to drain budgets, hold your targets."
-      : factor < 0.95
-      ? "Values are deflating — bargains are out there. Nominate your targets now."
-      : "Even market. Nominate non-targets early; pounce when a tier is about to empty.";
+const PHASE_ADVICE: Record<Props["phase"], string> = {
+  early: "Early — nominate players you DON'T want while opponents are flush. Never expose your targets.",
+  mid:   "Mid — keep draining budgets; float mid-tier targets only when the price is right.",
+  late:  "Late — opponents are short. Nominate your targets and grab value; dump cheap filler to bleed last dollars.",
+};
+
+export default function NominationPanel({ factor, phase, nominations, valueTargets, myMax, oppBudgets, richThreshold }: Props) {
+  const rich = oppBudgets.filter((b) => b > richThreshold).length;
 
   return (
     <div className="rounded-lg border border-gray-200 bg-gray-100 p-3">
       <div className="flex items-center gap-2 mb-2">
-        <TrendingUp className="w-4 h-4 text-gray-500" />
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Nomination & targets</h2>
+        <Gavel className="w-4 h-4 text-gray-500" />
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Nomination strategy</h2>
+        <span className={`ml-auto text-xs font-mono px-1.5 py-0.5 rounded border ${
+          phase === "early" ? "bg-sky-50 border-sky-200 text-sky-700"
+          : phase === "mid" ? "bg-amber-50 border-amber-200 text-amber-700"
+          : "bg-emerald-50 border-emerald-200 text-emerald-700"
+        }`}>{phase}</span>
       </div>
-      <p className="text-xs text-gray-500 leading-snug mb-2">{advice}</p>
+      <p className="text-xs text-gray-500 leading-snug mb-2">{PHASE_ADVICE[phase]}</p>
 
-      <div className="space-y-1">
-        {targets.map((p) => {
+      <div className="flex items-center justify-between text-xs font-mono mb-2 pb-2 border-b border-gray-200">
+        <span className="text-gray-500">opponents flush (&gt;${richThreshold})</span>
+        <span className="text-gray-700">{rich} / {oppBudgets.length}</span>
+      </div>
+
+      {/* Who to nominate next */}
+      <div className="space-y-1 mb-3">
+        <div className="text-2xs uppercase tracking-wider text-gray-400 mb-1">Nominate next</div>
+        {nominations.map(({ p, isDump, market }) => {
           const st = posStyle(p.pos);
-          const live = p.adjValue ?? p.parValue ?? 1;
           return (
             <div key={p.id} className="flex items-center gap-2 text-xs">
               <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
               <span className="truncate flex-1">{p.name}</span>
-              <span className="font-mono text-amber-700">${live}</span>
-              <span className={`font-mono text-xs ${live > myMax ? "text-rose-400" : "text-emerald-600"}`}>
-                {live > myMax ? "over max" : "in reach"}
+              <span className="font-mono text-gray-500">${market}</span>
+              <span className={`font-mono text-xs px-1 rounded ${isDump ? "text-rose-600" : "text-emerald-600"}`}>
+                {isDump ? "drain" : "target"}
               </span>
             </div>
           );
         })}
+        {nominations.length === 0 && <div className="text-xs text-gray-400">No players left.</div>}
       </div>
 
-      <div className="mt-2 pt-2 border-t border-gray-200 grid grid-cols-2 gap-2 text-center text-xs font-mono">
-        <div>
-          <div className="text-gray-600">${remainingMoney}</div>
-          <div className="text-xs uppercase text-gray-400">room $ left</div>
+      {/* Your value targets with suggested bids */}
+      <div className="space-y-1">
+        <div className="flex items-center gap-1 text-2xs uppercase tracking-wider text-gray-400 mb-1">
+          <Target className="w-3 h-3" /> your targets — suggested bid
         </div>
-        <div>
-          <div className="text-gray-600">{remainingSpots}</div>
-          <div className="text-xs uppercase text-gray-400">spots left</div>
-        </div>
+        {valueTargets.map(({ p, bid, market, pass }) => {
+          const st = posStyle(p.pos);
+          const overMax = bid > myMax;
+          return (
+            <div key={p.id} className="flex items-center gap-2 text-xs">
+              <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+              <span className="truncate flex-1">{p.name}</span>
+              <span className="font-mono text-gray-400">mkt ${market}</span>
+              <span className={`font-mono ${overMax ? "text-rose-500" : pass ? "text-gray-400" : "text-amber-700"}`}>
+                {pass ? "pass" : `bid $${bid}`}
+              </span>
+            </div>
+          );
+        })}
+        {valueTargets.length === 0 && <div className="text-xs text-gray-400">No value targets.</div>}
+      </div>
+
+      <div className="mt-2 pt-2 border-t border-gray-200 flex items-center justify-between text-xs">
+        <span className="flex items-center gap-1 text-gray-400"><TrendingUp className="w-3 h-3" /> inflation</span>
+        <span className={`font-mono ${factor > 1.05 ? "text-rose-500" : factor < 0.95 ? "text-emerald-600" : "text-gray-500"}`}>
+          ×{factor}
+        </span>
       </div>
     </div>
   );

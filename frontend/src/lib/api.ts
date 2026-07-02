@@ -9,6 +9,7 @@ export interface ApiPlayer {
   age: number | null;
   proj: Record<string, number> | null;
   last: Record<string, number> | null;
+  last2: Record<string, number> | null;
   ecr: number | null;
   adp: number | null;
 }
@@ -27,6 +28,7 @@ export interface ApiPick {
   player_id: number | null;
   overall_pick: number;
   mine: boolean;
+  team_id: number | null;
   price: number | null;
   slot: string | null;
   ts: string;
@@ -52,6 +54,7 @@ export interface LeagueSettings {
   };
   superflex: boolean;
   draftSlot?: number;
+  opponents?: string[];   // labels for opponent teams (auction budget tracking); index = team_id
 }
 
 function getToken(): string | null {
@@ -137,7 +140,7 @@ export const api = {
     ),
 
   picks: (leagueId: number) => req<ApiPick[]>(`/api/leagues/${leagueId}/picks`),
-  addPick: (leagueId: number, data: { player_id?: number; mine: boolean; price?: number; slot?: string }) =>
+  addPick: (leagueId: number, data: { player_id?: number; mine: boolean; team_id?: number; price?: number; slot?: string }) =>
     req<ApiPick>(`/api/leagues/${leagueId}/picks`, { method: "POST", body: JSON.stringify(data) }),
   deletePick: (leagueId: number, pickId: number) =>
     req<void>(`/api/leagues/${leagueId}/picks/${pickId}`, { method: "DELETE" }),

@@ -57,6 +57,16 @@ export default function SettingsDrawer({ settings, onSave, onClose }: Props) {
         <div className="space-y-2">
           <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Your draft slot</h3>
           {numField("Draft slot", local.draftSlot ?? 1, (v) => set({ draftSlot: v }))}
+
+          <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold pt-2">Opponent teams</h3>
+          <p className="text-xs text-gray-400 leading-snug">One name per line (for auction budget tracking). Leave blank to auto-name.</p>
+          <textarea
+            rows={4}
+            value={(local.opponents ?? []).join("\n")}
+            placeholder={Array.from({ length: Math.max(0, local.teams - 1) }, (_, i) => `Team ${i + 2}`).join("\n")}
+            onChange={(e) => set({ opponents: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
+            className="w-full px-2 py-1 rounded bg-gray-50 border border-gray-300 font-mono text-xs text-gray-700 focus:outline-none focus:border-gray-400"
+          />
         </div>
       </div>
 

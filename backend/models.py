@@ -57,6 +57,7 @@ class Player(Base):
     age    = Column(Integer, nullable=True)
     proj   = Column(JSONB, nullable=True)
     last   = Column(JSONB, nullable=True)
+    last2  = Column(JSONB, nullable=True)   # 2-years-ago season totals for the projection blend
     ecr    = Column(Float, nullable=True)
     adp    = Column(Float, nullable=True)
 
@@ -110,6 +111,7 @@ class DraftPick(Base):
     player_id    = Column(Integer, ForeignKey("fantasy_players.id", ondelete="SET NULL"), nullable=True)
     overall_pick = Column(Integer, nullable=False)
     mine         = Column(Boolean, nullable=False, default=False)
+    team_id      = Column(Integer, nullable=True)   # opponent slot (index into League.settings.opponents); NULL for mine/unknown
     price        = Column(Integer, nullable=True)
     slot         = Column(Text, nullable=True)
     ts           = Column(DateTime, default=datetime.utcnow, nullable=False)
