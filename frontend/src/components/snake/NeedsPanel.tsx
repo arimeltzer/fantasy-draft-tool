@@ -8,7 +8,7 @@ interface Props {
   mine: BoardPlayer[];
   settings: LeagueSettings;
   draftedCount: number;
-  untilMine: number | null;
+  untilMine?: number | null;   // snake pick timing; omit for auction
 }
 
 export interface Needs {
@@ -58,15 +58,17 @@ export default function NeedsPanel({ mine, settings, draftedCount, untilMine }: 
         })}
         {!hasNeeds && <span className="text-xs text-gray-500">Starters filled — draft for depth.</span>}
       </div>
-      <div className="pt-2.5 border-t border-gray-200 grid grid-cols-2 gap-2 text-center">
+      <div className={`pt-2.5 border-t border-gray-200 grid ${untilMine !== undefined ? "grid-cols-2" : "grid-cols-1"} gap-2 text-center`}>
         <div title="Total players drafted by all teams so far">
           <div className="font-mono text-base text-gray-700">{draftedCount}</div>
           <div className="text-xs uppercase text-gray-400">picks made</div>
         </div>
-        <div title="Picks by other teams before you're on the clock again (based on your draft slot and the snake order)">
-          <div className="font-mono text-base text-emerald-600">{untilMine ?? "—"}</div>
-          <div className="text-xs uppercase text-gray-400">till your turn</div>
-        </div>
+        {untilMine !== undefined && (
+          <div title="Picks by other teams before you're on the clock again (based on your draft slot and the snake order)">
+            <div className="font-mono text-base text-emerald-600">{untilMine ?? "—"}</div>
+            <div className="text-xs uppercase text-gray-400">till your turn</div>
+          </div>
+        )}
       </div>
     </div>
   );

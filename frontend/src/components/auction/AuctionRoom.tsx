@@ -16,6 +16,7 @@ import BudgetTracker from "@/components/auction/BudgetTracker";
 import NominationPanel from "@/components/auction/NominationPanel";
 import InflationBadge from "@/components/auction/InflationBadge";
 import RosterPanel from "@/components/shared/RosterPanel";
+import NeedsPanel from "@/components/snake/NeedsPanel";
 import CommonOpponentsPopover from "@/components/shared/CommonOpponentsPopover";
 import DraftOverview from "@/components/shared/DraftOverview";
 import DraftLogModal from "@/components/shared/DraftLogModal";
@@ -92,6 +93,13 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   const draftedIds = useMemo(() => new Set(picks.map((p) => p.playerId)), [picks]);
 
   const minePicks = picks.filter((p) => p.mine);
+  const minePlayers = useMemo(() => {
+    const byId = new Map(board.map((p) => [p.id as number, p]));
+    return picks
+      .filter((p) => p.mine && p.playerId)
+      .map((p) => byId.get(p.playerId!))
+      .filter(Boolean) as BoardPlayer[];
+  }, [picks, board]);
   const mySpent = minePicks.reduce((s, p) => s + (p.price ?? 0), 0);
   const myBudgetLeft = settings.budget - mySpent;
   const myOpenSpots = rosterSize - minePicks.length;
@@ -192,8 +200,31 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
         />
       )}
 
-      <main className="max-w-6xl xl:max-w-[1400px] mx-auto px-4 py-4 grid grid-cols-1 lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_300px_300px] gap-4">
-        <section>
+      <main className="max-w-6xl xl:max-w-[1400px] mx-auto px-4 py-4 grid grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_300px]">
+        <aside className="space-y-3">
+          <BudgetTracker
+            budget={settings.budget}
+            spent={mySpent}
+            openSpots={myOpenSpots}
+            maxBid={myMax}
+          />
+
+          <RosterPanel
+            picks={picks}
+            board={board}
+            settings={settings}
+            onReset={resetDraft}
+            mode="auction"
+          />
+
+          <NeedsPanel
+            mine={minePlayers}
+            settings={settings}
+            draftedCount={picks.length}
+          />
+        </aside>
+
+        <section className="order-first lg:order-none">
           <BoardControls
             query={query} onQuery={setQuery}
             posFilter={posFilter} onPos={setPosFilter}
@@ -327,31 +358,6 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
         </section>
 
         <aside className="space-y-3">
-          <BudgetTracker
-            budget={settings.budget}
-            spent={mySpent}
-            openSpots={myOpenSpots}
-            maxBid={myMax}
-          />
-
-          <DraftOverview
-            picks={picks}
-            board={board}
-            settings={settings}
-            mode="auction"
-            onEditLog={() => setShowLog(true)}
-          />
-
-          <RosterPanel
-            picks={picks}
-            board={board}
-            settings={settings}
-            onReset={resetDraft}
-            mode="auction"
-          />
-        </aside>
-
-        <aside className="space-y-3">
           <NominationPanel
             factor={inflation.factor}
             phase={phase}
@@ -360,6 +366,14 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
             myMax={myMax}
             oppBudgets={oppBudgets}
             richThreshold={40}
+          />
+
+          <DraftOverview
+            picks={picks}
+            board={board}
+            settings={settings}
+            mode="auction"
+            onEditLog={() => setShowLog(true)}
           />
         </aside>
       </main>

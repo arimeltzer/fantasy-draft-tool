@@ -159,8 +159,25 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
         />
       )}
 
-      <main className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
-        <section>
+      <main className="max-w-6xl xl:max-w-[1400px] mx-auto px-4 py-4 grid grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_300px]">
+        <aside className="space-y-3">
+          <RosterPanel
+            picks={picks}
+            board={board}
+            settings={settings}
+            onReset={resetDraft}
+            mode="snake"
+          />
+
+          <NeedsPanel
+            mine={minePlayers}
+            settings={settings}
+            draftedCount={picks.length}
+            untilMine={untilMine}
+          />
+        </aside>
+
+        <section className="order-first lg:order-none">
           <Recommendations
             board={board}
             draftedIds={draftedIds}
@@ -227,17 +244,22 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
                         )}
                         {typeof p.id === "number" && <CommonOpponentsPopover playerId={p.id} />}
                       </div>
-                      <div className="text-xs text-gray-500 font-mono tabular-nums sm:hidden">
-                        {p.pos} · vbd {p.vbd} · {p.valuePoints}pt{p.age ? ` · ${p.age}y` : ""}
+                      <div className="text-xs text-gray-500 font-mono tabular-nums">
+                        <span className="sm:hidden">{p.pos} · vbd {p.vbd} · </span>
+                        <span title="Projected fantasy points this season under your league's scoring">{p.valuePoints}pt</span>
+                        <span title={p.priorEquiv != null ? "Last season's scoring pace over a full 17 games — a reality check on the projection" : "No 2025 stats — rookie or missed season, so the projection leans on market rankings"}>
+                          {p.priorEquiv != null ? ` · '25 pace ${p.priorEquiv}` : " · no '25"}
+                        </span>
+                        {p.age ? <span className="sm:hidden"> · {p.age}y</span> : null}
+                        {mktDiff != null && (
+                          <span
+                            className={`ml-1 ${mktDiff > 0 ? "text-emerald-600" : "text-rose-500"}`}
+                            title={`This tool ranks the player ${Math.abs(mktDiff)} spot${Math.abs(mktDiff) === 1 ? "" : "s"} ${mktDiff > 0 ? "lower than" : "higher than"} expert consensus — ${mktDiff > 0 ? "they'll likely still be there later" : "a potential value the market is sleeping on"}`}
+                          >
+                            mkt {mktDiff > 0 ? "+" : ""}{mktDiff}
+                          </span>
+                        )}
                       </div>
-                      {mktDiff != null && (
-                        <div
-                          className={`text-xs font-mono hidden sm:block ${mktDiff > 0 ? "text-emerald-600" : "text-rose-500"}`}
-                          title={`This tool ranks the player ${Math.abs(mktDiff)} spot${Math.abs(mktDiff) === 1 ? "" : "s"} ${mktDiff > 0 ? "lower than" : "higher than"} expert consensus — ${mktDiff > 0 ? "they'll likely still be there later" : "a potential value the market is sleeping on"}`}
-                        >
-                          mkt {mktDiff > 0 ? "+" : ""}{mktDiff}
-                        </div>
-                      )}
                     </div>
 
                     <div className="hidden sm:block">
@@ -288,21 +310,6 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
             settings={settings}
             mode="snake"
             onEditLog={() => setShowLog(true)}
-          />
-
-          <RosterPanel
-            picks={picks}
-            board={board}
-            settings={settings}
-            onReset={resetDraft}
-            mode="snake"
-          />
-
-          <NeedsPanel
-            mine={minePlayers}
-            settings={settings}
-            draftedCount={picks.length}
-            untilMine={untilMine}
           />
         </aside>
       </main>
