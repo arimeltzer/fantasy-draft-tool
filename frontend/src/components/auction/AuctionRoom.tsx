@@ -192,7 +192,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
         />
       )}
 
-      <main className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-1 lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_300px_300px] gap-4">
+      <main className="max-w-6xl xl:max-w-[1400px] mx-auto px-4 py-4 grid grid-cols-1 lg:grid-cols-[1fr_300px] xl:grid-cols-[1fr_300px_300px] gap-4">
         <section>
           <BoardControls
             query={query} onQuery={setQuery}
@@ -202,7 +202,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           />
 
           <div className="rounded-lg border border-gray-200 overflow-hidden">
-            <div className="grid grid-cols-[40px_1fr_64px_128px] sm:grid-cols-[44px_1fr_60px_64px_64px_160px] gap-2 px-3 py-2 bg-white/80 text-xs uppercase tracking-wider text-gray-500 font-mono">
+            <div className="grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_160px] gap-2 px-3 py-2 bg-white/80 text-xs uppercase tracking-wider text-gray-500 font-mono">
               <span>Pos</span><span>Player</span>
               <span className="text-right hidden sm:block">
                 <Tip tip="Value Based Drafting: projected points above a replacement-level player at the same position. The bigger the number, the more this player wins you over a waiver-wire fill-in.">VBD</Tip>
@@ -232,7 +232,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                 return (
                   <div
                     key={p.id}
-                    className={`grid grid-cols-[40px_1fr_64px_128px] sm:grid-cols-[44px_1fr_60px_64px_64px_160px] gap-2 px-3 py-2 items-center text-sm ${sold ? "opacity-40" : "hover:bg-gray-100"}`}
+                    className={`grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_160px] gap-2 px-3 py-2 items-center text-sm ${sold ? "opacity-40" : "hover:bg-gray-100"}`}
                   >
                     <span className="flex items-center gap-1 text-xs font-mono">
                       <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
