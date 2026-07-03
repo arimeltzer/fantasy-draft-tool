@@ -90,6 +90,7 @@ export declare function projectPoints(
 export declare function projectValue(
   player: Player, sc: Scoring, P?: EngineParams
 ): { projPts: number; priorEquiv: number | null; valuePoints: number; ageMult: number; trend: number | null; rookie: boolean; risk: number };
+export declare function rankByAdp(players: { id: number | string; adp?: number | null; ecr?: number | null }[]): Record<number, number>;
 export declare function replacementRanks(league: League, P?: EngineParams): Record<string, number>;
 export declare function valueBoard(
   players: Player[], league: League, sc: Scoring, P?: EngineParams

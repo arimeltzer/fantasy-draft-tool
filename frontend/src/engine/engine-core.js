@@ -177,6 +177,22 @@ export function projectValue(player, sc, P = DEFAULT_PARAMS) {
   };
 }
 
+/**
+ * Rank players by market position: ADP when present, ECR as the fallback
+ * (FantasyPros pulls sometimes carry rankings but no ADP — ECR order is a
+ * close proxy, and without a fallback every market-rank signal goes dead).
+ * Returns {id: rank}, rank 1 = most valued by the market.
+ */
+export function rankByAdp(players) {
+  const key = (p) => (p.adp != null && p.adp > 0 ? p.adp : (p.ecr != null && p.ecr > 0 ? p.ecr : null));
+  const ranked = players
+    .filter((p) => key(p) != null)
+    .sort((a, b) => key(a) - key(b));
+  const out = {};
+  ranked.forEach((p, i) => { out[p.id] = i + 1; });
+  return out;
+}
+
 export function replacementRanks(league, P = DEFAULT_PARAMS) {
   const { teams, roster, superflex } = league;
   const flex = teams * (roster.FLEX || 0);

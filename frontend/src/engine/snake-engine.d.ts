@@ -43,7 +43,6 @@ export interface PickScoreResult {
 export declare const DEFAULT_SNAKE_PARAMS: SnakeParams;
 
 export declare function resolveSlotConfig(P: SnakeParams, teams: number, slot?: number): SlotConfig;
-export declare function rankByAdp(players: { id: number | string; adp?: number | null }[]): Record<number, number>;
 export declare function pickScore(
   player: BoardPlayer, liveState: SnakeLiveState, P?: SnakeParams
 ): PickScoreResult;

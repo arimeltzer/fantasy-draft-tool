@@ -14,6 +14,7 @@ import { DEFAULT_PARAMS } from "./engine-core.js";
 export {
   DEFAULT_PARAMS, SCORING_PRESETS, defaultScoring,
   points, ageMultiplier, projectPoints, projectValue, replacementRanks, valueBoard,
+  rankByAdp,
 } from "./engine-core.js";
 
 /* ------------------------------------------------------------------ *
@@ -60,16 +61,6 @@ export const DEFAULT_SNAKE_PARAMS = {
 export function resolveSlotConfig(P, teams, slot) {
   if (teams === 10 && slot && P.SLOTS[slot]) return P.SLOTS[slot];
   return P.SLOT_DEFAULT;
-}
-
-/** Rank players by ADP (ascending; null/absent ADP sorts last). Returns {id: rank}. */
-export function rankByAdp(players) {
-  const ranked = players
-    .filter((p) => p.adp != null && p.adp > 0)
-    .sort((a, b) => a.adp - b.adp);
-  const out = {};
-  ranked.forEach((p, i) => { out[p.id] = i + 1; });
-  return out;
 }
 
 function needMult(pos, have, roster, needs, flexEligible) {

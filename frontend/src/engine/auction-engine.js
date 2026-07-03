@@ -13,6 +13,7 @@ import { DEFAULT_PARAMS } from "./engine-core.js";
 export {
   DEFAULT_PARAMS, SCORING_PRESETS, defaultScoring,
   points, ageMultiplier, projectValue, replacementRanks, valueBoard,
+  rankByAdp,
 } from "./engine-core.js";
 
 /* ------------------------------------------------------------------ *

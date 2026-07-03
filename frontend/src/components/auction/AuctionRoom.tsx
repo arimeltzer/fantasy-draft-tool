@@ -3,7 +3,7 @@ import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, RotateCcw } from "luc
 import { useNavigate } from "react-router-dom";
 import {
   auctionValues, applyInflation, maxBid,
-  dollarValues, marketPrice, nominationScore, nominationPhase, suggestBid,
+  dollarValues, marketPrice, nominationScore, nominationPhase, suggestBid, rankByAdp,
 } from "@/engine/auction-engine.js";
 import type { BoardPlayer } from "@/engine/auction-engine.js";
 import { LeagueSettings, ApiLeague } from "@/lib/api";
@@ -70,12 +70,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
 
   // Position-allocation dollar values + market prices (ported strategy).
   const withDollar = useMemo(() => dollarValues(board, al), [board, al]);
-  const adpRankById = useMemo(() => {
-    const ranked = board.filter((p) => p.adp != null && p.adp > 0).sort((a, b) => (a.adp! - b.adp!));
-    const m: Record<number, number> = {};
-    ranked.forEach((p, i) => { m[p.id as number] = i + 1; });
-    return m;
-  }, [board]);
+  const adpRankById = useMemo(() => rankByAdp(board), [board]);
   const marketById = useMemo(() => {
     const m: Record<number, number> = {};
     for (const p of board) m[p.id as number] = marketPrice(adpRankById[p.id as number], al, undefined, p.pos, p.aav);
