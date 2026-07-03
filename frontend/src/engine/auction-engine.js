@@ -142,7 +142,12 @@ export function dollarValues(board, auctionLeague, P = DEFAULT_AUCTION_PARAMS) {
  */
 export function marketPrice(adpRank, auctionLeague, P = DEFAULT_AUCTION_PARAMS, pos, aav) {
   const min = P.auction.minBid;
-  if (aav != null && aav > 0) return Math.max(min, Math.round(aav));
+  // Trust AAV only when it's a plausible price: no player can cost more than
+  // one team's whole budget. Anything above that is corrupted data (e.g. a
+  // rank mis-parsed as a dollar figure) — ignore it and use the curve.
+  if (aav != null && aav > 0 && aav <= auctionLeague.budget) {
+    return Math.max(min, Math.round(aav));
+  }
   if (!adpRank || adpRank < 1) return min;
   const { teams, rosterSize } = auctionLeague;
   const totalPicks = Math.max(2, teams * rosterSize);

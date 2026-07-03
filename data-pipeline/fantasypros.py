@@ -113,11 +113,16 @@ def fetch_rankings(season: int, scoring: str = "HALF", api_key: str | None = Non
     return parse_rankings(data)
 
 
-def parse_aav(data: dict) -> dict:
+def parse_aav(data: dict, cap: float = 250.0) -> dict:
     """API JSON (type=auction pull) -> {(norm_name, pos): aav}.
 
-    Defensive about field names, same spirit as parse_rankings — FantasyPros
-    has used auction_value / avg_auction_value / aav / rank_ave at various times.
+    Only reads fields that are unambiguously DOLLAR values. Never fall back to
+    rank-style fields (rank_ave etc.) — those are average expert RANKS, and
+    treating them as prices poisons the market model ($500 "values" on deep
+    players). `cap` drops implausible prices outright: no single player can
+    cost more than a full team budget, so anything above it means we grabbed
+    the wrong field and it's safer to store nothing (engine falls back to the
+    modeled curve).
     """
     players = data.get("players") or data.get("rankings") or []
     out: dict[tuple, float] = {}
@@ -129,8 +134,8 @@ def parse_aav(data: dict) -> dict:
             pos = "DST"
         if not name or pos not in ("QB", "RB", "WR", "TE", "K", "DST"):
             continue
-        aav = _num(p, "auction_value", "player_auction_value", "avg_auction_value", "aav", "rank_ave")
-        if aav is not None and aav > 0:
+        aav = _num(p, "auction_value", "player_auction_value", "avg_auction_value", "aav")
+        if aav is not None and 0 < aav <= cap:
             out[(norm(name), pos)] = round(aav, 1)
     return out
 
