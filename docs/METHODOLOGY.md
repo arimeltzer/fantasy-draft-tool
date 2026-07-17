@@ -131,6 +131,25 @@ From VBD:
 across rounds (serpentine order), used to show "you're up in N picks" and to
 drive need-based recommendations.
 
+## 10a. Keepers
+
+A keeper is a player retained from last season instead of entering the draft.
+The league's keeper rule (`frontend/src/engine/keeper.js`) turns last year's cost
+into this year's cost:
+
+- **Price basis (ESPN-style):** `thisPrice = lastPrice + priceSurcharge`
+  (default +$7; a FA keeper costs the surcharge, min $1). `maxKeepers` default 3.
+- **Round basis (Yahoo-style):** `thisRound = lastRound − roundInflation × yearsKept`
+  (default no escalation; a FA keeper costs `undraftedRound`, default R13).
+  `maxKeepers` default 1, with a `noConsecutive` advisory (can't keep two years
+  running).
+
+Keepers seed the board as pre-filled picks: the player leaves the pool, an
+auction keeper's price counts against that team's budget and feeds inflation
+(§9), and a snake keeper's round is the pick that team forfeits. Costs and the
+rule are hand-entered per league — there's no historical-cost feed. All keeper
+math is client-side like the rest of the engine.
+
 ## 11. Current parameter reference
 
 ```jsonc

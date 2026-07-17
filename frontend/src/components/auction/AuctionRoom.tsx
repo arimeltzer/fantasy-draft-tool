@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
-import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { auctionValues, applyInflation, maxBid } from "@/engine/valuation-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
@@ -7,6 +7,7 @@ import { LeagueSettings, ApiLeague } from "@/lib/api";
 import { useDraftStore } from "@/store/draftStore";
 import { usePatchLeague } from "@/hooks/useLeague";
 import { posStyle } from "@/lib/posStyles";
+import { isKeeper } from "@/lib/keeperPick";
 import BoardControls from "@/components/board/BoardControls";
 import ValueBar from "@/components/board/ValueBar";
 import BudgetTracker from "@/components/auction/BudgetTracker";
@@ -14,6 +15,7 @@ import NominationPanel from "@/components/auction/NominationPanel";
 import InflationBadge from "@/components/auction/InflationBadge";
 import RosterPanel from "@/components/shared/RosterPanel";
 import CommonOpponentsPopover from "@/components/shared/CommonOpponentsPopover";
+import KeeperPlanner from "@/components/shared/KeeperPlanner";
 import SettingsDrawer from "./SettingsDrawer";
 
 interface Props {
@@ -33,6 +35,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   const [hideDrafted, setHideDrafted] = useState(true);
   const [prices, setPrices] = useState<Record<number, number>>({});
   const [showSettings, setShowSettings] = useState(false);
+  const [showKeepers, setShowKeepers] = useState(false);
 
   const rosterSize = useMemo(() => {
     const r = settings.roster;
@@ -43,9 +46,11 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
 
   const withPar = useMemo(() => auctionValues(board, al), [board, al]);
 
+  // Every priced pick in the room — my buys, opponents' buys, and keepers —
+  // drives inflation (money spent is money out of the pool, whoever spent it).
   const draftedPrices = useMemo(
     () => picks
-      .filter((p): p is typeof p & { playerId: number; price: number } => p.mine && p.playerId != null && p.price != null)
+      .filter((p): p is typeof p & { playerId: number; price: number } => p.playerId != null && p.price != null)
       .map((p) => ({ id: p.playerId, price: p.price })),
     [picks]
   );
@@ -74,8 +79,8 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   const undo = useCallback((pickId: number) => removePick(pickId), [removePick]);
 
   const resetDraft = () => {
-    if (confirm("Clear the auction log? Settings stay.")) {
-      picks.forEach((p) => removePick(p.pickId));
+    if (confirm("Clear the auction log? Keepers and settings stay.")) {
+      picks.filter((p) => !isKeeper(p)).forEach((p) => removePick(p.pickId));
     }
   };
 
@@ -113,7 +118,10 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           </div>
           <div className="ml-auto flex items-center gap-2">
             <InflationBadge factor={inflation.factor} />
-            <button onClick={() => setShowSettings((v) => !v)} className="btn-ghost px-2.5 py-1.5 text-xs">
+            <button onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); }} className="btn-ghost px-2.5 py-1.5 text-xs">
+              <Lock className="h-3.5 w-3.5" /> Keepers
+            </button>
+            <button onClick={() => { setShowSettings((v) => !v); setShowKeepers(false); }} className="btn-ghost px-2.5 py-1.5 text-xs">
               <Settings className="h-3.5 w-3.5" /> League
             </button>
           </div>
@@ -125,6 +133,19 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           settings={settings}
           onSave={(s) => patchLeague.mutate({ settings: s })}
           onClose={() => setShowSettings(false)}
+          format="auction"
+        />
+      )}
+
+      {showKeepers && (
+        <KeeperPlanner
+          format="auction"
+          settings={settings}
+          board={board}
+          picks={picks}
+          addPick={addPick}
+          removePick={removePick}
+          onClose={() => setShowKeepers(false)}
         />
       )}
 

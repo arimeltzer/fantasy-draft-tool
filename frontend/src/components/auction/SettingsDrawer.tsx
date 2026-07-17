@@ -1,19 +1,26 @@
 import { useState } from "react";
 import { X } from "lucide-react";
-import { LeagueSettings } from "@/lib/api";
+import { KEEPER_PRESETS, normalizeKeeperRule } from "@/engine/keeper.js";
+import { LeagueSettings, KeeperRule } from "@/lib/api";
 
 interface Props {
   settings: LeagueSettings;
   onSave: (s: LeagueSettings) => void;
   onClose: () => void;
+  format?: "auction" | "snake";
 }
 
-export default function SettingsDrawer({ settings, onSave, onClose }: Props) {
+export default function SettingsDrawer({ settings, onSave, onClose, format = "auction" }: Props) {
   const [local, setLocal] = useState<LeagueSettings>(settings);
+  const keeper: KeeperRule = normalizeKeeperRule(local.keeper, format);
 
   const set = (patch: Partial<LeagueSettings>) => setLocal((s) => ({ ...s, ...patch }));
   const setRoster = (k: string, v: number) =>
     setLocal((s) => ({ ...s, roster: { ...s.roster, [k]: v } }));
+  const setKeeper = (patch: Partial<KeeperRule>) =>
+    setLocal((s) => ({ ...s, keeper: { ...normalizeKeeperRule(s.keeper, format), ...patch } }));
+  const applyPreset = (p: "yahoo" | "espn" | "custom") =>
+    setLocal((s) => ({ ...s, keeper: { ...KEEPER_PRESETS[p], enabled: s.keeper?.enabled ?? true } }));
 
   const numField = (label: string, value: number, onChange: (v: number) => void, step = 1) => (
     <label key={label} className="flex items-center justify-between gap-2 text-xs">
@@ -58,6 +65,63 @@ export default function SettingsDrawer({ settings, onSave, onClose }: Props) {
           <h3 className="eyebrow">Your draft slot</h3>
           {numField("Draft slot", local.draftSlot ?? 1, (v) => set({ draftSlot: v }))}
         </div>
+      </div>
+
+      <div className="mx-auto max-w-6xl border-t border-hair px-4 py-4">
+        <div className="mb-2.5 flex flex-wrap items-center gap-2">
+          <h3 className="eyebrow">Keepers</h3>
+          <label className="flex items-center gap-1.5 text-xs text-muted">
+            <input
+              type="checkbox"
+              checked={keeper.enabled}
+              onChange={(e) => setKeeper({ enabled: e.target.checked })}
+              className="h-4 w-4 accent-brand"
+            />
+            Enabled
+          </label>
+          <div className="ml-auto flex items-center gap-1">
+            {(["yahoo", "espn", "custom"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => applyPreset(p)}
+                className={`chip capitalize ${keeper.preset === p ? "border-brand bg-brand/10 text-brand" : "border-line bg-raised text-muted hover:text-ink"}`}
+              >
+                {KEEPER_PRESETS[p].label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {keeper.enabled && (
+          <div className="grid gap-x-6 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-3">
+            <label className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-muted">Cost basis</span>
+              <select
+                value={keeper.basis}
+                onChange={(e) => setKeeper({ basis: e.target.value as "price" | "round" })}
+                className="w-24 rounded-md border border-line bg-sunken px-2 py-1 text-ink focus:border-brand focus:outline-none"
+              >
+                <option value="price">Price ($)</option>
+                <option value="round">Round</option>
+              </select>
+            </label>
+            {numField("Max keepers / team", keeper.maxKeepers, (v) => setKeeper({ maxKeepers: v }))}
+            {keeper.basis === "price"
+              ? numField("Price surcharge ($)", keeper.priceSurcharge, (v) => setKeeper({ priceSurcharge: v }))
+              : numField("Undrafted round", keeper.undraftedRound, (v) => setKeeper({ undraftedRound: v }))}
+            {keeper.basis === "round" &&
+              numField("Round escalation / yr", keeper.roundInflation, (v) => setKeeper({ roundInflation: v }))}
+            <label className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-muted">No consecutive years</span>
+              <input
+                type="checkbox"
+                checked={keeper.noConsecutive}
+                onChange={(e) => setKeeper({ noConsecutive: e.target.checked })}
+                className="h-4 w-4 accent-brand"
+              />
+            </label>
+          </div>
+        )}
       </div>
 
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 pb-4">

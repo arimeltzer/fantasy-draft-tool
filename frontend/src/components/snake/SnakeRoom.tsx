@@ -1,16 +1,18 @@
 import { useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, X } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, X, Lock } from "lucide-react";
 import { snakePicks } from "@/engine/valuation-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
 import { LeagueSettings, ApiLeague } from "@/lib/api";
 import { useDraftStore } from "@/store/draftStore";
 import { usePatchLeague } from "@/hooks/useLeague";
 import { posStyle } from "@/lib/posStyles";
+import { isKeeper } from "@/lib/keeperPick";
 import BoardControls from "@/components/board/BoardControls";
 import ValueBar from "@/components/board/ValueBar";
 import RosterPanel from "@/components/shared/RosterPanel";
 import CommonOpponentsPopover from "@/components/shared/CommonOpponentsPopover";
+import KeeperPlanner from "@/components/shared/KeeperPlanner";
 import PickClock from "./PickClock";
 import NeedsPanel, { computeNeeds } from "./NeedsPanel";
 import Recommendations from "./Recommendations";
@@ -32,9 +34,13 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   const [posFilter, setPosFilter] = useState("ALL");
   const [hideTaken, setHideTaken] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [showKeepers, setShowKeepers] = useState(false);
 
   const draftedIds = useMemo(() => new Set(picks.map((p) => p.playerId).filter(Boolean) as number[]), [picks]);
-  const overallPick = picks.length + 1;
+  // Keepers occupy specific rounds, not the front of the draft, so they don't
+  // advance the live "who's on the clock" counter — only in-draft picks do.
+  const livePickCount = useMemo(() => picks.filter((p) => !isKeeper(p)).length, [picks]);
+  const overallPick = livePickCount + 1;
 
   const myPickNums = useMemo(
     () => snakePicks(settings.draftSlot ?? 1, settings.teams),
@@ -62,7 +68,9 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   const undo = useCallback((pickId: number) => removePick(pickId), [removePick]);
 
   const resetDraft = () => {
-    if (confirm("Clear all draft picks?")) picks.forEach((p) => removePick(p.pickId));
+    if (confirm("Clear all draft picks? Keepers stay.")) {
+      picks.filter((p) => !isKeeper(p)).forEach((p) => removePick(p.pickId));
+    }
   };
 
   const filtered = useMemo(() => board.filter((p) => {
@@ -99,7 +107,10 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
               teams={settings.teams}
               overallPick={overallPick}
             />
-            <button onClick={() => setShowSettings((v) => !v)} className="btn-ghost px-2.5 py-1.5 text-xs">
+            <button onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); }} className="btn-ghost px-2.5 py-1.5 text-xs">
+              <Lock className="h-3.5 w-3.5" /> Keepers
+            </button>
+            <button onClick={() => { setShowSettings((v) => !v); setShowKeepers(false); }} className="btn-ghost px-2.5 py-1.5 text-xs">
               <Settings className="h-3.5 w-3.5" /> League
             </button>
           </div>
@@ -111,6 +122,19 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
           settings={settings}
           onSave={(s) => patchLeague.mutate({ settings: s })}
           onClose={() => setShowSettings(false)}
+          format="snake"
+        />
+      )}
+
+      {showKeepers && (
+        <KeeperPlanner
+          format="snake"
+          settings={settings}
+          board={board}
+          picks={picks}
+          addPick={addPick}
+          removePick={removePick}
+          onClose={() => setShowKeepers(false)}
         />
       )}
 

@@ -27,6 +27,7 @@ backend/            FastAPI + async SQLAlchemy (asyncpg) + Postgres, JWT auth
   integrations/       ESPN + Yahoo league import (see below)
 frontend/           React + TS + Vite + Tailwind (light design system)
   src/engine/         valuation-engine.js (VBD/auction) + strength-of-schedule.js
+                      + keeper.js (keeper-cost rule engine, node fixture-tested)
   src/components/, pages/, hooks/, lib/api.ts, lib/posStyles.ts
 data-pipeline/      offline data prep -> JSON -> Postgres
   ingest_nflverse.py  pull players/schedule/logs from nflverse
@@ -57,6 +58,7 @@ VBD/auction values client-side from the player rows + league settings.
 ```bash
 # frontend
 cd frontend && npm install && npm run build      # tsc -b && vite build
+node frontend/src/engine/keeper.selftest.mjs      # keeper-rule engine tests
 # backend (needs DATABASE_URL etc.)
 cd backend && uvicorn main:app --reload
 # integration parsers (no net/db) — regression guard
@@ -109,13 +111,25 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
 - The frontend is an intentional **light** theme (semantic tokens in
   `tailwind.config.ts`); the old inverted-slate hack was removed — don't reinstate it.
 
+## Keepers (built)
+
+- **Engine**: `frontend/src/engine/keeper.js` — generic rule (`maxKeepers`,
+  `basis` price-vs-round, `priceSurcharge`, `undraftedRound`, `roundInflation`,
+  `noConsecutive`) + presets (Yahoo 1/round/R13/no-repeat, ESPN ≤3/price/+$7).
+  `keeperCost()` computes this-year cost; node-tested (`keeper.selftest.mjs`).
+- **UI**: `components/shared/KeeperPlanner.tsx` (Keepers button in both rooms);
+  rule config in `SettingsDrawer`. Rule persists in `league.settings.keeper`.
+- **Storage**: keepers are `DraftPick` rows tagged via the `slot` text field
+  (`lib/keeperPick.ts`) — no migration. Removed from pool; auction price feeds
+  budget + inflation; snake round is the pick that team forfeits. Reset-draft
+  keeps them; snake pick-clock ignores them. All-teams (my + opponents').
+
 ## Open threads / next up
 
-- **Keeper Planner** (designed, not built): manual roster + last-year-cost entry →
-  generic keeper rule (`maxKeepers`, round-vs-price, `undraftedRound`,
-  `priceSurcharge`, `noConsecutive`) → seeds the board (pool removal + budget).
-  Rules to support: Yahoo (1 keeper, draft-round cost / undrafted=R13, no repeat),
-  ESPN (≤3 keepers, last cost +$7).
-- **Yahoo Fantasy access** pending via the sports developer program.
+- **Yahoo Fantasy access** pending via the sports developer program (the import
+  path is built and blocked only on the credential — see Integrations).
+- **Keeper refinements** (optional): true serpentine slot forfeiture in snake
+  (v1 removes the player + shows the round cost but doesn't reorder the exact
+  picks); auto-seed keeper candidates from an imported roster.
 - **FantasyPros**: validate a live pull where the key lives; AAV/tier surfacing
   needs a new `fantasy_players` column (migration).

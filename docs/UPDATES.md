@@ -6,6 +6,29 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-07 — Keeper planner (auction + snake)
+- **Generic keeper engine** (`frontend/src/engine/keeper.js`, node fixture-tested
+  in `keeper.selftest.mjs`): presets for **Yahoo** (1 keeper, drafted-round cost,
+  R13 if a FA, no consecutive years) and **ESPN** (≤3 keepers, last price + $7),
+  plus a Custom baseline. `keeperCost()` turns last year's price/round into this
+  year's cost (surcharge, undrafted round, optional per-year round escalation,
+  no-consecutive advisory); `validateKeepers()` enforces `maxKeepers` per team.
+- **Planner UI** (`components/shared/KeeperPlanner.tsx`), opened from a **Keepers**
+  button in both draft rooms: search a player, pick the owner (you or an opponent),
+  enter last year's price/round (or mark FA), see the computed keeper cost live,
+  and commit. Shows your keeper spend vs. budget (auction) or forfeited rounds
+  (snake), and flags rule violations.
+- **Seeding.** Keepers are stored as ordinary `DraftPick` rows, marked via the
+  (previously unused) `slot` text field (`lib/keeperPick.ts`) — **no DB migration**.
+  They're removed from the pool; auction keeper prices count against budget and
+  feed inflation; snake keepers cost that team its round. "Reset draft" now keeps
+  keepers; the snake pick-clock ignores keepers (they aren't live picks).
+- **Inflation fix.** Auction inflation now counts **every** priced pick in the
+  room (your buys, opponents' buys, and keepers), not just your own — money spent
+  is money out of the pool whoever spent it.
+- **Rule config** lives in `SettingsDrawer` (preset chips + fields), persisted in
+  `league.settings.keeper`.
+
 ## 2026-06 — FantasyPros API + project docs
 - **FantasyPros enrichment.** `data-pipeline/fantasypros.py` pulls current,
   scoring-aware consensus ECR/ADP **and component projections** via the public

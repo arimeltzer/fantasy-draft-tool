@@ -42,6 +42,18 @@ export interface ImportReport {
   mine_found: boolean;
 }
 
+export interface KeeperRule {
+  preset: "yahoo" | "espn" | "custom";
+  label?: string;
+  enabled: boolean;
+  maxKeepers: number;
+  basis: "price" | "round";
+  priceSurcharge: number;
+  undraftedRound: number;
+  roundInflation: number;
+  noConsecutive: boolean;
+}
+
 export interface LeagueSettings {
   teams: number;
   budget: number;
@@ -52,6 +64,7 @@ export interface LeagueSettings {
   };
   superflex: boolean;
   draftSlot?: number;
+  keeper?: KeeperRule;
 }
 
 function getToken(): string | null {
