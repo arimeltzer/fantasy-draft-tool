@@ -30,6 +30,7 @@ class NormPlayer:
     team: str                     # NFL abbrev, best-effort ("" if unknown)
     ext_id: str | None = None     # platform player id (for reference/debug)
     bid: int | None = None        # auction price paid, if known
+    round: int | None = None      # draft round, if known (snake keeper cost)
 
 
 @dataclass

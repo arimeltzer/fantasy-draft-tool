@@ -89,17 +89,21 @@ def parse_settings(data: dict) -> tuple[dict, str]:
     return settings, fmt
 
 
-def _bid_map(data: dict) -> dict[int, int]:
-    out: dict[int, int] = {}
+def _draft_map(data: dict) -> dict[int, dict]:
+    """playerId -> {bid, round} from the draft, for keeper-cost basis."""
+    out: dict[int, dict] = {}
     for p in (data.get("draftDetail", {}) or {}).get("picks", []) or []:
         pid = p.get("playerId")
-        if pid is not None and p.get("bidAmount") is not None:
-            out[pid] = int(p["bidAmount"])
+        if pid is None:
+            continue
+        bid = int(p["bidAmount"]) if p.get("bidAmount") is not None else None
+        rnd = int(p["roundId"]) if p.get("roundId") is not None else None
+        out[pid] = {"bid": bid, "round": rnd}
     return out
 
 
 def parse_teams(data: dict, my_team: str | None) -> list[NormTeam]:
-    bids = _bid_map(data)
+    draft = _draft_map(data)
     mine_key = (my_team or "").strip().lower()
     out: list[NormTeam] = []
     for t in data.get("teams", []) or []:
@@ -109,12 +113,14 @@ def parse_teams(data: dict, my_team: str | None) -> list[NormTeam]:
         for entry in (t.get("roster", {}) or {}).get("entries", []) or []:
             pl = (entry.get("playerPoolEntry", {}) or {}).get("player", {}) or {}
             pid = pl.get("id")
+            d = draft.get(pid, {})
             players.append(NormPlayer(
                 name=pl.get("fullName", "") or "",
                 pos=POS.get(pl.get("defaultPositionId"), ""),
                 team=PRO_TEAM.get(pl.get("proTeamId"), ""),
                 ext_id=str(pid) if pid is not None else None,
-                bid=bids.get(pid),
+                bid=d.get("bid"),
+                round=d.get("round"),
             ))
         out.append(NormTeam(name=name, is_mine=is_mine, players=players))
     return out

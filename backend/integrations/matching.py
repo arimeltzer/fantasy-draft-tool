@@ -109,3 +109,30 @@ def map_roster(index, players: list[NormPlayer]):
         pid = match_player(index, p)
         (matched if pid is not None else unmatched).append((p, pid) if pid is not None else p)
     return matched, unmatched
+
+
+def keeper_candidates(norm, index) -> list[dict]:
+    """From a normalized (prior-season) league + a current-pool player index,
+    build keeper candidates. Each carries the matched current-season player_id
+    plus the raw draft basis (auction bid and/or snake round) so the client can
+    apply the league's keeper rule. Owner is the team name, or "Me" if flagged.
+    """
+    out: list[dict] = []
+    for team in norm.teams:
+        owner = "Me" if team.is_mine else team.name
+        for np in team.players:
+            if not np.name:
+                continue
+            pid = match_player(index, np)
+            out.append({
+                "player_id": pid,
+                "name": np.name,
+                "pos": np.pos,
+                "team": np.team,
+                "owner": owner,
+                "is_mine": team.is_mine,
+                "bid": np.bid,       # auction price paid last year (or None)
+                "round": np.round,   # draft round last year (or None => FA)
+                "matched": pid is not None,
+            })
+    return out

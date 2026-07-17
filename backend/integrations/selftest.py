@@ -11,7 +11,7 @@ Run:  python -m integrations.selftest   (from the backend/ dir)
 from __future__ import annotations
 
 from .base import NormPlayer
-from .matching import build_index, match_player
+from .matching import build_index, match_player, keeper_candidates
 from . import espn, yahoo
 
 
@@ -64,7 +64,7 @@ def test_espn():
                 {"playerPoolEntry": {"player": {"id": 1, "fullName": "San Francisco 49ers", "defaultPositionId": 16, "proTeamId": 25}}},
             ]}},
         ],
-        "draftDetail": {"picks": [{"teamId": 1, "playerId": 11, "bidAmount": 55}]},
+        "draftDetail": {"picks": [{"teamId": 1, "playerId": 11, "bidAmount": 55, "roundId": 3}]},
     }
     lg = espn.parse_league(data, season=2026, my_team="Team Ari")
     assert lg.fmt == "auction" and lg.settings["budget"] == 300
@@ -72,7 +72,43 @@ def test_espn():
     assert lg.settings["superflex"] is True and lg.settings["roster"]["SF"] == 1
     assert lg.settings["roster"]["FLEX"] == 1 and lg.settings["roster"]["BENCH"] == 6
     assert lg.teams[0].is_mine and lg.teams[0].players[0].bid == 55
+    assert lg.teams[0].players[0].round == 3
     assert lg.teams[1].players[0].pos == "DST" and lg.teams[1].players[0].team == "SF"
+    # DST was not in the draft -> no bid/round (a free-agent keeper).
+    assert lg.teams[1].players[0].bid is None and lg.teams[1].players[0].round is None
+
+
+def test_keeper_candidates():
+    # Current-season pool the keepers must map onto.
+    idx = build_index([
+        {"id": 11, "name": "Patrick Mahomes", "pos": "QB", "team": "KC"},
+        {"id": 7, "name": "49ers D/ST", "pos": "DST", "team": "SF"},
+    ])
+    data = {
+        "id": 123456,
+        "settings": {"name": "L", "size": 12,
+                     "scoringSettings": {"scoringItems": []},
+                     "draftSettings": {"type": "AUCTION", "auctionBudget": 200},
+                     "rosterSettings": {"lineupSlotCounts": {"0": 1, "20": 6}}},
+        "teams": [
+            {"id": 1, "name": "Team Ari", "roster": {"entries": [
+                {"playerPoolEntry": {"player": {"id": 11, "fullName": "Patrick Mahomes", "defaultPositionId": 1, "proTeamId": 12}}},
+            ]}},
+            {"id": 2, "name": "Rivals", "roster": {"entries": [
+                {"playerPoolEntry": {"player": {"id": 1, "fullName": "San Francisco 49ers", "defaultPositionId": 16, "proTeamId": 25}}},
+            ]}},
+        ],
+        "draftDetail": {"picks": [{"teamId": 1, "playerId": 11, "bidAmount": 55, "roundId": 3}]},
+    }
+    norm = espn.parse_league(data, season=2026, my_team="Team Ari")
+    cands = keeper_candidates(norm, idx)
+    assert len(cands) == 2
+    me = next(c for c in cands if c["name"] == "Patrick Mahomes")
+    assert me["player_id"] == 11 and me["owner"] == "Me" and me["is_mine"]
+    assert me["bid"] == 55 and me["round"] == 3 and me["matched"]
+    fa = next(c for c in cands if c["pos"] == "DST")
+    assert fa["player_id"] == 7 and fa["owner"] == "Rivals" and not fa["is_mine"]
+    assert fa["bid"] is None and fa["round"] is None  # undrafted -> FA basis
 
     # snake, no kicker, full PPR
     snake = {"id": 9, "settings": {"size": 10,
@@ -147,6 +183,7 @@ def test_yahoo_leagues():
 def main():
     test_matching(); print("✓ matching")
     test_espn(); print("✓ espn parse")
+    test_keeper_candidates(); print("✓ keeper candidates")
     test_yahoo(); print("✓ yahoo parse")
     test_yahoo_leagues(); print("✓ yahoo leagues list")
     print("\nALL INTEGRATION SELFTESTS PASS")

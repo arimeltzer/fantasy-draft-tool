@@ -6,6 +6,7 @@ import { LeagueSettings } from "@/lib/api";
 import { DraftEntry } from "@/store/draftStore";
 import { decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
 import { posStyle } from "@/lib/posStyles";
+import KeeperAutofill from "./KeeperAutofill";
 
 interface Props {
   format: "auction" | "snake";
@@ -248,6 +249,8 @@ export default function KeeperPlanner({
                 ? " Their price counts against budget and drives auction inflation."
                 : " Their round is the pick that team forfeits."}
             </p>
+
+            <KeeperAutofill rule={rule} takenIds={takenIds} addPick={addPick} />
           </div>
 
           {/* ── Current keepers ───────────────────────────────────── */}

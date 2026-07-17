@@ -123,6 +123,10 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   (`lib/keeperPick.ts`) — no migration. Removed from pool; auction price feeds
   budget + inflation; snake round is the pick that team forfeits. Reset-draft
   keeps them; snake pick-clock ignores them. All-teams (my + opponents').
+- **ESPN auto-fill**: `POST /api/integrations/espn/keeper-candidates` reads a
+  prior-season ESPN league's draft (bid + round via `espn.py`/`matching.keeper_candidates`,
+  fixture-tested) and maps it to the current pool; `KeeperAutofill.tsx` pre-fills
+  the planner from it. The keeper *rule* still comes from league settings.
 
 ## Open threads / next up
 
@@ -130,6 +134,7 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   path is built and blocked only on the credential — see Integrations).
 - **Keeper refinements** (optional): true serpentine slot forfeiture in snake
   (v1 removes the player + shows the round cost but doesn't reorder the exact
-  picks); auto-seed keeper candidates from an imported roster.
+  picks); a keeper **recommendation** view (surplus = draft value − keeper cost);
+  Yahoo auto-fill (blocked on the same Fantasy-scope credential as import).
 - **FantasyPros**: validate a live pull where the key lives; AAV/tier surfacing
   needs a new `fantasy_players` column (migration).

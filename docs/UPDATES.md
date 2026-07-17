@@ -6,6 +6,21 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-07 — Keeper auto-fill from ESPN
+- **Prices/rounds pulled automatically.** The ESPN adapter now parses each
+  drafted player's **round** alongside the auction bid (`espn.py` `_draft_map`),
+  and a pure `keeper_candidates(norm, index)` (`matching.py`, fixture-tested)
+  maps a prior-season league's rosters + draft results onto the current player
+  pool. New endpoint `POST /api/integrations/espn/keeper-candidates` returns the
+  candidates (matched id, owner, bid, round) for a given ESPN league + season.
+- **Planner auto-fill panel** (`components/shared/KeeperAutofill.tsx`): enter the
+  league's prior-season ID (public, or private with `espn_s2`/`SWID`), fetch the
+  draft, and get a checklist of every rostered player with its computed keeper
+  cost — pre-selected where matched. "Add selected" bulk-seeds them as keepers.
+  Undrafted players show as FA (fall to the rule's FA path); unmatched/already-
+  kept rows are disabled. The keeper **rule** still comes from league settings —
+  the API supplies only the raw cost basis.
+
 ## 2026-07 — Keeper planner (auction + snake)
 - **Generic keeper engine** (`frontend/src/engine/keeper.js`, node fixture-tested
   in `keeper.selftest.mjs`): presets for **Yahoo** (1 keeper, drafted-round cost,

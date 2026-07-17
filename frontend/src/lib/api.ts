@@ -42,6 +42,26 @@ export interface ImportReport {
   mine_found: boolean;
 }
 
+export interface KeeperCandidate {
+  player_id: number | null;
+  name: string;
+  pos: string;
+  team: string;
+  owner: string;
+  is_mine: boolean;
+  bid: number | null;
+  round: number | null;
+  matched: boolean;
+}
+
+export interface KeeperCandidatesResult {
+  fmt: "auction" | "snake";
+  season: number;
+  candidates: KeeperCandidate[];
+  matched: number;
+  unmatched: number;
+}
+
 export interface KeeperRule {
   preset: "yahoo" | "espn" | "custom";
   label?: string;
@@ -137,6 +157,16 @@ export const api = {
     access_token?: string;
     my_guid?: string;
   }) => req<{ league: ApiLeague; report: ImportReport }>("/api/leagues/import", {
+    method: "POST", body: JSON.stringify(data),
+  }),
+  espnKeeperCandidates: (data: {
+    ext_id: string;
+    season?: number;
+    match_season?: number;
+    espn_s2?: string;
+    swid?: string;
+    my_team?: string;
+  }) => req<KeeperCandidatesResult>("/api/integrations/espn/keeper-candidates", {
     method: "POST", body: JSON.stringify(data),
   }),
   yahooAuthUrl: () => req<{ url: string }>("/api/integrations/yahoo/auth-url"),

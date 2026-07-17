@@ -146,9 +146,14 @@ into this year's cost:
 
 Keepers seed the board as pre-filled picks: the player leaves the pool, an
 auction keeper's price counts against that team's budget and feeds inflation
-(§9), and a snake keeper's round is the pick that team forfeits. Costs and the
-rule are hand-entered per league — there's no historical-cost feed. All keeper
-math is client-side like the rest of the engine.
+(§9), and a snake keeper's round is the pick that team forfeits. All keeper math
+is client-side like the rest of the engine.
+
+Base costs can be entered by hand or **auto-filled from ESPN**: the planner reads
+a prior-season ESPN league's draft (auction bid / snake round per player) and
+maps it to the current pool, pre-filling each keeper's base cost. The keeper
+*rule* (surcharge, undrafted round, escalation, max) still comes from your league
+settings — the provider supplies only what was paid, not your league's policy.
 
 ## 11. Current parameter reference
 

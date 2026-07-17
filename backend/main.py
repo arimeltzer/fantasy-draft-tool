@@ -19,7 +19,7 @@ from models import (
     Schedule, SosMult, User,
 )
 from integrations import espn as espn_provider, yahoo as yahoo_provider
-from integrations.matching import build_index, match_player
+from integrations.matching import build_index, match_player, keeper_candidates
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -506,6 +506,52 @@ async def import_league(
             "unmatched_sample": unmatched[:30],
             "mine_found": any(t.is_mine for t in norm.teams),
         },
+    }
+
+
+class KeeperCandidatesRequest(BaseModel):
+    ext_id: str                       # ESPN leagueId (must be a keeper league)
+    season: int = 2025                # prior season whose draft holds the costs
+    match_season: int = 2026          # current player pool to map candidates onto
+    espn_s2: Optional[str] = None
+    swid: Optional[str] = None
+    my_team: Optional[str] = None     # ESPN team id or name to flag as "mine"
+
+
+@app.post("/api/integrations/espn/keeper-candidates")
+async def espn_keeper_candidates(
+    data: KeeperCandidatesRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(db_dep),
+) -> dict:
+    """Pull a prior-season ESPN league's rosters + draft results and return
+    keeper candidates (matched to the current player pool) with each player's
+    auction bid and/or draft round. The client applies the league's keeper rule
+    to turn those into this-year costs and pre-fill the keeper planner."""
+    try:
+        norm = await espn_provider.fetch_league(
+            data.ext_id, data.season,
+            espn_s2=data.espn_s2, swid=data.swid, my_team=data.my_team)
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except Exception as e:  # noqa: BLE001 — surface provider errors cleanly
+        raise HTTPException(status_code=502, detail=f"espn fetch failed: {e}")
+
+    rows = (await db.execute(
+        select(Player.id, Player.name, Player.pos, Player.team).where(Player.season == data.match_season)
+    )).all()
+    if not rows:
+        raise HTTPException(status_code=409, detail=f"No players loaded for season {data.match_season}.")
+    index = build_index([{"id": r.id, "name": r.name, "pos": r.pos, "team": r.team} for r in rows])
+
+    cands = keeper_candidates(norm, index)
+    matched = sum(1 for c in cands if c["matched"])
+    return {
+        "fmt": norm.fmt,
+        "season": data.season,
+        "candidates": cands,
+        "matched": matched,
+        "unmatched": len(cands) - matched,
     }
 
 
