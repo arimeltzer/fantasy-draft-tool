@@ -93,6 +93,31 @@ const recNone = recommendKeepers(weak, {
 });
 eq(recNone.best.ids.length, 0, "keeping nobody when no candidate clears the floor");
 
+// ── AUCTION: scarcity (VBD points) must NOT override a bad price ─────
+// A scarce player (huge VBD cliff) but priced ABOVE market -> negative $
+// surplus -> must be HOLD, not keep. (Regression: scarcity in points was
+// being added to a dollar surplus and swamping it.)
+const scarceTE = { id: 900, name: "Scarce TE", pos: "TE", vbd: 130, valuePoints: 260, adp: 3, ecr: 3, parValue: 78, adjValue: 78 };
+const auctionBoard = [scarceTE, ...board.map((p) => ({ ...p, pos: "RB" }))]; // make TE scarce (only one)
+const auctionMkt = marketOrder(auctionBoard);
+const overPriced = { id: 900, player: scarceTE, cost: { basis: "price", price: 81, round: null } };
+const aRec = recommendKeepers([overPriced], {
+  format: "auction", board: auctionBoard, marketBoard: auctionMkt,
+  settings: { teams: 12, budget: 200, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } },
+  allKeptIds: new Set(), maxKeepers: 3, flexFloor: 3,
+});
+eq(aRec.ranked[0].kv <= 0, true, "auction KV excludes points-scarcity ($78 mkt - $81 cost => ~-$3)");
+eq(aRec.best.ids.length, 0, "overpriced scarce player is NOT recommended");
+
+// A well-priced version of the same scarce player IS recommended.
+const wellPriced = { id: 900, player: scarceTE, cost: { basis: "price", price: 40, round: null } };
+const aRec2 = recommendKeepers([wellPriced], {
+  format: "auction", board: auctionBoard, marketBoard: auctionMkt,
+  settings: { teams: 12, budget: 200, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 6 } },
+  allKeptIds: new Set(), maxKeepers: 3, flexFloor: 3,
+});
+ok(aRec2.best.ids.includes(900), "same player at $40 (>$38 surplus) IS recommended");
+
 // ── PREDICT OPPONENT KEEPERS: studs kept, scrubs not, respects max ──
 // Team 2 rosters a rank-2 stud kept at round 10 (huge surplus) + a rank-50
 // scrub kept at round 1 (negative). Team 3 has a rank-4 stud at round 9.

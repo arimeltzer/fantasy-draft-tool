@@ -196,7 +196,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                   <span className="text-right">{priceBasis ? "$cost" : "cost→pick"}</span>
                   <span className="text-right">{priceBasis ? "$mkt" : "you'd get"}</span>
                   <span className="text-right">surp</span>
-                  <span className="text-right">scarce</span>
+                  <span className="text-right">{priceBasis ? "KV" : "scarce"}</span>
                   <span className="text-right">verdict</span>
                 </div>
                 {reco.ranked.map((it) => {
@@ -222,7 +222,9 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                       <span className={`text-right font-mono text-2xs ${it.surplus >= 0 ? "text-emerald-600" : "text-rose-500"}`}>
                         {it.surplus > 0 ? "+" : ""}{it.surplus}
                       </span>
-                      <span className="text-right font-mono text-2xs text-faint">{it.scarcity}</span>
+                      <span className="text-right font-mono text-2xs text-faint" title={priceBasis ? "keeper value = surplus + fit ($)" : "positional scarcity (VBD gap)"}>
+                        {priceBasis ? it.kv : it.scarcity}
+                      </span>
                       <span className="flex items-center justify-end">
                         {it.recommended ? (
                           <span className="inline-flex items-center gap-0.5 font-mono text-2xs font-semibold text-emerald-600"><Check className="h-3 w-3" />keep</span>

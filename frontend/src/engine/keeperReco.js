@@ -166,7 +166,12 @@ export function recommendKeepers(candidates, ctx) {
         const before = posSeen[c.player.pos] ?? 0;
         const fit = fitAdjust(c.player, before, roster);
         posSeen[c.player.pos] = before + 1;
-        const kv = +(v.surplus + v.scarcity + fit).toFixed(1);
+        // Auction KV is in DOLLARS: surplus + a small fit nudge. Positional
+        // scarcity is deliberately NOT added — it's already priced into the
+        // market/par value (you can re-buy a scarce player for money), and it's
+        // measured in fantasy points, not dollars, so adding it would be a
+        // unit mismatch that swamps the surplus. Kept on the item for display.
+        const kv = +(v.surplus + fit).toFixed(1);
         items.push({ cand: c, ...v, fit, kv });
       }
     }

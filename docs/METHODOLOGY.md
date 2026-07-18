@@ -169,7 +169,10 @@ Which keepers to *keep* is scored as **KV = surplus + scarcity + fit**:
     with every team's keepers removed from the pool.
 - **Scarcity:** the VBD cliff from the player to the next *available* player at his
   position — amplified on the **wheel** (slots near the ends, where longer gaps
-  between your picks make positional runs bite harder).
+  between your picks make positional runs bite harder). **Snake only** — in an
+  auction, scarcity is already priced into the market/par value (you can re-buy a
+  scarce player for money), so it is *not* added to auction KV (which would also
+  be a unit mismatch: dollars vs. fantasy points). Auction KV = surplus + fit.
 - **Fit:** a small nudge toward filling starter slots, against overloading one
   position.
 
