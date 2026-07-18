@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Gavel, Zap, Trash2, LogOut } from "lucide-react";
+import { Plus, Gavel, Zap, Trash2, LogOut, Download } from "lucide-react";
 import { useLeagues } from "@/hooks/useLeague";
 import { api, clearToken, LeagueSettings } from "@/lib/api";
+import ImportLeagueModal from "@/components/ImportLeagueModal";
 
 const DEFAULT_SETTINGS: LeagueSettings = {
   teams: 12,
@@ -19,6 +20,7 @@ export default function LeagueList() {
   const qc = useQueryClient();
   const { data: leagues, isLoading } = useLeagues();
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [name, setName] = useState("");
   const [format, setFormat] = useState<"auction" | "snake">("snake");
 
@@ -133,14 +135,24 @@ export default function LeagueList() {
             </div>
           </div>
         ) : (
-          <button
-            onClick={() => setCreating(true)}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700 text-sm transition-colors"
-          >
-            <Plus className="w-4 h-4" /> New League
-          </button>
+          <div className="space-y-2">
+            <button
+              onClick={() => setCreating(true)}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700 text-sm transition-colors"
+            >
+              <Plus className="w-4 h-4" /> New League
+            </button>
+            <button
+              onClick={() => setImporting(true)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg border border-gray-200 bg-gray-100 text-gray-600 hover:border-gray-300 hover:text-gray-800 text-sm transition-colors"
+            >
+              <Download className="w-4 h-4" /> Import from ESPN / Yahoo
+            </button>
+          </div>
         )}
       </div>
+
+      {importing && <ImportLeagueModal onClose={() => setImporting(false)} />}
     </div>
   );
 }
