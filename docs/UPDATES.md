@@ -6,6 +6,28 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-07 — Keeper recommendation (strategic, draft-position aware)
+- **Recommendation engine** (`frontend/src/engine/keeperReco.js`, node
+  fixture-tested): scores each candidate as **KV = surplus + scarcity + fit**.
+  - *Surplus over the resource's alternative use*, not raw value: auction =
+    inflation-adjusted market value − price; **snake = VBD(kept) − VBD(the player
+    you'd actually get at the pick you forfeit)**. That forfeited pick comes from
+    your **draft slot** via the serpentine schedule (`snakePicks`), so slot 1
+    forfeiting round 3 gives up pick 25 while slot 12 gives up pick 36 — different
+    opportunity cost. Availability is valued on a market order (ADP→ECR→our rank)
+    with **all teams' keepers removed** from the pool.
+  - *Scarcity* = the VBD cliff to the next available player at the position,
+    amplified on the **wheel** (slot ends, where runs bite harder).
+  - *Set optimizer* enumerates every subset up to the max, charges each snake
+    keeper a **distinct** forfeited pick (a 2nd keeper in the same round costs an
+    earlier, better pick), and keeps a candidate only when its marginal KV clears
+    a **flexibility floor** — so it can recommend **fewer than the max, or none**.
+- **UI** (`components/shared/KeeperRecommendations.tsx`, in the planner): ranked
+  keep/hold table with surplus, scarcity, the pick you'd forfeit and who you'd get
+  instead; a headline set with an explicit "why fewer than max" line; a draft-
+  impact summary (keeper spend/budget for auction, forfeited picks for snake); a
+  tunable flex floor; and an "Apply" that drops the keepers it doesn't recommend.
+
 ## 2026-07 — Keeper auto-fill from ESPN
 - **Prices/rounds pulled automatically.** The ESPN adapter now parses each
   drafted player's **round** alongside the auction bid (`espn.py` `_draft_map`),

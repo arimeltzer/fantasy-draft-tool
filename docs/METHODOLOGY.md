@@ -155,6 +155,32 @@ maps it to the current pool, pre-filling each keeper's base cost. The keeper
 *rule* (surcharge, undrafted round, escalation, max) still comes from your league
 settings — the provider supplies only what was paid, not your league's policy.
 
+### 10b. Keeper selection recommendation (`keeperReco.js`)
+
+Which keepers to *keep* is scored as **KV = surplus + scarcity + fit**:
+
+- **Surplus over the resource's alternative use**, not raw value:
+  - *Auction:* `surplus = inflation-adjusted market value − keeper price`.
+  - *Snake:* `surplus = VBD(kept) − VBD(the player you'd actually get at the pick
+    you forfeit)`. The forfeited overall pick is **draft-slot specific** — it
+    comes from the serpentine schedule (`snakePicks(draftSlot, teams)`), so slot 1
+    forfeiting round 3 gives up pick 25 while slot 12 gives up pick 36. Who's
+    available there is read off a **market draft order** (ADP → ECR → our rank)
+    with every team's keepers removed from the pool.
+- **Scarcity:** the VBD cliff from the player to the next *available* player at his
+  position — amplified on the **wheel** (slots near the ends, where longer gaps
+  between your picks make positional runs bite harder).
+- **Fit:** a small nudge toward filling starter slots, against overloading one
+  position.
+
+The set is chosen by enumerating every subset up to the keeper max, charging each
+snake keeper a **distinct** forfeited pick (a second keeper in the same round
+costs an earlier, better pick), and including a candidate only when its marginal
+KV clears a tunable **flexibility floor** — so the recommendation can be **fewer
+than the max, or none**. Outputs a keep/hold verdict per candidate plus a
+draft-impact summary. It is a decision aid (a projection of a chaotic event), and
+the snake pick-value depends on ADP coverage (board-rank fallback where thin).
+
 ## 11. Current parameter reference
 
 ```jsonc

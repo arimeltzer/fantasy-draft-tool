@@ -7,6 +7,7 @@ import { DraftEntry } from "@/store/draftStore";
 import { decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
 import { posStyle } from "@/lib/posStyles";
 import KeeperAutofill from "./KeeperAutofill";
+import KeeperRecommendations from "./KeeperRecommendations";
 
 interface Props {
   format: "auction" | "snake";
@@ -305,6 +306,14 @@ export default function KeeperPlanner({
             ))}
           </div>
         </div>
+
+        <KeeperRecommendations
+          format={format}
+          settings={settings}
+          board={board}
+          picks={picks}
+          removePick={removePick}
+        />
       </div>
     </div>
   );

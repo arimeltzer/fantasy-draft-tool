@@ -28,6 +28,7 @@ backend/            FastAPI + async SQLAlchemy (asyncpg) + Postgres, JWT auth
 frontend/           React + TS + Vite + Tailwind (light design system)
   src/engine/         valuation-engine.js (VBD/auction) + strength-of-schedule.js
                       + keeper.js (keeper-cost rule engine, node fixture-tested)
+                      + keeperReco.js (keeper selection recommender, node-tested)
   src/components/, pages/, hooks/, lib/api.ts, lib/posStyles.ts
 data-pipeline/      offline data prep -> JSON -> Postgres
   ingest_nflverse.py  pull players/schedule/logs from nflverse
@@ -59,6 +60,7 @@ VBD/auction values client-side from the player rows + league settings.
 # frontend
 cd frontend && npm install && npm run build      # tsc -b && vite build
 node frontend/src/engine/keeper.selftest.mjs      # keeper-rule engine tests
+node frontend/src/engine/keeperReco.selftest.mjs  # keeper recommender tests
 # backend (needs DATABASE_URL etc.)
 cd backend && uvicorn main:app --reload
 # integration parsers (no net/db) — regression guard
@@ -127,6 +129,10 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   prior-season ESPN league's draft (bid + round via `espn.py`/`matching.keeper_candidates`,
   fixture-tested) and maps it to the current pool; `KeeperAutofill.tsx` pre-fills
   the planner from it. The keeper *rule* still comes from league settings.
+- **Recommendation**: `keeperReco.js` scores KV = surplus + scarcity + fit and
+  set-optimizes (can keep fewer than max/none). Snake surplus is draft-slot aware
+  (forfeited pick from `snakePicks`); availability valued on a market order
+  (ADP→ECR→rank) minus all keepers. `KeeperRecommendations.tsx` in the planner.
 
 ## Open threads / next up
 
