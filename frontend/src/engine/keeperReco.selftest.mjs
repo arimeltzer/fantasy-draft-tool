@@ -137,5 +137,16 @@ ok(pred.keptIds.has(board[3].id), "predicts Team 3 keeps its stud");
 ok(!pred.keptIds.has(board[0].id), "ignores my own players");
 eq(pred.byTeam["Team 2"].length, 1, "max 1 keeper per team respected");
 
+// If you've already confirmed a keeper for Team 2 (max 1), predict 0 more for
+// them — and never re-predict a player you've committed.
+const pred2 = predictOpponentKeepers(predCands, {
+  format: "snake", board, marketBoard: mkt,
+  settings: { teams: 12 }, rule: { maxKeepers: 1, basis: "round" }, floor: 0,
+  committedIds: new Set([board[1].id]), committedByOwner: { "Team 2": 1 },
+});
+eq(pred2.byTeam["Team 2"].length, 0, "no extra prediction once a team's slot is filled");
+ok(!pred2.keptIds.has(board[49].id), "does not fill a filled team with its next-best");
+ok(pred2.keptIds.has(board[3].id), "still predicts for a team with open slots (Team 3)");
+
 console.log(`\nkeeperReco.selftest: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

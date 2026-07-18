@@ -44,17 +44,40 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
     [picks],
   );
 
+  // Keepers you've explicitly entered for OTHER teams ("confirmed" facts).
+  const confirmedOpp = useMemo(() => {
+    return picks
+      .map((pick) => ({ pick, meta: decodeKeeper(pick.slot) }))
+      .filter((x) => x.meta && x.meta.owner !== "Me" && x.pick.playerId != null)
+      .map(({ pick, meta }) => ({
+        pickId: pick.pickId, id: pick.playerId as number, owner: meta!.owner,
+        player: playerById.get(pick.playerId as number),
+        cost: keeperCost({ base: meta!.base, fa: meta!.base == null, kept: meta!.kept ?? 0 }, rule),
+      }))
+      .filter((x) => x.player);
+  }, [picks, playerById, rule]);
+
+  const committedByOwner = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const c of confirmedOpp) m[c.owner] = (m[c.owner] ?? 0) + 1;
+    return m;
+  }, [confirmedOpp]);
+
   // Predict which players opponents will keep (so they're off the board when we
-  // value your forfeited pick / market). Driven by the ESPN import.
+  // value your forfeited pick / market). Driven by the ESPN import, and only
+  // for the slots you haven't already confirmed for a team.
   const prediction = useMemo(() => {
     if (!predictOn || importedCandidates.length === 0) return null;
     return predictOpponentKeepers(
       importedCandidates.map((c) => ({
         player_id: c.player_id, is_mine: c.is_mine, owner: c.owner, bid: c.bid, round: c.round,
       })),
-      { format, board: pricedBoard, marketBoard, settings: { teams: settings.teams }, rule, floor: 0, baseKept: committedKeptIds },
+      {
+        format, board: pricedBoard, marketBoard, settings: { teams: settings.teams }, rule, floor: 0,
+        baseKept: committedKeptIds, committedIds: committedKeptIds, committedByOwner,
+      },
     );
-  }, [predictOn, importedCandidates, format, pricedBoard, marketBoard, settings.teams, rule, committedKeptIds]);
+  }, [predictOn, importedCandidates, format, pricedBoard, marketBoard, settings.teams, rule, committedKeptIds, committedByOwner]);
 
   // Depletion pool = your committed keepers ∪ predicted opponent keepers
   // (minus any the user marked back as available).
@@ -146,6 +169,15 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
       });
     }
     for (const c of toDrop) if (c.pickId != null) await removePick(c.pickId);
+  };
+
+  // Commit a predicted opponent keeper as a confirmed fact (that team's keeper).
+  const confirmOpp = async (p: { id: number; owner: string; base: number | null; cost: { price: number | null; round: number | null } }) => {
+    await addPick({
+      playerId: p.id, mine: false,
+      price: priceBasis ? (p.cost.price ?? undefined) : undefined,
+      slot: encodeKeeper({ k: 1, owner: p.owner, basis: rule.basis, kept: 0, base: p.base, round: p.cost.round ?? undefined }),
+    });
   };
 
   return (
@@ -264,51 +296,80 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                 Candidates are analysis only — nothing leaves the draft pool until you Commit.
               </p>
 
-              {/* predicted opponent keepers (who won't be in the draft) */}
-              {importedCandidates.length > 0 && (
+              {/* opponents' keepers: confirmed facts + predictions */}
+              {(importedCandidates.length > 0 || confirmedOpp.length > 0) && (
                 <div className="rounded-lg border border-line">
                   <div className="flex items-center gap-2 border-b border-hair bg-raised/50 px-3 py-1.5">
                     <EyeOff className="h-3.5 w-3.5 text-faint" />
-                    <span className="text-2xs font-semibold uppercase tracking-wider text-muted">
-                      Predicted off the board
-                    </span>
+                    <span className="text-2xs font-semibold uppercase tracking-wider text-muted">Opponents' keepers</span>
                     <span className="font-mono text-2xs text-faint">
-                      {predictOn ? `${predictedActive} players` : "off"}
+                      {confirmedOpp.length} confirmed{predictOn ? ` · ${predictedActive} predicted` : ""}
                     </span>
-                    <label className="ml-auto flex items-center gap-1.5 text-2xs text-muted">
-                      <input type="checkbox" checked={predictOn} onChange={(e) => setPredictOn(e.target.checked)} className="h-3.5 w-3.5 accent-brand" />
-                      Factor in
-                    </label>
+                    {importedCandidates.length > 0 && (
+                      <label className="ml-auto flex items-center gap-1.5 text-2xs text-muted">
+                        <input type="checkbox" checked={predictOn} onChange={(e) => setPredictOn(e.target.checked)} className="h-3.5 w-3.5 accent-brand" />
+                        Predict rest
+                      </label>
+                    )}
                   </div>
-                  {predictOn && (
-                    <div className="max-h-40 overflow-y-auto px-1 py-1">
-                      {predictedList.length === 0 ? (
-                        <p className="px-2 py-2 text-2xs italic text-faint">No opponent keepers predicted.</p>
-                      ) : predictedList.map((p) => {
-                        const st = posStyle(p.pos);
-                        const off = predictOverrides.has(p.id);
-                        return (
-                          <div key={p.id} className={`flex items-center gap-2 px-2 py-1 text-2xs ${off ? "opacity-40" : ""}`}>
-                            <span className={`font-mono font-semibold ${st.text}`}>{p.pos}</span>
-                            <span className={`min-w-0 flex-1 truncate ${off ? "text-faint line-through" : "text-ink"}`}>{p.name}</span>
-                            <span className="w-20 truncate font-mono text-faint" title={p.owner}>{p.owner}</span>
-                            <span className="w-14 text-right font-mono text-faint">
-                              {p.cost.basis === "price" ? `$${p.cost.price}` : `R${p.cost.round}`}
-                            </span>
-                            <button
-                              onClick={() => setPredictOverrides((s) => { const n = new Set(s); n.has(p.id) ? n.delete(p.id) : n.add(p.id); return n; })}
-                              className="w-16 rounded px-1 py-0.5 text-right font-mono text-faint hover:text-ink"
-                              title={off ? "Treat as available" : "This player won't actually be kept — put back in the pool"}
-                            >
-                              {off ? "available" : "kept ✕"}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+
+                  <div className="max-h-52 overflow-y-auto px-1 py-1">
+                    {/* confirmed (you entered these) */}
+                    {confirmedOpp.map((c) => {
+                      const st = posStyle(c.player!.pos);
+                      return (
+                        <div key={`c-${c.pickId}`} className="flex items-center gap-2 px-2 py-1 text-2xs">
+                          <span className={`font-mono font-semibold ${st.text}`}>{c.player!.pos}</span>
+                          <span className="min-w-0 flex-1 truncate text-ink">{c.player!.name}</span>
+                          <span className="chip border-emerald-200 bg-emerald-50 text-emerald-700">confirmed</span>
+                          <span className="w-20 truncate font-mono text-faint" title={c.owner}>{c.owner}</span>
+                          <span className="w-14 text-right font-mono text-faint">
+                            {c.cost.basis === "price" ? `$${c.cost.price}` : `R${c.cost.round}`}
+                          </span>
+                          <button onClick={() => removePick(c.pickId)} className="w-16 rounded px-1 py-0.5 text-right font-mono text-faint hover:text-rose-600" title="Remove this keeper">
+                            remove
+                          </button>
+                        </div>
+                      );
+                    })}
+                    {/* predicted (fill remaining slots) */}
+                    {predictOn && predictedList.map((p) => {
+                      const st = posStyle(p.pos);
+                      const off = predictOverrides.has(p.id);
+                      return (
+                        <div key={`p-${p.id}`} className={`flex items-center gap-2 px-2 py-1 text-2xs ${off ? "opacity-40" : ""}`}>
+                          <span className={`font-mono font-semibold ${st.text}`}>{p.pos}</span>
+                          <span className={`min-w-0 flex-1 truncate ${off ? "text-faint line-through" : "text-ink"}`}>{p.name}</span>
+                          <span className="chip border-line bg-raised text-faint">predicted</span>
+                          <span className="w-20 truncate font-mono text-faint" title={p.owner}>{p.owner}</span>
+                          <span className="w-14 text-right font-mono text-faint">
+                            {p.cost.basis === "price" ? `$${p.cost.price}` : `R${p.cost.round}`}
+                          </span>
+                          <button
+                            onClick={() => confirmOpp({ id: p.id, owner: p.owner, base: p.base, cost: p.cost })}
+                            className="w-16 rounded px-1 py-0.5 text-right font-mono text-brand hover:underline"
+                            title="Lock this in as that team's actual keeper"
+                          >
+                            confirm
+                          </button>
+                          <button
+                            onClick={() => setPredictOverrides((s) => { const n = new Set(s); n.has(p.id) ? n.delete(p.id) : n.add(p.id); return n; })}
+                            className="w-14 rounded px-1 py-0.5 text-right font-mono text-faint hover:text-ink"
+                            title={off ? "Treat as available" : "This player won't actually be kept — put back in the pool"}
+                          >
+                            {off ? "undo" : "not kept"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                    {confirmedOpp.length === 0 && (!predictOn || predictedList.length === 0) && (
+                      <p className="px-2 py-2 text-2xs italic text-faint">No opponent keepers yet.</p>
+                    )}
+                  </div>
+
                   <p className="border-t border-hair px-3 py-1.5 text-2xs text-faint">
-                    Assumes each opponent keeps their best-value players (up to {rule.maxKeepers}). Toggle any you know they'll let go.
+                    Predictions assume each team keeps its best-value players (up to {rule.maxKeepers}). Click <span className="text-brand">confirm</span> to lock one in,
+                    or add a specific one via “Add a keeper” above with that team as the owner. Confirmed keepers replace predictions for that team.
                   </p>
                 </div>
               )}

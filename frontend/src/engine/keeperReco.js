@@ -248,11 +248,18 @@ export function draftImpact(best, ctx) {
  * UI shows the predictions so they can be overridden.
  *
  * candidates: [{ player_id, is_mine, owner, bid, round }]  (KeeperCandidate)
- * ctx: { format, board (priced), marketBoard, settings, rule, floor, baseKept }
+ * ctx: { format, board (priced), marketBoard, settings, rule, floor, baseKept,
+ *        committedIds, committedByOwner }
+ *   committedIds       - players already entered as keepers (excluded from prediction)
+ *   committedByOwner   - {owner: count} of keepers you've already confirmed for a
+ *                        team, so we only predict the team's REMAINING slots.
  * Returns { keptIds: Set<number>, byTeam: { [owner]: [{id,name,pos,surplus,cost}] } }.
  * ------------------------------------------------------------------ */
 export function predictOpponentKeepers(candidates, ctx) {
-  const { format, board, marketBoard, settings, rule, floor = 0, baseKept = new Set() } = ctx;
+  const {
+    format, board, marketBoard, settings, rule, floor = 0,
+    baseKept = new Set(), committedIds = new Set(), committedByOwner = {},
+  } = ctx;
   const teams = settings.teams ?? 12;
   const maxK = rule?.maxKeepers ?? 1;
   const roundBasis = rule?.basis === "round";
@@ -261,6 +268,7 @@ export function predictOpponentKeepers(candidates, ctx) {
   const groups = {};
   for (const c of candidates) {
     if (c.is_mine || c.player_id == null) continue;
+    if (committedIds.has(c.player_id)) continue; // already a confirmed keeper
     const player = byId.get(c.player_id);
     if (!player) continue;
     (groups[c.owner] ||= []).push({ c, player });
@@ -269,6 +277,8 @@ export function predictOpponentKeepers(candidates, ctx) {
   const keptIds = new Set(baseKept);
   const byTeam = {};
   for (const [owner, list] of Object.entries(groups)) {
+    const slots = Math.max(0, maxK - (committedByOwner[owner] ?? 0));
+    if (slots === 0) { byTeam[owner] = []; continue; }
     const scored = list.map(({ c, player }) => {
       const base = roundBasis ? c.round : c.bid;
       const fa = base == null;
@@ -283,10 +293,10 @@ export function predictOpponentKeepers(candidates, ctx) {
         const market = player.parValue ?? player.adjValue ?? 0;
         surplus = +(market - (cost.price ?? 1)).toFixed(1);
       }
-      return { id: c.player_id, name: player.name, pos: player.pos, surplus, cost };
+      return { id: c.player_id, name: player.name, pos: player.pos, surplus, cost, base: fa ? null : base };
     });
     scored.sort((a, b) => b.surplus - a.surplus);
-    const kept = scored.filter((s) => s.surplus > floor).slice(0, maxK);
+    const kept = scored.filter((s) => s.surplus > floor).slice(0, slots);
     byTeam[owner] = kept;
     for (const k of kept) keptIds.add(k.id);
   }

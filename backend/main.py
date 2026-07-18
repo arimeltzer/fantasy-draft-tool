@@ -485,9 +485,11 @@ async def import_league(
         raise HTTPException(status_code=409, detail=f"No players loaded for season {data.season}; import needs the player pool.")
     index = build_index([{"id": r.id, "name": r.name, "pos": r.pos, "team": r.team} for r in rows])
 
-    # 3. Create the league.
+    # 3. Create the league. Remember the source league so the keeper planner can
+    #    auto-pull the prior season's draft (ESPN ids are stable across seasons).
+    settings = {**norm.settings, "source": {"provider": norm.provider, "extId": norm.ext_id}}
     league = League(user_id=user.id, name=data.name or norm.name,
-                    format=LeagueFormat(norm.fmt), settings=norm.settings)
+                    format=LeagueFormat(norm.fmt), settings=settings)
     db.add(league)
     await db.flush()
 

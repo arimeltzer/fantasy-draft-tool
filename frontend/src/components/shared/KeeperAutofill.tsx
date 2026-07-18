@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, ChevronDown, AlertTriangle } from "lucide-react";
 import { keeperCost } from "@/engine/keeper.js";
 import { api, KeeperCandidate, KeeperRule } from "@/lib/api";
@@ -12,15 +12,19 @@ interface Props {
   // Surface the full fetched candidate list (all teams) so the recommender can
   // predict opponents' keepers.
   onCandidates?: (c: KeeperCandidate[]) => void;
+  // If the league was imported from ESPN, its source id — used to pre-fill and
+  // auto-fetch the prior season's draft.
+  source?: { provider: string; extId: string };
 }
 
 const CURRENT_SEASON = 2026;
 
-export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates }: Props) {
+export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, source }: Props) {
   const priceBasis = rule.basis === "price";
+  const espnSource = source?.provider === "espn" ? source.extId : "";
 
-  const [open, setOpen] = useState(false);
-  const [leagueId, setLeagueId] = useState("");
+  const [open, setOpen] = useState(!!espnSource);
+  const [leagueId, setLeagueId] = useState(espnSource);
   const [season, setSeason] = useState(CURRENT_SEASON - 1);
   const [priv, setPriv] = useState(false);
   const [s2, setS2] = useState("");
@@ -61,6 +65,17 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates }
       setLoading(false);
     }
   };
+
+  // Auto-fetch once for an imported ESPN league (public leagues just work; a
+  // private one 401s and the user adds cookies + refetches).
+  const autoTried = useRef(false);
+  useEffect(() => {
+    if (espnSource && !autoTried.current) {
+      autoTried.current = true;
+      fetchCands();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [espnSource]);
 
   const rows = useMemo(() => (cands ?? []).map((c, i) => {
     const base = baseOf(c);

@@ -74,6 +74,7 @@ export interface PredictedKeeper {
   pos: string;
   surplus: number;
   cost: KeeperCost;
+  base: number | null;
 }
 
 export declare function predictOpponentKeepers(
@@ -86,5 +87,7 @@ export declare function predictOpponentKeepers(
     rule: KeeperRule;
     floor?: number;
     baseKept?: Set<number>;
+    committedIds?: Set<number>;
+    committedByOwner?: Record<string, number>;
   },
 ): { keptIds: Set<number>; byTeam: Record<string, PredictedKeeper[]> };

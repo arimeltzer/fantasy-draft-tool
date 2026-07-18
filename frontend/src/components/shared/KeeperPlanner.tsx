@@ -255,7 +255,7 @@ export default function KeeperPlanner({
                 : " Their round is the pick that team forfeits."}
             </p>
 
-            <KeeperAutofill rule={rule} takenIds={takenIds} addPick={addPick} onCandidates={setImportedCandidates} />
+            <KeeperAutofill rule={rule} takenIds={takenIds} addPick={addPick} onCandidates={setImportedCandidates} source={settings.source} />
           </div>
 
           {/* ── Current keepers ───────────────────────────────────── */}

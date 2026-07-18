@@ -6,6 +6,23 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-07 — Import→keeper chain + add/confirm opponents' keepers
+- **Import remembers its source.** `POST /api/leagues/import` now stores
+  `settings.source = {provider, extId}` on the created league. The keeper planner
+  reads it and **pre-fills + auto-fetches** the prior season's ESPN draft
+  (`KeeperAutofill` `source` prop; ESPN league ids are stable across seasons, so
+  last year = same id at `season−1`). Public leagues load automatically; private
+  ones 401 and prompt for cookies.
+- **Add / confirm opponents' keepers.** The recommender's opponents panel now
+  shows **confirmed** keepers (ones you entered) *and* **predicted** ones, and:
+  - each prediction has a **confirm** button that commits it as that team's real
+    keeper (and a "not kept" toggle to drop it from the pool math);
+  - `predictOpponentKeepers` now respects what you've entered — it **excludes
+    committed players and only predicts a team's remaining slots**
+    (`committedIds` / `committedByOwner`), so confirming one no longer
+    double-counts against the max. You can also add any specific opponent keeper
+    via "Add a keeper" with that team as owner.
+
 ## 2026-07 — Keeper reco: analyze without committing (decouple analysis)
 - **Fixed a conflation:** importing your ESPN roster used to require *committing*
   every player as a keeper pick (removed from the pool, treated as drafted) just

@@ -89,6 +89,7 @@ export interface LeagueSettings {
   draftSlot?: number;
   keeper?: KeeperRule;
   opponents?: string[];   // labels for opponent teams (auction budget tracking); index = team_id
+  source?: { provider: string; extId: string };  // set on league import; drives keeper auto-fill
 }
 
 function getToken(): string | null {
