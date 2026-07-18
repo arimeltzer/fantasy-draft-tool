@@ -316,6 +316,7 @@ export default function KeeperPlanner({
           settings={settings}
           board={board}
           picks={picks}
+          addPick={addPick}
           removePick={removePick}
           importedCandidates={importedCandidates}
         />

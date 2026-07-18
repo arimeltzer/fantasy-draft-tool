@@ -51,12 +51,10 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates }
       });
       setCands(res.candidates);
       onCandidates?.(res.candidates);
-      // Pre-select matched, not-yet-kept players.
-      const pre = new Set<number>();
-      res.candidates.forEach((c, i) => {
-        if (c.matched && c.player_id != null && !takenIds.has(c.player_id)) pre.add(i);
-      });
-      setSel(pre);
+      // Don't pre-select: the recommender below analyzes your roster
+      // automatically (nothing committed). This list is only for directly
+      // committing specific keepers you already know.
+      setSel(new Set());
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -101,31 +99,7 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates }
   const toggle = (i: number) =>
     setSel((s) => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; });
 
-  // One-click: load every one of YOUR rostered players as keeper candidates so
-  // the recommender can prune your final roster down to the best keep set.
-  const addMyRoster = async () => {
-    setAdding(true);
-    let n = 0;
-    try {
-      for (const { c, base, fa, cost, selectable } of rows) {
-        if (!selectable || !c.is_mine || c.player_id == null) continue;
-        await addPick({
-          playerId: c.player_id,
-          mine: true,
-          price: priceBasis ? (cost.price ?? undefined) : undefined,
-          slot: encodeKeeper({ k: 1, owner: c.owner, basis: rule.basis, kept: 0, base: fa ? null : base, round: cost.round ?? undefined }),
-        });
-        n++;
-      }
-      setAdded(n);
-      setCands(null); setSel(new Set());
-    } finally {
-      setAdding(false);
-    }
-  };
-
   const selCount = rows.filter((r) => r.selectable && sel.has(r.i)).length;
-  const myRosterCount = rows.filter((r) => r.selectable && r.c.is_mine).length;
 
   return (
     <div className="mt-3 rounded-lg border border-line bg-raised/40">
@@ -238,26 +212,18 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates }
                   );
                 })}
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={addSelected}
-                  disabled={adding || selCount === 0}
-                  className="btn-brand flex-1 justify-center px-3 py-1.5 text-xs disabled:opacity-50"
-                >
-                  {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                  Add {selCount} keeper{selCount === 1 ? "" : "s"}
-                </button>
-                {myRosterCount > 0 && (
-                  <button
-                    onClick={addMyRoster}
-                    disabled={adding}
-                    className="btn border-line bg-surface px-3 py-1.5 text-xs text-ink hover:bg-hover disabled:opacity-50"
-                    title="Add all of your rostered players so the recommender can pick your best keepers"
-                  >
-                    Load my roster ({myRosterCount})
-                  </button>
-                )}
-              </div>
+              <p className="text-2xs text-faint">
+                Your roster is already being analyzed below — no need to add anything. Only check players here
+                to <em>commit</em> them straight to the draft (removes them from the pool now).
+              </p>
+              <button
+                onClick={addSelected}
+                disabled={adding || selCount === 0}
+                className="btn border-line bg-surface w-full justify-center px-3 py-1.5 text-xs text-ink hover:bg-hover disabled:opacity-50"
+              >
+                {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                Commit {selCount} selected keeper{selCount === 1 ? "" : "s"}
+              </button>
             </div>
           )}
         </div>

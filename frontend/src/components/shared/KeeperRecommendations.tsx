@@ -6,7 +6,7 @@ import { auctionValues } from "@/engine/auction-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
 import { LeagueSettings, KeeperCandidate } from "@/lib/api";
 import { DraftEntry } from "@/store/draftStore";
-import { decodeKeeper } from "@/lib/keeperPick";
+import { decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
 import { posStyle } from "@/lib/posStyles";
 
 interface Props {
@@ -14,11 +14,12 @@ interface Props {
   settings: LeagueSettings;
   board: BoardPlayer[];
   picks: DraftEntry[];
+  addPick: (d: { playerId?: number; mine: boolean; price?: number; slot?: string }) => Promise<void>;
   removePick: (pickId: number) => Promise<void>;
   importedCandidates?: KeeperCandidate[];
 }
 
-export default function KeeperRecommendations({ format, settings, board, picks, removePick, importedCandidates = [] }: Props) {
+export default function KeeperRecommendations({ format, settings, board, picks, addPick, removePick, importedCandidates = [] }: Props) {
   const rule = useMemo(() => normalizeKeeperRule(settings.keeper, format), [settings.keeper, format]);
   const priceBasis = rule.basis === "price";
   const [open, setOpen] = useState(true);
@@ -71,29 +72,50 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
   }, [prediction]);
   const predictedActive = predictedList.filter((p) => !predictOverrides.has(p.id)).length;
 
-  // Candidate pool = your committed keepers (over-add, then let it prune).
-  const myKeepers = useMemo(() => {
-    return picks
-      .map((pick) => ({ pick, meta: decodeKeeper(pick.slot) }))
-      .filter((x) => x.meta && x.meta.owner === "Me" && x.pick.playerId != null)
-      .map(({ pick, meta }) => {
-        const player = playerById.get(pick.playerId as number);
-        if (!player) return null;
-        const cost = keeperCost({ base: meta!.base, fa: meta!.base == null, kept: meta!.kept ?? 0 }, rule);
-        return { pickId: pick.pickId, id: pick.playerId as number, player, cost };
-      })
-      .filter(Boolean) as { pickId: number; id: number; player: BoardPlayer; cost: ReturnType<typeof keeperCost> }[];
-  }, [picks, playerById, rule]);
+  // Candidate pool for analysis = your committed keepers PLUS your imported
+  // (uncommitted) roster players. Nothing here is treated as drafted/kept until
+  // you explicitly commit — imports are hypothetical candidates.
+  const myCandidates = useMemo(() => {
+    const out = new Map<number, {
+      id: number; player: BoardPlayer; base: number | null; kept: number;
+      cost: ReturnType<typeof keeperCost>; committed: boolean; pickId?: number;
+    }>();
+    // committed "Me" keepers first
+    for (const pick of picks) {
+      const meta = decodeKeeper(pick.slot);
+      if (!meta || meta.owner !== "Me" || pick.playerId == null) continue;
+      const player = playerById.get(pick.playerId);
+      if (!player) continue;
+      out.set(pick.playerId, {
+        id: pick.playerId, player, base: meta.base, kept: meta.kept ?? 0,
+        cost: keeperCost({ base: meta.base, fa: meta.base == null, kept: meta.kept ?? 0 }, rule),
+        committed: true, pickId: pick.pickId,
+      });
+    }
+    // imported roster players (hypothetical, not committed)
+    for (const c of importedCandidates) {
+      if (!c.is_mine || c.player_id == null || out.has(c.player_id)) continue;
+      const player = playerById.get(c.player_id);
+      if (!player) continue;
+      const base = priceBasis ? c.bid : c.round;
+      out.set(c.player_id, {
+        id: c.player_id, player, base, kept: 0,
+        cost: keeperCost({ base: base == null ? null : base, fa: base == null, kept: 0 }, rule),
+        committed: false,
+      });
+    }
+    return [...out.values()];
+  }, [picks, importedCandidates, playerById, rule, priceBasis]);
 
   const reco = useMemo(() => {
-    if (myKeepers.length === 0) return null;
-    const candidates = myKeepers.map((k) => ({ id: k.id, player: k.player, cost: k.cost }));
+    if (myCandidates.length === 0) return null;
+    const candidates = myCandidates.map((k) => ({ id: k.id, player: k.player, cost: k.cost }));
     return recommendKeepers(candidates, {
       format, board: pricedBoard, marketBoard,
       settings: { teams: settings.teams, draftSlot: settings.draftSlot ?? 1, budget: settings.budget, roster: settings.roster as unknown as Record<string, number> },
       allKeptIds, maxKeepers: rule.maxKeepers, flexFloor,
     });
-  }, [myKeepers, format, pricedBoard, marketBoard, settings, allKeptIds, rule.maxKeepers, flexFloor]);
+  }, [myCandidates, format, pricedBoard, marketBoard, settings, allKeptIds, rule.maxKeepers, flexFloor]);
 
   const impact = useMemo(
     () => (reco ? draftImpact(reco.best, { format, settings: { teams: settings.teams, draftSlot: settings.draftSlot ?? 1, budget: settings.budget, roster: settings.roster as unknown as Record<string, number> } }) : null),
@@ -101,13 +123,29 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
   );
 
   const keepIds = useMemo(() => new Set(reco?.best.ids ?? []), [reco]);
+  const committedIds = useMemo(() => new Set(myCandidates.filter((c) => c.committed).map((c) => c.id)), [myCandidates]);
   const topExcluded = reco?.ranked.find((r) => !r.recommended);
 
-  const applyReco = async () => {
-    const drop = myKeepers.filter((k) => !keepIds.has(k.id));
-    if (drop.length === 0) return;
-    if (!confirm(`Drop ${drop.length} keeper${drop.length === 1 ? "" : "s"} the model doesn't recommend?`)) return;
-    for (const k of drop) await removePick(k.pickId);
+  const toCommit = myCandidates.filter((c) => keepIds.has(c.id) && !c.committed);
+  const toDrop = myCandidates.filter((c) => !keepIds.has(c.id) && c.committed);
+
+  // Turn the recommended set into actual keeper picks (removed from the pool,
+  // budget/inflation applied). Only runs when you click — nothing auto-commits.
+  const commitReco = async () => {
+    if (toCommit.length === 0 && toDrop.length === 0) return;
+    const msg = [
+      toCommit.length ? `commit ${toCommit.length} keeper${toCommit.length === 1 ? "" : "s"}` : "",
+      toDrop.length ? `drop ${toDrop.length} you're not keeping` : "",
+    ].filter(Boolean).join(" and ");
+    if (!confirm(`Apply the recommendation — ${msg}?`)) return;
+    for (const c of toCommit) {
+      await addPick({
+        playerId: c.id, mine: true,
+        price: priceBasis ? (c.cost.price ?? undefined) : undefined,
+        slot: encodeKeeper({ k: 1, owner: "Me", basis: rule.basis, kept: c.kept, base: c.base, round: c.cost.round ?? undefined }),
+      });
+    }
+    for (const c of toDrop) if (c.pickId != null) await removePick(c.pickId);
   };
 
   return (
@@ -123,10 +161,10 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
 
       {open && (
         <div className="mt-3">
-          {myKeepers.length === 0 ? (
+          {myCandidates.length === 0 ? (
             <p className="text-xs italic text-faint">
-              Add your keeper candidates above (or auto-fill from ESPN) and this will recommend which to keep —
-              it's fine to keep fewer than the max, or none.
+              Auto-fill from ESPN (or add candidates above) and this will analyze your roster and recommend
+              which to keep — nothing is committed until you click Commit. It's fine to keep fewer than the max, or none.
             </p>
           ) : !reco ? null : (
             <div className="space-y-3">
@@ -136,13 +174,13 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                   <span className="font-semibold text-ink">
                     {reco.best.ids.length === 0
                       ? "Keep none"
-                      : `Keep ${reco.best.ids.length} of ${myKeepers.length}`}
+                      : `Keep ${reco.best.ids.length} of ${myCandidates.length}`}
                   </span>
                   <span className="text-muted">
                     {reco.best.ids.length > 0 && `· ${reco.best.items.map((it) => it.cand.player.name).join(", ")}`}
                   </span>
                 </div>
-                {reco.best.ids.length < Math.min(myKeepers.length, rule.maxKeepers) && topExcluded && (
+                {reco.best.ids.length < Math.min(myCandidates.length, rule.maxKeepers) && topExcluded && (
                   <p className="mt-1 flex items-start gap-1.5 text-2xs text-muted">
                     <Info className="mt-0.5 h-3 w-3 shrink-0 text-faint" />
                     Fewer than the max of {rule.maxKeepers}: {topExcluded.cand.player.name} adds only KV {topExcluded.kv} —
@@ -171,6 +209,9 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                       <span className="flex min-w-0 items-center gap-1.5">
                         <span className={`font-mono text-2xs font-semibold ${st.text}`}>{it.cand.player.pos}</span>
                         <span className="truncate text-ink">{it.cand.player.name}</span>
+                        {committedIds.has(it.cand.id) && (
+                          <span className="chip border-line bg-raised text-2xs text-faint" title="Committed as a keeper (out of the pool)">kept</span>
+                        )}
                       </span>
                       <span className="text-right font-mono text-2xs text-muted">
                         {priceBasis ? `$${it.cost}` : `R${it.round ?? it.cost}→${it.forfeitPick}`}
@@ -211,12 +252,15 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                     title="Minimum keeper value (KV) to bother keeping — higher = more selective"
                   />
                 </label>
-                {myKeepers.some((k) => !keepIds.has(k.id)) && (
-                  <button onClick={applyReco} className="btn border-line bg-surface px-2.5 py-1 text-2xs text-ink hover:bg-hover">
-                    Apply (drop {myKeepers.filter((k) => !keepIds.has(k.id)).length})
+                {(toCommit.length > 0 || toDrop.length > 0) && (
+                  <button onClick={commitReco} className="btn-brand px-2.5 py-1 text-2xs">
+                    Commit{toCommit.length ? ` ${toCommit.length}` : ""}{toDrop.length ? ` · drop ${toDrop.length}` : ""}
                   </button>
                 )}
               </div>
+              <p className="text-2xs text-faint">
+                Candidates are analysis only — nothing leaves the draft pool until you Commit.
+              </p>
 
               {/* predicted opponent keepers (who won't be in the draft) */}
               {importedCandidates.length > 0 && (

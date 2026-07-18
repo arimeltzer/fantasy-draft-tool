@@ -6,6 +6,20 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-07 — Keeper reco: analyze without committing (decouple analysis)
+- **Fixed a conflation:** importing your ESPN roster used to require *committing*
+  every player as a keeper pick (removed from the pool, treated as drafted) just
+  to analyze them. Now the recommender evaluates your imported roster as
+  **hypothetical candidates** — fetching from ESPN feeds the analysis directly and
+  **nothing leaves the draft pool until you click Commit**.
+- `KeeperRecommendations` candidate pool = committed "Me" keepers ∪ imported
+  is_mine roster players; a **Commit** button turns the recommended set into real
+  keeper picks (and drops committed ones it doesn't recommend). Rows show a
+  `kept` chip when already committed.
+- `KeeperAutofill` no longer pre-selects or bulk-commits your roster; its list is
+  now an opt-in "commit specific known keepers" tool, with copy pointing to the
+  analysis below.
+
 ## 2026-07 — Keeper reco: import my roster + predict opponents' keepers
 - **Predict opponents' keepers** (`predictOpponentKeepers` in `keeperReco.js`,
   node-tested): from the ESPN import (every team's roster + draft cost), assume
