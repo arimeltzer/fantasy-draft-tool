@@ -1,0 +1,75 @@
+name: Refresh fantasy data
+
+# Cadence (recurring every year, not a one-time date range):
+#   - Weekly (Mondays)   -- all months EXCEPT August/September
+#   - Daily               -- August and September (draft season crunch)
+#
+# The cron below fires every day; the "gate" step below decides whether that
+# day's run actually proceeds, based on the rule above.
+
+on:
+  schedule:
+    - cron: "0 13 * * *"   # 13:00 UTC daily; gated to weekly outside Aug/Sep
+  workflow_dispatch: {}     # lets you trigger a manual run from the GitHub Actions tab
+
+concurrency:
+  group: refresh-fantasy-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Decide whether today's run should proceed
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Manual trigger -> always proceeds, regardless of cadence"
+            exit 0
+          fi
+          month=$(date -u +%-m)
+          dow=$(date -u +%u)   # 1=Monday .. 7=Sunday
+          if [ "$month" = "8" ] || [ "$month" = "9" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "August/September -> daily refresh, proceeding"
+          elif [ "$dow" = "1" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Monday outside Aug/Sep -> weekly refresh, proceeding"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Not Monday and outside Aug/Sep -> skipping today"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install pipeline dependencies
+        if: steps.gate.outputs.run == 'true'
+        working-directory: data-pipeline
+        run: pip install nflreadpy pandas pyarrow psycopg2-binary
+
+      - name: Pull player stats + ADP (2 seasons, for the projection blend)
+        if: steps.gate.outputs.run == 'true'
+        working-directory: data-pipeline
+        run: python ingest_nflverse.py --last 2025 --last2 2024 --upcoming 2026 --baseline-proj
+
+      - name: Pull ECR / ADP / AAV / projections from FantasyPros
+        if: steps.gate.outputs.run == 'true'
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python projections.py --base data/players_base.json --out data/players_base.json
+
+      - name: Load into the Railway database
+        if: steps.gate.outputs.run == 'true'
+        working-directory: data-pipeline
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_PUBLIC_URL }}
+        run: python load_to_db.py

@@ -66,6 +66,26 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 - **Rule config** lives in `SettingsDrawer` (preset chips + fields), persisted in
   `league.settings.keeper`.
 
+## 2026-07 — Draft board overview, editable draft log, explainer tooltips
+- **Draft board panel** (`components/shared/DraftOverview.tsx`, both rooms'
+  sidebar): every team at a glance — pick count and, for auctions, remaining
+  budget; click a team to expand its picks (with prices). Snake picks logged
+  via the plain ✕ land in an "Unassigned" bucket until attributed.
+- **Editable draft log** (`components/shared/DraftLogModal.tsx`, "Edit log"
+  button on the panel): full pick-by-pick list (round.pick for snake, overall #
+  for auction) with inline fixes — swap the player (searchable), reassign which
+  team drafted them, edit the price paid, or delete the pick. Backed by a new
+  `PATCH /api/leagues/{id}/picks/{pick_id}` (partial update, explicit nulls
+  clear fields) + `api.updatePick` + `draftStore.updatePick`.
+- **Tooltips everywhere** (`components/shared/Tip.tsx` — fixed-position hover/
+  tap popup that survives overflow-hidden containers, plus native `title`s):
+  plain-English explanations for VBD, $Par/$Live, inflation, max bid, mkt ±,
+  tier, risk, '25 pace, nomination drain/target, suggested bids, pick clock,
+  needs, and roster auto-slotting.
+- Verified end-to-end on a local SQLite test stack (JSONB shimmed to JSON in a
+  scratch launcher; no repo changes): buys, opponent assignment, budget
+  recalcs, player swap, price fix, and the PATCH round-trips.
+
 ## 2026-06 — FantasyPros API + project docs
 - **FantasyPros enrichment.** `data-pipeline/fantasypros.py` pulls current,
   scoring-aware consensus ECR/ADP **and component projections** via the public

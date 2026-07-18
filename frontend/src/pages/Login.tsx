@@ -25,43 +25,43 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-paper px-4">
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-brand/10 ring-1 ring-brand/25">
+          <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-300 grid place-items-center mx-auto mb-4">
             <span className="text-2xl">🏈</span>
           </div>
-          <h1 className="text-xl font-semibold tracking-tight text-ink">Fantasy Draft Assistant</h1>
-          <p className="mt-1 text-sm text-muted">Sign in to your account</p>
+          <h1 className="text-xl font-semibold tracking-tight">Fantasy Draft Assistant</h1>
+          <p className="text-sm text-gray-500 mt-1">Sign in to your account</p>
         </div>
 
-        <form onSubmit={submit} className="card space-y-4 p-6">
+        <form onSubmit={submit} className="space-y-4">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted">Email</label>
+            <label className="block text-xs text-gray-500 mb-1">Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               autoFocus
-              className="field"
+              className="w-full px-3 py-2 rounded bg-gray-50 border border-gray-300 text-sm focus:outline-none focus:border-gray-400"
               placeholder="you@example.com"
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted">Password</label>
+            <label className="block text-xs text-gray-500 mb-1">Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className="field"
+              className="w-full px-3 py-2 rounded bg-gray-50 border border-gray-300 text-sm focus:outline-none focus:border-gray-400"
               placeholder="••••••••"
             />
           </div>
 
           {error && (
-            <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">
+            <p className="text-sm text-rose-400 bg-rose-50 border border-rose-200 rounded px-3 py-2">
               {error}
             </p>
           )}
@@ -69,7 +69,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="btn-brand w-full py-2.5"
+            className="w-full py-2.5 rounded bg-amber-100 border border-amber-300 text-amber-700 text-sm font-medium hover:bg-amber-100 disabled:opacity-50 transition-colors"
           >
             {loading ? "Signing in…" : "Sign in"}
           </button>

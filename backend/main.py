@@ -166,6 +166,17 @@ class LeagueOut(BaseModel):
 class PickCreate(BaseModel):
     player_id: Optional[int] = None
     mine: bool
+    team_id: Optional[int] = None
+    price: Optional[int] = None
+    slot: Optional[str] = None
+
+
+class PickUpdate(BaseModel):
+    """Partial pick edit — only fields present in the request body are applied,
+    so an explicit null clears a value (e.g. team_id when a pick becomes mine)."""
+    player_id: Optional[int] = None
+    mine: Optional[bool] = None
+    team_id: Optional[int] = None
     price: Optional[int] = None
     slot: Optional[str] = None
 
@@ -176,6 +187,7 @@ class PickOut(BaseModel):
     player_id: Optional[int]
     overall_pick: int
     mine: bool
+    team_id: Optional[int]
     price: Optional[int]
     slot: Optional[str]
     ts: datetime
@@ -192,8 +204,10 @@ class PlayerOut(BaseModel):
     age: Optional[int]
     proj: Optional[dict]
     last: Optional[dict]
+    last2: Optional[dict]
     ecr: Optional[float]
     adp: Optional[float]
+    aav: Optional[float]
 
     model_config = {"from_attributes": True}
 
@@ -632,10 +646,33 @@ async def add_pick(
         player_id=data.player_id,
         overall_pick=overall,
         mine=data.mine,
+        team_id=data.team_id,
         price=data.price,
         slot=data.slot,
     )
     db.add(pick)
+    await db.commit()
+    await db.refresh(pick)
+    return pick
+
+
+@app.patch("/api/leagues/{league_id}/picks/{pick_id}", response_model=PickOut)
+async def update_pick(
+    league_id: int,
+    pick_id: int,
+    data: PickUpdate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(db_dep),
+):
+    await _get_league_owned(league_id, user.id, db)
+    result = await db.execute(
+        select(DraftPick).where(DraftPick.id == pick_id, DraftPick.league_id == league_id)
+    )
+    pick = result.scalar_one_or_none()
+    if not pick:
+        raise HTTPException(status_code=404, detail="Pick not found")
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(pick, field, value)
     await db.commit()
     await db.refresh(pick)
     return pick

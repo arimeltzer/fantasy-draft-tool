@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Gavel, Zap, Trash2, LogOut, ChevronRight, Download } from "lucide-react";
+import { Plus, Gavel, Zap, Trash2, LogOut } from "lucide-react";
 import { useLeagues } from "@/hooks/useLeague";
 import { api, clearToken, LeagueSettings } from "@/lib/api";
-import ImportLeagueModal from "@/components/ImportLeagueModal";
 
 const DEFAULT_SETTINGS: LeagueSettings = {
   teams: 12,
@@ -20,7 +19,6 @@ export default function LeagueList() {
   const qc = useQueryClient();
   const { data: leagues, isLoading } = useLeagues();
   const [creating, setCreating] = useState(false);
-  const [importing, setImporting] = useState(false);
   const [name, setName] = useState("");
   const [format, setFormat] = useState<"auction" | "snake">("snake");
 
@@ -40,126 +38,109 @@ export default function LeagueList() {
   const logout = () => { clearToken(); nav("/login"); };
 
   return (
-    <div className="min-h-screen bg-paper px-4 py-10">
-      <div className="mx-auto max-w-lg">
-        <div className="mb-8 flex items-center justify-between">
+    <div className="min-h-screen bg-gray-50 px-4 py-8">
+      <div className="max-w-lg mx-auto">
+        <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-lg font-semibold tracking-tight text-ink">My Leagues</h1>
-            <p className="mt-0.5 text-xs text-muted">Select a league to enter your war room</p>
+            <h1 className="text-lg font-semibold tracking-tight">My Leagues</h1>
+            <p className="text-xs text-gray-500 mt-0.5">Select a league to enter your war room</p>
           </div>
-          <button onClick={logout} className="btn-ghost px-2.5 py-1.5 text-xs">
-            <LogOut className="h-3.5 w-3.5" /> Sign out
+          <button onClick={logout} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-600 px-2 py-1.5 rounded border border-gray-200 hover:border-gray-300">
+            <LogOut className="w-3.5 h-3.5" /> Sign out
           </button>
         </div>
 
         {isLoading && (
-          <div className="py-8 text-center text-sm text-muted">Loading…</div>
+          <div className="text-sm text-gray-500 text-center py-8">Loading…</div>
         )}
 
-        <div className="mb-6 space-y-2">
-          {leagues?.map((league) => {
-            const auction = league.format === "auction";
-            return (
-              <div
-                key={league.id}
-                className="group flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 shadow-card transition-colors hover:border-line hover:bg-raised"
-                onClick={() => nav(`/league/${league.id}`)}
-              >
-                <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ring-1 ${auction ? "bg-gold/10 ring-gold/25" : "bg-brand/10 ring-brand/25"}`}>
-                  {auction
-                    ? <Gavel className="h-4 w-4 text-gold" />
-                    : <Zap className="h-4 w-4 text-brand" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-ink">{league.name}</div>
-                  <div className="font-mono text-2xs capitalize text-muted">{league.format}</div>
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); if (confirm(`Delete "${league.name}"?`)) deleteMut.mutate(league.id); }}
-                  className="rounded-md p-1.5 text-faint opacity-0 transition-opacity hover:bg-rose-50 hover:text-rose-500 group-hover:opacity-100"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-                <ChevronRight className="h-4 w-4 text-faint" />
+        <div className="space-y-2 mb-6">
+          {leagues?.map((league) => (
+            <div
+              key={league.id}
+              className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-100 px-4 py-3 hover:border-gray-300 cursor-pointer group"
+              onClick={() => nav(`/league/${league.id}`)}
+            >
+              <div className={`w-8 h-8 rounded grid place-items-center shrink-0 ${league.format === "auction" ? "bg-amber-50 border border-amber-300" : "bg-emerald-50 border border-emerald-300"}`}>
+                {league.format === "auction"
+                  ? <Gavel className="w-4 h-4 text-amber-400" />
+                  : <Zap className="w-4 h-4 text-emerald-600" />}
               </div>
-            );
-          })}
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm truncate">{league.name}</div>
+                <div className="text-xs text-gray-500 font-mono capitalize">{league.format}</div>
+              </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); if (confirm(`Delete "${league.name}"?`)) deleteMut.mutate(league.id); }}
+                className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-rose-400 p-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
           {!isLoading && leagues?.length === 0 && (
-            <div className="rounded-xl border border-dashed border-line py-8 text-center text-sm text-muted">
+            <div className="text-sm text-gray-500 text-center py-6 border border-dashed border-gray-200 rounded-lg">
               No leagues yet. Create one below.
             </div>
           )}
         </div>
 
         {creating ? (
-          <div className="card space-y-4 p-5">
-            <h2 className="text-sm font-semibold text-ink">New League</h2>
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-4">
+            <h2 className="text-sm font-semibold">New League</h2>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted">League name</label>
+              <label className="block text-xs text-gray-500 mb-1">League name</label>
               <input
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="field"
+                className="w-full px-3 py-2 rounded bg-gray-50 border border-gray-300 text-sm focus:outline-none focus:border-gray-400"
                 placeholder="My Fantasy League 2026"
               />
             </div>
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted">Format</label>
+              <label className="block text-xs text-gray-500 mb-1">Format</label>
               <div className="flex gap-2">
-                {(["auction", "snake"] as const).map((f) => {
-                  const active = format === f;
-                  return (
-                    <button
-                      key={f}
-                      onClick={() => setFormat(f)}
-                      className={`flex flex-1 items-center justify-center gap-2 rounded-lg border py-2.5 text-sm capitalize transition-colors ${
-                        active
-                          ? f === "auction"
-                            ? "border-gold bg-gold/10 text-gold"
-                            : "border-brand bg-brand/10 text-brand"
-                          : "border-line bg-surface text-muted hover:bg-raised"
-                      }`}
-                    >
-                      {f === "auction" ? <Gavel className="h-4 w-4" /> : <Zap className="h-4 w-4" />}
-                      {f}
-                    </button>
-                  );
-                })}
+                {(["auction", "snake"] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFormat(f)}
+                    className={`flex-1 py-2 rounded border text-sm capitalize flex items-center justify-center gap-2 ${
+                      format === f
+                        ? f === "auction"
+                          ? "bg-amber-50 border-amber-300 text-amber-700"
+                          : "bg-emerald-50 border-emerald-300 text-emerald-700"
+                        : "bg-gray-50 border-gray-300 text-gray-500"
+                    }`}
+                  >
+                    {f === "auction" ? <Gavel className="w-4 h-4" /> : <Zap className="w-4 h-4" />}
+                    {f}
+                  </button>
+                ))}
               </div>
             </div>
             <div className="flex gap-2 pt-1">
               <button
                 onClick={() => createMut.mutate()}
                 disabled={!name.trim() || createMut.isPending}
-                className="btn-brand flex-1 py-2.5"
+                className="flex-1 py-2 rounded bg-amber-50 border border-amber-300 text-amber-700 text-sm hover:bg-amber-100 disabled:opacity-50"
               >
                 {createMut.isPending ? "Creating…" : "Create League"}
               </button>
-              <button onClick={() => { setCreating(false); setName(""); }} className="btn-ghost px-4 py-2.5">
+              <button onClick={() => { setCreating(false); setName(""); }} className="px-4 py-2 rounded bg-gray-100 border border-gray-300 text-sm hover:border-gray-400">
                 Cancel
               </button>
             </div>
           </div>
         ) : (
-          <div className="flex gap-2">
-            <button
-              onClick={() => setCreating(true)}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-dashed border-line py-3.5 text-sm text-muted transition-colors hover:border-brand/40 hover:text-brand"
-            >
-              <Plus className="h-4 w-4" /> New League
-            </button>
-            <button
-              onClick={() => setImporting(true)}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-dashed border-line py-3.5 text-sm text-muted transition-colors hover:border-brand/40 hover:text-brand"
-            >
-              <Download className="h-4 w-4" /> Import ESPN / Yahoo
-            </button>
-          </div>
+          <button
+            onClick={() => setCreating(true)}
+            className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-gray-300 text-gray-500 hover:border-gray-400 hover:text-gray-700 text-sm transition-colors"
+          >
+            <Plus className="w-4 h-4" /> New League
+          </button>
         )}
       </div>
-
-      {importing && <ImportLeagueModal onClose={() => setImporting(false)} />}
     </div>
   );
 }

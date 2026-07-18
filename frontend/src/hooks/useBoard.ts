@@ -12,8 +12,10 @@ function toEnginePlayer(p: ApiPlayer) {
     age: p.age ?? undefined,
     proj: p.proj ?? {},
     last: p.last ?? null,
+    last2: p.last2 ?? null,
     ecr: p.ecr ?? undefined,
     adp: p.adp ?? undefined,
+    aav: p.aav ?? undefined,
   };
 }
 

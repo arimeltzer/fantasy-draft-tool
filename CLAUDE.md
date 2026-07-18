@@ -26,9 +26,13 @@ backend/            FastAPI + async SQLAlchemy (asyncpg) + Postgres, JWT auth
   sos.py              server-side SOS recompute for /api/admin/reload-sos
   integrations/       ESPN + Yahoo league import (see below)
 frontend/           React + TS + Vite + Tailwind (light design system)
-  src/engine/         valuation-engine.js (VBD/auction) + strength-of-schedule.js
-                      + keeper.js (keeper-cost rule engine, node fixture-tested)
-                      + keeperReco.js (keeper selection recommender, node-tested)
+  src/engine/         engine-core.js (projection+VBD) · auction-engine.js
+                      (dollarValues/marketPrice/suggestBid/nominationScore) ·
+                      snake-engine.js (pickScore + per-slot configs) ·
+                      valuation-engine.js (back-compat re-export shim) ·
+                      strength-of-schedule.js ·
+                      keeper.js (keeper-cost rule engine, node fixture-tested) ·
+                      keeperReco.js (keeper selection recommender, node-tested)
   src/components/, pages/, hooks/, lib/api.ts, lib/posStyles.ts
 data-pipeline/      offline data prep -> JSON -> Postgres
   ingest_nflverse.py  pull players/schedule/logs from nflverse
@@ -46,13 +50,16 @@ VBD/auction values client-side from the player rows + league settings.
 
 ## Database tables
 
-- `fantasy_players` `(season, name, pos, team, age, proj jsonb, last jsonb, ecr, adp)`, uniq `(season,name,pos,team)`
+- `fantasy_players` `(season, name, pos, team, age, proj jsonb, last jsonb, last2 jsonb, ecr, adp, aav)`, uniq `(season,name,pos,team)` — `last2` = 2-years-ago totals for the projection blend; `aav` = FantasyPros consensus auction average value (drives `marketPrice()`, falls back to the modeled log curve when null)
+- `fantasy_draft_picks` also has `team_id int` (opponent slot; index into `League.settings.opponents[]`, NULL for mine)
 - `fantasy_schedule` `(season, team, week, opp)`, uniq `(season,team,week)`
 - `fantasy_player_logs` `(season, player_id, week, opp, fp)`, uniq `(season,player_id,week)`
 - `fantasy_sos` `(season, team, pos, mult)` PK `(season,team,pos)`
 - plus `fantasy_users`, `fantasy_leagues`, `fantasy_draft_picks`
 - Schema is created with SQLAlchemy `create_all` — it does NOT alter existing
-  tables, so adding a column needs a manual migration on Railway.
+  tables, so adding a column needs a manual migration on Railway. Migrations live
+  in `backend/migrations/*.sql` — run the SQL on Railway **before** deploying code
+  that reads the new columns, or the ORM will 500 selecting a missing column.
 
 ## Key commands
 
@@ -100,7 +107,16 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.
 - **FantasyPros API** (`data-pipeline/fantasypros.py`): fresh, scoring-aware ECR/
-  ADP into the player rows (replaces the limited free nflverse snapshot).
+  ADP/AAV into the player rows (replaces the limited free nflverse snapshot).
+  `fetch_aav()` pulls consensus auction average value (type=auction) which
+  `auction-engine.js marketPrice()` uses directly when present, instead of the
+  modeled logarithmic curve.
+- **Scheduled data refresh** (`.github/workflows/refresh-data.yml`): runs the
+  full pipeline (ingest → FantasyPros enrichment → load_to_db) on a recurring
+  cadence — weekly (Mondays) most of the year, daily every day in August and
+  September. Needs two GitHub repo secrets: `FANTASYPROS_API_KEY` and
+  `DATABASE_PUBLIC_URL` (Settings → Secrets and variables → Actions). Can also
+  be triggered manually from the Actions tab (`workflow_dispatch`).
 
 ## Gotchas
 
@@ -140,7 +156,7 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   path is built and blocked only on the credential — see Integrations).
 - **Keeper refinements** (optional): true serpentine slot forfeiture in snake
   (v1 removes the player + shows the round cost but doesn't reorder the exact
-  picks); a keeper **recommendation** view (surplus = draft value − keeper cost);
-  Yahoo auto-fill (blocked on the same Fantasy-scope credential as import).
-- **FantasyPros**: validate a live pull where the key lives; AAV/tier surfacing
-  needs a new `fantasy_players` column (migration).
+  picks); Yahoo keeper auto-fill (blocked on the same Fantasy-scope credential
+  as import).
+- **FantasyPros**: AAV is wired (migration `002_add_aav.sql`); tier surfacing
+  (FantasyPros tiers vs. the computed VBD-gap tiers) is still open.

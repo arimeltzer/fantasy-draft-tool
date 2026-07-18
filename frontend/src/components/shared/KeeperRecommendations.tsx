@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Sparkles, ChevronDown, Check, Minus, Info } from "lucide-react";
 import { keeperCost, normalizeKeeperRule } from "@/engine/keeper.js";
 import { marketOrder, recommendKeepers, draftImpact } from "@/engine/keeperReco.js";
+import { auctionValues } from "@/engine/auction-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
 import { LeagueSettings } from "@/lib/api";
 import { DraftEntry } from "@/store/draftStore";
@@ -22,8 +23,17 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
   const [open, setOpen] = useState(true);
   const [flexFloor, setFlexFloor] = useState(3);
 
-  const playerById = useMemo(() => new Map(board.map((p) => [p.id as number, p])), [board]);
-  const marketBoard = useMemo(() => marketOrder(board), [board]);
+  // Auction market value lives on par values, which are computed off the raw
+  // board — so price it here before scoring surplus. Snake scores off VBD.
+  const pricedBoard = useMemo(() => {
+    if (format !== "auction") return board;
+    const r = settings.roster;
+    const rosterSize = r.QB + r.RB + r.WR + r.TE + r.FLEX + r.K + r.DST + r.BENCH + (settings.superflex ? (r.SF ?? 0) : 0);
+    return auctionValues(board, { teams: settings.teams, budget: settings.budget, rosterSize, benchSpots: r.BENCH });
+  }, [format, board, settings]);
+
+  const playerById = useMemo(() => new Map(pricedBoard.map((p) => [p.id as number, p])), [pricedBoard]);
+  const marketBoard = useMemo(() => marketOrder(pricedBoard), [pricedBoard]);
   const allKeptIds = useMemo(
     () => new Set(picks.map((p) => p.playerId).filter(Boolean) as number[]),
     [picks],
@@ -47,11 +57,11 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
     if (myKeepers.length === 0) return null;
     const candidates = myKeepers.map((k) => ({ id: k.id, player: k.player, cost: k.cost }));
     return recommendKeepers(candidates, {
-      format, board, marketBoard,
+      format, board: pricedBoard, marketBoard,
       settings: { teams: settings.teams, draftSlot: settings.draftSlot ?? 1, budget: settings.budget, roster: settings.roster as unknown as Record<string, number> },
       allKeptIds, maxKeepers: rule.maxKeepers, flexFloor,
     });
-  }, [myKeepers, format, board, marketBoard, settings, allKeptIds, rule.maxKeepers, flexFloor]);
+  }, [myKeepers, format, pricedBoard, marketBoard, settings, allKeptIds, rule.maxKeepers, flexFloor]);
 
   const impact = useMemo(
     () => (reco ? draftImpact(reco.best, { format, settings: { teams: settings.teams, draftSlot: settings.draftSlot ?? 1, budget: settings.budget, roster: settings.roster as unknown as Record<string, number> } }) : null),

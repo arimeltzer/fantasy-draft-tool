@@ -157,7 +157,16 @@ def main():
         except Exception as e:
             print(f"  ! FantasyPros projections failed ({e}); proj left as baseline")
 
-    n_ecr = n_adp = n_proj = 0
+    # --- AAV (auction average value) --- FantasyPros API only, no free fallback.
+    aav: dict = {}
+    if fp_mod:
+        try:
+            aav = fp_mod.fetch_aav(args.season, args.scoring)
+            print(f"Pulling AAV from FantasyPros API ({args.scoring}, {args.season})…  {len(aav)} players")
+        except Exception as e:
+            print(f"  ! FantasyPros AAV failed ({e}); leaving `aav` unset")
+
+    n_ecr = n_adp = n_proj = n_aav = 0
     for p in players:
         k = (norm(p.get("name")), p.get("pos"))
         if k in ecr:
@@ -166,6 +175,8 @@ def main():
             p["adp"] = round(adp[k], 1); n_adp += 1
         if k in proj:
             p["proj"] = proj[k]; n_proj += 1
+        if k in aav:
+            p["aav"] = aav[k]; n_aav += 1
 
     json.dump(players, open(args.out, "w"), indent=2)
     print(f"  ✓ ECR matched: {n_ecr}/{len(players)}  (source: {source})")
@@ -176,6 +187,10 @@ def main():
     else:
         print("  • projections: none applied; `proj` left as baseline "
               "(set FANTASYPROS_API_KEY, or pass --proj-csv, for real forecasts)")
+    if aav:
+        print(f"  ✓ AAV matched: {n_aav}/{len(players)}")
+    else:
+        print("  • AAV: none applied (needs FANTASYPROS_API_KEY); marketPrice() falls back to the modeled curve")
     print(f"Wrote {args.out}")
 
 if __name__ == "__main__":
