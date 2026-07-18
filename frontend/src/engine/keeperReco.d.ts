@@ -1,5 +1,6 @@
 import { BoardPlayer } from "./valuation-engine";
 import { KeeperCost } from "./keeper";
+import { KeeperRule } from "@/lib/api";
 
 export interface RecoCandidate {
   id: number;
@@ -58,3 +59,32 @@ export declare function draftImpact(
   best: RecoResult["best"], ctx: Pick<RecoContext, "format" | "settings">,
 ): { keepers: number; spend: number | null; budgetLeft: number | null;
      forfeitedPicks: { round: number; overall: number }[] | null };
+
+export interface PredictInput {
+  player_id: number | null;
+  is_mine: boolean;
+  owner: string;
+  bid: number | null;
+  round: number | null;
+}
+
+export interface PredictedKeeper {
+  id: number;
+  name: string;
+  pos: string;
+  surplus: number;
+  cost: KeeperCost;
+}
+
+export declare function predictOpponentKeepers(
+  candidates: PredictInput[],
+  ctx: {
+    format: "auction" | "snake";
+    board: BoardPlayer[];
+    marketBoard: (BoardPlayer & { marketIdx: number })[];
+    settings: { teams: number; roster?: Record<string, number> };
+    rule: KeeperRule;
+    floor?: number;
+    baseKept?: Set<number>;
+  },
+): { keptIds: Set<number>; byTeam: Record<string, PredictedKeeper[]> };

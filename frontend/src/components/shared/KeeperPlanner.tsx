@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { X, Lock, Plus, Trash2, AlertTriangle, Search } from "lucide-react";
 import { keeperCost, normalizeKeeperRule, validateKeepers } from "@/engine/keeper.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
-import { LeagueSettings } from "@/lib/api";
+import { LeagueSettings, KeeperCandidate } from "@/lib/api";
 import { DraftEntry } from "@/store/draftStore";
 import { decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
 import { posStyle } from "@/lib/posStyles";
@@ -34,6 +34,10 @@ export default function KeeperPlanner({
 }: Props) {
   const rule = useMemo(() => normalizeKeeperRule(settings.keeper, format), [settings.keeper, format]);
   const priceBasis = rule.basis === "price";
+
+  // Full ESPN candidate list (all teams) from the last auto-fill, so the
+  // recommender can predict opponents' keepers.
+  const [importedCandidates, setImportedCandidates] = useState<KeeperCandidate[]>([]);
 
   const owners = useMemo(
     () => ["Me", ...Array.from({ length: Math.max(0, settings.teams - 1) }, (_, i) => `Team ${i + 2}`)],
@@ -251,7 +255,7 @@ export default function KeeperPlanner({
                 : " Their round is the pick that team forfeits."}
             </p>
 
-            <KeeperAutofill rule={rule} takenIds={takenIds} addPick={addPick} />
+            <KeeperAutofill rule={rule} takenIds={takenIds} addPick={addPick} onCandidates={setImportedCandidates} />
           </div>
 
           {/* ── Current keepers ───────────────────────────────────── */}
@@ -313,6 +317,7 @@ export default function KeeperPlanner({
           board={board}
           picks={picks}
           removePick={removePick}
+          importedCandidates={importedCandidates}
         />
       </div>
     </div>

@@ -9,11 +9,14 @@ interface Props {
   rule: KeeperRule;
   takenIds: Set<number>;
   addPick: (d: { playerId?: number; mine: boolean; price?: number; slot?: string }) => Promise<void>;
+  // Surface the full fetched candidate list (all teams) so the recommender can
+  // predict opponents' keepers.
+  onCandidates?: (c: KeeperCandidate[]) => void;
 }
 
 const CURRENT_SEASON = 2026;
 
-export default function KeeperAutofill({ rule, takenIds, addPick }: Props) {
+export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates }: Props) {
   const priceBasis = rule.basis === "price";
 
   const [open, setOpen] = useState(false);
@@ -47,6 +50,7 @@ export default function KeeperAutofill({ rule, takenIds, addPick }: Props) {
         my_team: myTeam.trim() || undefined,
       });
       setCands(res.candidates);
+      onCandidates?.(res.candidates);
       // Pre-select matched, not-yet-kept players.
       const pre = new Set<number>();
       res.candidates.forEach((c, i) => {
@@ -97,7 +101,31 @@ export default function KeeperAutofill({ rule, takenIds, addPick }: Props) {
   const toggle = (i: number) =>
     setSel((s) => { const n = new Set(s); n.has(i) ? n.delete(i) : n.add(i); return n; });
 
+  // One-click: load every one of YOUR rostered players as keeper candidates so
+  // the recommender can prune your final roster down to the best keep set.
+  const addMyRoster = async () => {
+    setAdding(true);
+    let n = 0;
+    try {
+      for (const { c, base, fa, cost, selectable } of rows) {
+        if (!selectable || !c.is_mine || c.player_id == null) continue;
+        await addPick({
+          playerId: c.player_id,
+          mine: true,
+          price: priceBasis ? (cost.price ?? undefined) : undefined,
+          slot: encodeKeeper({ k: 1, owner: c.owner, basis: rule.basis, kept: 0, base: fa ? null : base, round: cost.round ?? undefined }),
+        });
+        n++;
+      }
+      setAdded(n);
+      setCands(null); setSel(new Set());
+    } finally {
+      setAdding(false);
+    }
+  };
+
   const selCount = rows.filter((r) => r.selectable && sel.has(r.i)).length;
+  const myRosterCount = rows.filter((r) => r.selectable && r.c.is_mine).length;
 
   return (
     <div className="mt-3 rounded-lg border border-line bg-raised/40">
@@ -210,14 +238,26 @@ export default function KeeperAutofill({ rule, takenIds, addPick }: Props) {
                   );
                 })}
               </div>
-              <button
-                onClick={addSelected}
-                disabled={adding || selCount === 0}
-                className="btn-brand w-full justify-center px-3 py-1.5 text-xs disabled:opacity-50"
-              >
-                {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                Add {selCount} keeper{selCount === 1 ? "" : "s"}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={addSelected}
+                  disabled={adding || selCount === 0}
+                  className="btn-brand flex-1 justify-center px-3 py-1.5 text-xs disabled:opacity-50"
+                >
+                  {adding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  Add {selCount} keeper{selCount === 1 ? "" : "s"}
+                </button>
+                {myRosterCount > 0 && (
+                  <button
+                    onClick={addMyRoster}
+                    disabled={adding}
+                    className="btn border-line bg-surface px-3 py-1.5 text-xs text-ink hover:bg-hover disabled:opacity-50"
+                    title="Add all of your rostered players so the recommender can pick your best keepers"
+                  >
+                    Load my roster ({myRosterCount})
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

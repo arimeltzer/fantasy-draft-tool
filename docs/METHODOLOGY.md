@@ -181,6 +181,16 @@ than the max, or none**. Outputs a keep/hold verdict per candidate plus a
 draft-impact summary. It is a decision aid (a projection of a chaotic event), and
 the snake pick-value depends on ADP coverage (board-rank fallback where thin).
 
+**Predicting opponents' keepers.** From the ESPN import (every team's final
+roster + each player's draft cost), `predictOpponentKeepers` assumes each
+opponent keeps their best-value players — the same surplus logic, up to the
+league max — and removes them from the availability/market pool. That makes your
+own numbers honest: the stud on another roster who's an obvious keep won't be
+counted as available at your forfeited pick, and the auction market reflects who
+never enters the draft. Opponents' draft slots are unknown, so their snake
+surplus is scored against a slot-agnostic mid-round pick. Predictions are a
+heuristic and are shown in the UI with per-player overrides.
+
 ## 11. Current parameter reference
 
 ```jsonc

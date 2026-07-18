@@ -3,6 +3,7 @@ import { snakePicks } from "./valuation-engine.js";
 import {
   marketOrder, expectedAtPick, wheelFactor, scarcityBonus,
   snakeCandidateValue, auctionCandidateValue, recommendKeepers,
+  predictOpponentKeepers,
 } from "./keeperReco.js";
 
 let pass = 0, fail = 0;
@@ -91,6 +92,25 @@ const recNone = recommendKeepers(weak, {
   allKeptIds: new Set(), maxKeepers: 1, flexFloor: 3,
 });
 eq(recNone.best.ids.length, 0, "keeping nobody when no candidate clears the floor");
+
+// ── PREDICT OPPONENT KEEPERS: studs kept, scrubs not, respects max ──
+// Team 2 rosters a rank-2 stud kept at round 10 (huge surplus) + a rank-50
+// scrub kept at round 1 (negative). Team 3 has a rank-4 stud at round 9.
+const predCands = [
+  { player_id: board[1].id, is_mine: false, owner: "Team 2", bid: null, round: 10 },
+  { player_id: board[49].id, is_mine: false, owner: "Team 2", bid: null, round: 1 },
+  { player_id: board[3].id, is_mine: false, owner: "Team 3", bid: null, round: 9 },
+  { player_id: board[0].id, is_mine: true, owner: "Me", bid: null, round: 12 }, // ignored (mine)
+];
+const pred = predictOpponentKeepers(predCands, {
+  format: "snake", board, marketBoard: mkt,
+  settings: { teams: 12 }, rule: { maxKeepers: 1, basis: "round" }, floor: 0,
+});
+ok(pred.keptIds.has(board[1].id), "predicts Team 2 keeps its stud");
+ok(!pred.keptIds.has(board[49].id), "does not predict the scrub as kept");
+ok(pred.keptIds.has(board[3].id), "predicts Team 3 keeps its stud");
+ok(!pred.keptIds.has(board[0].id), "ignores my own players");
+eq(pred.byTeam["Team 2"].length, 1, "max 1 keeper per team respected");
 
 console.log(`\nkeeperReco.selftest: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -23,6 +23,7 @@
  * Pure + node-tested (keeperReco.selftest.mjs).
  * ================================================================== */
 import { snakePicks } from "./valuation-engine.js";
+import { keeperCost } from "./keeper.js";
 
 /** Market draft order: who leaves the board when. ADP → ECR → our VBD rank.
  *  Returns the board annotated with a 1-based `marketIdx`. */
@@ -226,4 +227,63 @@ export function draftImpact(best, ctx) {
     budgetLeft: null,
     forfeitedPicks: best.items.map((it) => ({ round: it.round, overall: it.forfeitPick })),
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * Predict OPPONENTS' keepers → who won't be in the draft pool
+ * ------------------------------------------------------------------ *
+ * Given every team's roster + draft cost (from the ESPN import), assume
+ * each opponent keeps their best-value players (same logic you'd use):
+ * the top `maxKeepers` whose keeper surplus clears `floor`. Removing them
+ * from the pool makes your own "who's available at my forfeited pick"
+ * (snake) and market values (auction) reflect who's actually gone.
+ *
+ * Because we don't know each opponent's draft slot, snake surplus is
+ * scored against a slot-agnostic MID-round pick. This is a heuristic — the
+ * UI shows the predictions so they can be overridden.
+ *
+ * candidates: [{ player_id, is_mine, owner, bid, round }]  (KeeperCandidate)
+ * ctx: { format, board (priced), marketBoard, settings, rule, floor, baseKept }
+ * Returns { keptIds: Set<number>, byTeam: { [owner]: [{id,name,pos,surplus,cost}] } }.
+ * ------------------------------------------------------------------ */
+export function predictOpponentKeepers(candidates, ctx) {
+  const { format, board, marketBoard, settings, rule, floor = 0, baseKept = new Set() } = ctx;
+  const teams = settings.teams ?? 12;
+  const maxK = rule?.maxKeepers ?? 1;
+  const roundBasis = rule?.basis === "round";
+  const byId = new Map(board.map((p) => [p.id, p]));
+
+  const groups = {};
+  for (const c of candidates) {
+    if (c.is_mine || c.player_id == null) continue;
+    const player = byId.get(c.player_id);
+    if (!player) continue;
+    (groups[c.owner] ||= []).push({ c, player });
+  }
+
+  const keptIds = new Set(baseKept);
+  const byTeam = {};
+  for (const [owner, list] of Object.entries(groups)) {
+    const scored = list.map(({ c, player }) => {
+      const base = roundBasis ? c.round : c.bid;
+      const fa = base == null;
+      const cost = keeperCost({ base: fa ? null : base, fa, kept: 0 }, rule);
+      let surplus;
+      if (roundBasis) {
+        // slot-agnostic mid-round pick for the round they'd forfeit
+        const pick = (Math.max(1, cost.round) - 1) * teams + Math.ceil(teams / 2);
+        const exp = expectedAtPick(marketBoard, pick, keptIds);
+        surplus = +(player.vbd - (exp ? exp.vbd : 0)).toFixed(1);
+      } else {
+        const market = player.parValue ?? player.adjValue ?? 0;
+        surplus = +(market - (cost.price ?? 1)).toFixed(1);
+      }
+      return { id: c.player_id, name: player.name, pos: player.pos, surplus, cost };
+    });
+    scored.sort((a, b) => b.surplus - a.surplus);
+    const kept = scored.filter((s) => s.surplus > floor).slice(0, maxK);
+    byTeam[owner] = kept;
+    for (const k of kept) keptIds.add(k.id);
+  }
+  return { keptIds, byTeam };
 }

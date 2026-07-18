@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
-import { Sparkles, ChevronDown, Check, Minus, Info } from "lucide-react";
+import { Sparkles, ChevronDown, Check, Minus, Info, EyeOff } from "lucide-react";
 import { keeperCost, normalizeKeeperRule } from "@/engine/keeper.js";
-import { marketOrder, recommendKeepers, draftImpact } from "@/engine/keeperReco.js";
+import { marketOrder, recommendKeepers, draftImpact, predictOpponentKeepers } from "@/engine/keeperReco.js";
 import { auctionValues } from "@/engine/auction-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
-import { LeagueSettings } from "@/lib/api";
+import { LeagueSettings, KeeperCandidate } from "@/lib/api";
 import { DraftEntry } from "@/store/draftStore";
 import { decodeKeeper } from "@/lib/keeperPick";
 import { posStyle } from "@/lib/posStyles";
@@ -15,13 +15,17 @@ interface Props {
   board: BoardPlayer[];
   picks: DraftEntry[];
   removePick: (pickId: number) => Promise<void>;
+  importedCandidates?: KeeperCandidate[];
 }
 
-export default function KeeperRecommendations({ format, settings, board, picks, removePick }: Props) {
+export default function KeeperRecommendations({ format, settings, board, picks, removePick, importedCandidates = [] }: Props) {
   const rule = useMemo(() => normalizeKeeperRule(settings.keeper, format), [settings.keeper, format]);
   const priceBasis = rule.basis === "price";
   const [open, setOpen] = useState(true);
   const [flexFloor, setFlexFloor] = useState(3);
+  const [predictOn, setPredictOn] = useState(true);
+  // Predicted opponent keepers the user has overridden back to "available".
+  const [predictOverrides, setPredictOverrides] = useState<Set<number>>(new Set());
 
   // Auction market value lives on par values, which are computed off the raw
   // board — so price it here before scoring surplus. Snake scores off VBD.
@@ -34,10 +38,38 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
 
   const playerById = useMemo(() => new Map(pricedBoard.map((p) => [p.id as number, p])), [pricedBoard]);
   const marketBoard = useMemo(() => marketOrder(pricedBoard), [pricedBoard]);
-  const allKeptIds = useMemo(
+  const committedKeptIds = useMemo(
     () => new Set(picks.map((p) => p.playerId).filter(Boolean) as number[]),
     [picks],
   );
+
+  // Predict which players opponents will keep (so they're off the board when we
+  // value your forfeited pick / market). Driven by the ESPN import.
+  const prediction = useMemo(() => {
+    if (!predictOn || importedCandidates.length === 0) return null;
+    return predictOpponentKeepers(
+      importedCandidates.map((c) => ({
+        player_id: c.player_id, is_mine: c.is_mine, owner: c.owner, bid: c.bid, round: c.round,
+      })),
+      { format, board: pricedBoard, marketBoard, settings: { teams: settings.teams }, rule, floor: 0, baseKept: committedKeptIds },
+    );
+  }, [predictOn, importedCandidates, format, pricedBoard, marketBoard, settings.teams, rule, committedKeptIds]);
+
+  // Depletion pool = your committed keepers ∪ predicted opponent keepers
+  // (minus any the user marked back as available).
+  const allKeptIds = useMemo(() => {
+    const s = new Set(committedKeptIds);
+    if (prediction) for (const id of prediction.keptIds) if (!predictOverrides.has(id)) s.add(id);
+    return s;
+  }, [committedKeptIds, prediction, predictOverrides]);
+
+  const predictedList = useMemo(() => {
+    if (!prediction) return [];
+    return Object.entries(prediction.byTeam)
+      .flatMap(([owner, ks]) => ks.map((k) => ({ ...k, owner })))
+      .sort((a, b) => b.surplus - a.surplus);
+  }, [prediction]);
+  const predictedActive = predictedList.filter((p) => !predictOverrides.has(p.id)).length;
 
   // Candidate pool = your committed keepers (over-add, then let it prune).
   const myKeepers = useMemo(() => {
@@ -185,6 +217,55 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                   </button>
                 )}
               </div>
+
+              {/* predicted opponent keepers (who won't be in the draft) */}
+              {importedCandidates.length > 0 && (
+                <div className="rounded-lg border border-line">
+                  <div className="flex items-center gap-2 border-b border-hair bg-raised/50 px-3 py-1.5">
+                    <EyeOff className="h-3.5 w-3.5 text-faint" />
+                    <span className="text-2xs font-semibold uppercase tracking-wider text-muted">
+                      Predicted off the board
+                    </span>
+                    <span className="font-mono text-2xs text-faint">
+                      {predictOn ? `${predictedActive} players` : "off"}
+                    </span>
+                    <label className="ml-auto flex items-center gap-1.5 text-2xs text-muted">
+                      <input type="checkbox" checked={predictOn} onChange={(e) => setPredictOn(e.target.checked)} className="h-3.5 w-3.5 accent-brand" />
+                      Factor in
+                    </label>
+                  </div>
+                  {predictOn && (
+                    <div className="max-h-40 overflow-y-auto px-1 py-1">
+                      {predictedList.length === 0 ? (
+                        <p className="px-2 py-2 text-2xs italic text-faint">No opponent keepers predicted.</p>
+                      ) : predictedList.map((p) => {
+                        const st = posStyle(p.pos);
+                        const off = predictOverrides.has(p.id);
+                        return (
+                          <div key={p.id} className={`flex items-center gap-2 px-2 py-1 text-2xs ${off ? "opacity-40" : ""}`}>
+                            <span className={`font-mono font-semibold ${st.text}`}>{p.pos}</span>
+                            <span className={`min-w-0 flex-1 truncate ${off ? "text-faint line-through" : "text-ink"}`}>{p.name}</span>
+                            <span className="w-20 truncate font-mono text-faint" title={p.owner}>{p.owner}</span>
+                            <span className="w-14 text-right font-mono text-faint">
+                              {p.cost.basis === "price" ? `$${p.cost.price}` : `R${p.cost.round}`}
+                            </span>
+                            <button
+                              onClick={() => setPredictOverrides((s) => { const n = new Set(s); n.has(p.id) ? n.delete(p.id) : n.add(p.id); return n; })}
+                              className="w-16 rounded px-1 py-0.5 text-right font-mono text-faint hover:text-ink"
+                              title={off ? "Treat as available" : "This player won't actually be kept — put back in the pool"}
+                            >
+                              {off ? "available" : "kept ✕"}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <p className="border-t border-hair px-3 py-1.5 text-2xs text-faint">
+                    Assumes each opponent keeps their best-value players (up to {rule.maxKeepers}). Toggle any you know they'll let go.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

@@ -6,6 +6,23 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-07 — Keeper reco: import my roster + predict opponents' keepers
+- **Predict opponents' keepers** (`predictOpponentKeepers` in `keeperReco.js`,
+  node-tested): from the ESPN import (every team's roster + draft cost), assume
+  each opponent keeps their best-value players (same surplus logic, up to the
+  league max). Those players are removed from the availability/market pool, so
+  your snake "who's actually there at my forfeited pick" and auction market
+  values reflect who won't be in the draft. Snake surplus is scored against a
+  slot-agnostic mid-round pick (opponents' slots are unknown).
+- **Evaluate my whole roster.** `KeeperAutofill` now surfaces the full fetched
+  candidate list to the recommender and adds a **"Load my roster"** button that
+  seeds every one of your rostered players as candidates, so the recommender
+  prunes your final roster to the best keep set.
+- **UI** (`KeeperRecommendations.tsx`): a "Predicted off the board" panel lists
+  the predicted opponent keepers (team + cost), with a **Factor-in toggle** and
+  per-player **override** (mark any you know they'll let go back as available).
+  Predictions feed the depletion pool the recommendation is computed against.
+
 ## 2026-07 — Keeper recommendation (strategic, draft-position aware)
 - **Recommendation engine** (`frontend/src/engine/keeperReco.js`, node
   fixture-tested): scores each candidate as **KV = surplus + scarcity + fit**.

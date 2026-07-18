@@ -149,6 +149,9 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   set-optimizes (can keep fewer than max/none). Snake surplus is draft-slot aware
   (forfeited pick from `snakePicks`); availability valued on a market order
   (ADP→ECR→rank) minus all keepers. `KeeperRecommendations.tsx` in the planner.
+  `predictOpponentKeepers()` predicts each opponent's likely keepers from the
+  ESPN import and removes them from the availability pool (editable in the UI);
+  `KeeperAutofill` "Load my roster" seeds your whole roster as candidates.
 
 ## Open threads / next up
 
