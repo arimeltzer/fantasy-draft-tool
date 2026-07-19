@@ -6,6 +6,21 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-07 — Fix: import no longer drafts the whole league (keeper setup)
+- **Root cause:** `POST /api/leagues/import` seeded *every* rostered player (all
+  teams) as a drafted `DraftPick`. The keeper recommender counted any committed
+  pick as "kept", so an imported league (a) suppressed all opponent predictions
+  (every candidate looked already-kept), (b) never displayed opponents' players,
+  and (c) emptied the draft pool.
+- **Fixes:**
+  - Import gains `seed_rosters` (default **off**): rosters are only logged as
+    drafted picks for an in-progress draft. Keeper setups now start with a clean
+    pool. Modal exposes a "Load rosters onto the draft board" checkbox; the report
+    says which mode ran.
+  - The keeper recommender now counts **only keeper-tagged picks** as kept
+    (`committedKeeperIds`) for prediction exclusion, per-team slot accounting, and
+    pool depletion — regular draft/import picks no longer break keeper analysis.
+
 ## 2026-07 — Import→keeper chain + add/confirm opponents' keepers
 - **Import remembers its source.** `POST /api/leagues/import` now stores
   `settings.source = {provider, extId}` on the created league. The keeper planner

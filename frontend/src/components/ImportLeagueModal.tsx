@@ -21,6 +21,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
   // ESPN
   const [espnId, setEspnId] = useState("");
   const [showPrivate, setShowPrivate] = useState(false);
+  const [seedRosters, setSeedRosters] = useState(false);
   const [espnS2, setEspnS2] = useState("");
   const [swid, setSwid] = useState("");
   const [myTeam, setMyTeam] = useState("");
@@ -92,11 +93,12 @@ export default function ImportLeagueModal({ onClose }: Props) {
           ? {
               provider, ext_id: espnId.trim(), season, name: name.trim() || undefined,
               espn_s2: espnS2.trim() || undefined, swid: swid.trim() || undefined,
-              my_team: myTeam.trim() || undefined,
+              my_team: myTeam.trim() || undefined, seed_rosters: seedRosters,
             }
           : {
               provider, ext_id: yahooKey.trim(), season, name: name.trim() || undefined,
               access_token: accessToken || undefined, my_guid: guid || undefined,
+              seed_rosters: seedRosters,
             }
       );
       qc.invalidateQueries({ queryKey: ["leagues"] });
@@ -132,6 +134,11 @@ export default function ImportLeagueModal({ onClose }: Props) {
               <div className="mt-1 font-mono text-2xs text-emerald-700">
                 {report.format} · {report.players_matched} players matched · {report.players_unmatched} unmatched
                 {report.mine_found ? " · your team flagged" : " · no “my team” identified"}
+              </div>
+              <div className="mt-1 text-2xs text-emerald-700">
+                {report.seeded
+                  ? "Rosters loaded onto the draft board."
+                  : "Pool left open for keepers — open the Keepers planner to set them up."}
               </div>
             </div>
             {report.players_unmatched > 0 && (
@@ -230,6 +237,17 @@ export default function ImportLeagueModal({ onClose }: Props) {
               <Field label="Season"><input type="number" className="field" value={season} onChange={(e) => setSeason(Number(e.target.value) || 2026)} /></Field>
               <Field label="Name (optional)"><input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="keep imported" /></Field>
             </div>
+
+            <label className="flex items-start gap-2 rounded-lg border border-line bg-sunken px-3 py-2 text-xs text-muted">
+              <input type="checkbox" checked={seedRosters} onChange={(e) => setSeedRosters(e.target.checked)} className="mt-0.5 h-4 w-4 accent-brand" />
+              <span>
+                <span className="font-medium text-ink">Load rosters onto the draft board</span>
+                <span className="mt-0.5 block text-2xs text-faint">
+                  For an in-progress draft. Leave off for keeper setup — the pool stays open and the
+                  Keepers planner pulls last year's roster for you.
+                </span>
+              </span>
+            </label>
 
             {error && (
               <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>

@@ -450,6 +450,9 @@ class ImportRequest(BaseModel):
     # Yahoo (token obtained via the OAuth helper routes below)
     access_token: Optional[str] = None
     my_guid: Optional[str] = None     # Yahoo manager guid to flag as "mine"
+    seed_rosters: bool = False         # also log every rostered player as a drafted
+                                       # pick (for an in-progress draft). Off by
+                                       # default so keeper setups start with a clean pool.
 
 
 @app.post("/api/leagues/import", response_model=dict, status_code=201)
@@ -493,7 +496,9 @@ async def import_league(
     db.add(league)
     await db.flush()
 
-    # 4. Map each rostered player to a pick.
+    # 4. Map each rostered player (for the report), and — only when seeding an
+    #    in-progress draft — log each as a drafted pick. Keeper setups skip this
+    #    so the pool stays clean and the keeper planner drives it instead.
     overall = matched = 0
     unmatched: list[str] = []
     for team in norm.teams:
@@ -504,10 +509,11 @@ async def import_league(
             if pid is None:
                 unmatched.append(f"{np.name} ({np.pos or '?'}{'/' + np.team if np.team else ''})")
                 continue
-            overall += 1
             matched += 1
-            db.add(DraftPick(league_id=league.id, player_id=pid, overall_pick=overall,
-                             mine=team.is_mine, price=np.bid, slot=None))
+            if data.seed_rosters:
+                overall += 1
+                db.add(DraftPick(league_id=league.id, player_id=pid, overall_pick=overall,
+                                 mine=team.is_mine, price=np.bid, slot=None))
     await db.commit()
     await db.refresh(league)
 
@@ -521,6 +527,7 @@ async def import_league(
             "players_unmatched": len(unmatched),
             "unmatched_sample": unmatched[:30],
             "mine_found": any(t.is_mine for t in norm.teams),
+            "seeded": data.seed_rosters,
         },
     }
 

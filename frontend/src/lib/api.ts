@@ -43,6 +43,7 @@ export interface ImportReport {
   players_unmatched: number;
   unmatched_sample: string[];
   mine_found: boolean;
+  seeded?: boolean;
 }
 
 export interface KeeperCandidate {
@@ -161,6 +162,7 @@ export const api = {
     my_team?: string;
     access_token?: string;
     my_guid?: string;
+    seed_rosters?: boolean;
   }) => req<{ league: ApiLeague; report: ImportReport }>("/api/leagues/import", {
     method: "POST", body: JSON.stringify(data),
   }),

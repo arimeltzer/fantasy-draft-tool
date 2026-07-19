@@ -39,8 +39,13 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
 
   const playerById = useMemo(() => new Map(pricedBoard.map((p) => [p.id as number, p])), [pricedBoard]);
   const marketBoard = useMemo(() => marketOrder(pricedBoard), [pricedBoard]);
-  const committedKeptIds = useMemo(
-    () => new Set(picks.map((p) => p.playerId).filter(Boolean) as number[]),
+  // Only KEEPER-tagged picks count as "kept" for the analysis — regular draft
+  // picks (e.g. rosters seeded by a league import) must NOT be treated as
+  // keepers or they'd suppress every prediction and empty the pool.
+  const committedKeeperIds = useMemo(
+    () => new Set(
+      picks.filter((p) => decodeKeeper(p.slot) && p.playerId != null).map((p) => p.playerId as number),
+    ),
     [picks],
   );
 
@@ -74,18 +79,18 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
       })),
       {
         format, board: pricedBoard, marketBoard, settings: { teams: settings.teams }, rule, floor: 0,
-        baseKept: committedKeptIds, committedIds: committedKeptIds, committedByOwner,
+        baseKept: committedKeeperIds, committedIds: committedKeeperIds, committedByOwner,
       },
     );
-  }, [predictOn, importedCandidates, format, pricedBoard, marketBoard, settings.teams, rule, committedKeptIds, committedByOwner]);
+  }, [predictOn, importedCandidates, format, pricedBoard, marketBoard, settings.teams, rule, committedKeeperIds, committedByOwner]);
 
   // Depletion pool = your committed keepers ∪ predicted opponent keepers
   // (minus any the user marked back as available).
   const allKeptIds = useMemo(() => {
-    const s = new Set(committedKeptIds);
+    const s = new Set(committedKeeperIds);
     if (prediction) for (const id of prediction.keptIds) if (!predictOverrides.has(id)) s.add(id);
     return s;
-  }, [committedKeptIds, prediction, predictOverrides]);
+  }, [committedKeeperIds, prediction, predictOverrides]);
 
   const predictedList = useMemo(() => {
     if (!prediction) return [];
