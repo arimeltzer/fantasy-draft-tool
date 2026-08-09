@@ -233,9 +233,13 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
                         {waivers.players} waiver claim{waivers.players === 1 ? "" : "s"}
                         {waivers.max_bid ? ` · max $${waivers.max_bid}` : ""}
                       </span>
-                    : <span className="text-amber-600" title={(waivers?.attempts || []).join(" · ") || "no diagnostics"}>
-                        No waiver data{waivers?.attempts?.length ? ` (${waivers.attempts.join("; ")})` : ""}
-                      </span>
+                    : waivers?.count
+                      ? <span className="text-amber-600" title={(waivers.attempts || []).join(" · ")}>
+                          No FAAB bids in {waivers.count} transactions — league likely uses waiver priority (no $ value)
+                        </span>
+                      : <span className="text-amber-600" title={(waivers?.attempts || []).join(" · ") || "no diagnostics"}>
+                          No waiver data{waivers?.attempts?.length ? ` (${waivers.attempts.join("; ")})` : ""}
+                        </span>
                 )}
                 <button onClick={fetchCands} disabled={loading} className="ml-auto text-brand hover:underline disabled:opacity-50">
                   {loading ? "Refreshing…" : "Refresh from ESPN"}

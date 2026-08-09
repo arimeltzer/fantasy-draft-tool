@@ -12,6 +12,12 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   existing `PATCH /api/leagues/{id}` (JSONB — no migration). Reopening the planner
   loads the saved pull instantly instead of refetching; a **Refresh from ESPN**
   link re-pulls on demand.
+- **Waiver source fixed.** `mTransactions2` returns an empty `transactions` array
+  for football — ESPN serves FFL waiver claims through the **league activity
+  feed** (`view=kona_league_communication`, `topics` → `messages`, messageTypeId
+  **180**, `targetId`=player, `from`=winning FAAB bid). That feed is now the
+  primary source (paged, with a leagueHistory fallback); the transactions array
+  is kept as a fallback and both merge to the highest bid per player.
 - **Waiver diagnostics.** `fetch_league` now tries three transaction strategies
   (filtered `mTransactions2` → bare → `leagueHistory`) and records each outcome in
   `NormLeague.meta`; the keeper-candidates response returns a `waivers` report

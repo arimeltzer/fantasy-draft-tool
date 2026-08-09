@@ -99,16 +99,15 @@ def test_keeper_candidates():
             ]}},
         ],
         "draftDetail": {"picks": [{"teamId": 1, "playerId": 11, "bidAmount": 55, "roundId": 3}]},
-        "transactions": [
-            # Mahomes claimed twice off waivers — keep the higher ($35).
-            {"status": "EXECUTED", "bidAmount": 20, "items": [{"type": "ADD", "playerId": 11}]},
-            {"status": "EXECUTED", "bidAmount": 35, "items": [{"type": "ADD", "playerId": 11}]},
-            # 49ers claimed for $12.
-            {"status": "EXECUTED", "bidAmount": 12, "items": [{"type": "ADD", "playerId": 1}]},
-            # Ignored: not executed, a DROP, and a $0 priority claim.
-            {"status": "CANCELED", "bidAmount": 99, "items": [{"type": "ADD", "playerId": 11}]},
-            {"status": "EXECUTED", "bidAmount": 5, "items": [{"type": "DROP", "playerId": 11}]},
-            {"status": "EXECUTED", "bidAmount": 0, "items": [{"type": "ADD", "playerId": 1}]},
+        # ESPN football serves waiver claims through the ACTIVITY feed: topics ->
+        # messages, messageTypeId 180, targetId=player, from=winning FAAB bid.
+        "topics": [
+            {"messages": [{"messageTypeId": 180, "targetId": 11, "to": 1, "from": 20}]},
+            {"messages": [{"messageTypeId": 180, "targetId": 11, "to": 1, "from": 35}]},
+            {"messages": [{"messageTypeId": 180, "targetId": 1, "to": 2, "from": 12}]},
+            # Ignored: a plain FA add (178, no bid) and a $0 priority claim.
+            {"messages": [{"messageTypeId": 178, "targetId": 11, "to": 1, "from": 99}]},
+            {"messages": [{"messageTypeId": 180, "targetId": 1, "to": 2, "from": 0}]},
         ],
     }
     norm = espn.parse_league(data, season=2026, my_team="Team Ari")
@@ -122,6 +121,17 @@ def test_keeper_candidates():
     assert fa["player_id"] == 7 and fa["owner"] == "Rivals" and not fa["is_mine"]
     assert fa["bid"] is None and fa["round"] is None  # undrafted -> FA basis
     assert fa["waiver"] == 12, f"49ers waiver should be $12 (the $0 claim ignored), got {fa['waiver']}"
+
+    # The legacy `transactions` array shape still parses, and both sources merge
+    # to the highest bid per player.
+    legacy = {"transactions": [
+        {"status": "EXECUTED", "bidAmount": 44, "items": [{"type": "ADD", "playerId": 11}]},
+        {"status": "CANCELED", "bidAmount": 99, "items": [{"type": "ADD", "playerId": 11}]},
+        {"status": "EXECUTED", "bidAmount": 60, "items": [{"type": "DROP", "playerId": 11}]},
+    ]}
+    assert espn.all_waivers(legacy) == {11: 44}, espn.all_waivers(legacy)
+    both = {**legacy, "topics": [{"messages": [{"messageTypeId": 180, "targetId": 11, "from": 50}]}]}
+    assert espn.all_waivers(both) == {11: 50}, "merge should keep the higher bid"
 
     # snake, no kicker, full PPR
     snake = {"id": 9, "settings": {"size": 10,

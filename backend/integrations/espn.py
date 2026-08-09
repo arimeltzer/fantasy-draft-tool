@@ -13,6 +13,8 @@ logged-in browser: `espn_s2` and `SWID`. Network fetch is isolated in
 """
 from __future__ import annotations
 
+import json
+
 import httpx
 
 from .base import DEFAULT_ROSTER, NormLeague, NormPlayer, NormTeam, make_settings
@@ -52,6 +54,34 @@ def history_transactions_url(league_id: str, season: int) -> str:
     """Completed prior seasons often only answer on the leagueHistory host."""
     return (f"{READ_HOST}/apis/v3/games/ffl/leagueHistory/{league_id}"
             f"?seasonId={season}&view=mTransactions2")
+
+
+def activity_url(league_id: str, season: int, history: bool = False) -> str:
+    """ESPN football serves transactions through the league ACTIVITY feed."""
+    if history:
+        return (f"{READ_HOST}/apis/v3/games/ffl/leagueHistory/{league_id}"
+                f"?seasonId={season}&view={ACTIVITY_VIEW}")
+    return (f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/"
+            f"{league_id}?view={ACTIVITY_VIEW}")
+
+
+ACTIVITY_VIEW = "kona_league_communication"
+MSG_WAIVER_ADDED = 180   # FAAB claim: targetId=player, to=team, from=winning bid
+ACTIVITY_PAGE = 100      # topics per request (paged through the season)
+ACTIVITY_MAX_PAGES = 12
+
+
+def activity_filter(size: int, offset: int) -> str:
+    """x-fantasy-filter for the activity feed, limited to waiver claims."""
+    return json.dumps({"topics": {
+        "filterType": {"value": ["ACTIVITY_TRANSACTIONS"]},
+        "limit": size,
+        "limitPerMessageSet": {"value": 25},
+        "offset": offset,
+        "sortMessageDate": {"sortPriority": 1, "sortAsc": False},
+        "sortFor": {"sortPriority": 2, "sortAsc": False},
+        "filterIncludeMessageTypeIds": {"value": [MSG_WAIVER_ADDED]},
+    }})
 
 
 # ESPN is picky about the transaction filter and 400s on keys it doesn't know,
@@ -118,6 +148,32 @@ def _draft_map(data: dict) -> dict[int, dict]:
     return out
 
 
+def _waiver_map_from_topics(data: dict) -> dict[int, int]:
+    """playerId -> highest FAAB bid, read from ESPN's league ACTIVITY feed.
+
+    For football ESPN serves transactions as `topics` (view=kona_league_
+    communication), not the `transactions` array. Each topic holds messages; a
+    successful FAAB waiver claim is messageTypeId 180, where `targetId` is the
+    player, `to` is the claiming team and `from` is the winning bid. Straight
+    free-agent adds (178) have no bid, so they're skipped.
+    """
+    out: dict[int, int] = {}
+    for topic in data.get("topics", []) or []:
+        for msg in topic.get("messages", []) or []:
+            if msg.get("messageTypeId") != MSG_WAIVER_ADDED:
+                continue
+            pid = msg.get("targetId")
+            if pid is None:
+                continue
+            try:
+                bid = int(msg.get("from") or 0)
+            except (TypeError, ValueError):
+                bid = 0
+            if bid > 0 and bid > out.get(pid, 0):
+                out[pid] = bid
+    return out
+
+
 def _waiver_map(data: dict) -> dict[int, int]:
     """playerId -> the highest FAAB/waiver bid spent to ACQUIRE that player,
     across executed waiver/free-agent transactions. Keeper leagues often set a
@@ -147,9 +203,19 @@ def _waiver_map(data: dict) -> dict[int, int]:
     return out
 
 
+def all_waivers(data: dict) -> dict[int, int]:
+    """Merge both waiver sources (activity topics + transactions), keeping the
+    highest bid seen per player."""
+    merged = dict(_waiver_map(data))
+    for pid, bid in _waiver_map_from_topics(data).items():
+        if bid > merged.get(pid, 0):
+            merged[pid] = bid
+    return merged
+
+
 def parse_teams(data: dict, my_team: str | None) -> list[NormTeam]:
     draft = _draft_map(data)
-    waivers = _waiver_map(data)
+    waivers = all_waivers(data)
     mine_key = (my_team or "").strip().lower()
     out: list[NormTeam] = []
     for t in data.get("teams", []) or []:
@@ -204,10 +270,42 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
         txn_diag: dict = {"source": None, "attempts": []}
         if "transactions" in data:
             txn_diag["source"] = "league"
-        else:
+
+        # Primary: the league ACTIVITY feed, which is where ESPN football keeps
+        # waiver claims (the mTransactions2 array is empty for FFL). Paged,
+        # since a season's claims easily exceed one response.
+        if not data.get("topics") and not data.get("transactions"):
+            for label, hist in (("activity", False), ("activity-history", True)):
+                topics: list = []
+                try:
+                    for page in range(ACTIVITY_MAX_PAGES):
+                        ar = await client.get(
+                            activity_url(league_id, season, history=hist),
+                            headers={"x-fantasy-filter": activity_filter(ACTIVITY_PAGE, page * ACTIVITY_PAGE)},
+                        )
+                        if ar.status_code != 200:
+                            txn_diag["attempts"].append(f"{label}:HTTP {ar.status_code}")
+                            break
+                        aj = ar.json()
+                        if isinstance(aj, list):
+                            aj = aj[0] if aj else {}
+                        batch = aj.get("topics") or []
+                        topics.extend(batch)
+                        if len(batch) < ACTIVITY_PAGE:
+                            break
+                    if topics:
+                        data["topics"] = topics
+                        txn_diag["source"] = label
+                        txn_diag["attempts"].append(f"{label}:{len(topics)} topics")
+                        break
+                    txn_diag["attempts"].append(f"{label}:0 topics")
+                except Exception as e:  # noqa: BLE001 — waiver data is optional
+                    txn_diag["attempts"].append(f"{label}:{type(e).__name__}")
+
+        # Fallback: the transactions array (works on some league configurations).
+        if not data.get("topics") and not data.get("transactions"):
             attempts = [
                 ("filtered", transactions_url(league_id, season), {"x-fantasy-filter": TXN_FILTER}),
-                ("bare", transactions_url(league_id, season), {}),
                 ("history", history_transactions_url(league_id, season), {"x-fantasy-filter": TXN_FILTER}),
             ]
             for label, url, hdrs in attempts:
@@ -229,10 +327,10 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
                     txn_diag["attempts"].append(f"{label}:{type(e).__name__}")
 
     lg = parse_league(data, season, my_team)
-    waivers = _waiver_map(data)
+    waivers = all_waivers(data)
     lg.meta["transactions"] = {
         **txn_diag,
-        "count": len(data.get("transactions", []) or []),
+        "count": len(data.get("topics", []) or []) or len(data.get("transactions", []) or []),
         "waiver_players": len(waivers),
         "max_bid": max(waivers.values()) if waivers else 0,
     }
