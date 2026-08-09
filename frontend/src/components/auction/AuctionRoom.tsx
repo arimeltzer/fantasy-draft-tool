@@ -212,6 +212,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
       {showKeepers && (
         <KeeperPlanner
           format="auction"
+          leagueId={leagueId}
           settings={settings}
           board={board}
           picks={picks}

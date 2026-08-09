@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { X, Lock, Plus, Trash2, AlertTriangle, Search } from "lucide-react";
 import { keeperCost, normalizeKeeperRule, validateKeepers } from "@/engine/keeper.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
-import { LeagueSettings, KeeperCandidate } from "@/lib/api";
+import { LeagueSettings, KeeperCandidate, KeeperImportCache } from "@/lib/api";
+import { usePatchLeague } from "@/hooks/useLeague";
 import { DraftEntry } from "@/store/draftStore";
 import { decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
 import { posStyle } from "@/lib/posStyles";
@@ -11,6 +12,7 @@ import KeeperRecommendations from "./KeeperRecommendations";
 
 interface Props {
   format: "auction" | "snake";
+  leagueId: number;
   settings: LeagueSettings;
   board: BoardPlayer[];
   picks: DraftEntry[];
@@ -24,16 +26,22 @@ interface KeeperRow {
   player: BoardPlayer | undefined;
   owner: string;
   base: number | null;
+  waiver: number | null;
   fa: boolean;
   kept: number;
   cost: ReturnType<typeof keeperCost>;
 }
 
 export default function KeeperPlanner({
-  format, settings, board, picks, addPick, removePick, onClose,
+  format, leagueId, settings, board, picks, addPick, removePick, onClose,
 }: Props) {
   const rule = useMemo(() => normalizeKeeperRule(settings.keeper, format), [settings.keeper, format]);
   const priceBasis = rule.basis === "price";
+  const patchLeague = usePatchLeague(leagueId);
+
+  // Persist a fresh ESPN pull into league settings so it survives reloads.
+  const cacheImport = (c: KeeperImportCache) =>
+    patchLeague.mutate({ settings: { ...settings, keeperImport: c } });
 
   // Full ESPN candidate list (all teams) from the last auto-fill, so the
   // recommender can predict opponents' keepers.
@@ -58,9 +66,56 @@ export default function KeeperPlanner({
         base: meta.base,
         fa: meta.base == null,
         kept: meta.kept ?? 0,
+        waiver: meta.waiver ?? null,
         cost: keeperCost({ base: meta.base, waiver: meta.waiver ?? null, fa: meta.base == null, kept: meta.kept ?? 0 }, rule),
       }));
   }, [picks, playerById, rule]);
+
+  // Keepers committed before an import (or before waiver support) carry stale
+  // costs — their marker is what's stored, so nothing recomputes on its own.
+  // Find the ones the latest ESPN pull would price differently.
+  const staleKeepers = useMemo(() => {
+    if (importedCandidates.length === 0) return [];
+    const byPlayer = new Map(
+      importedCandidates.filter((c) => c.player_id != null).map((c) => [c.player_id as number, c]),
+    );
+    const out: { row: KeeperRow; base: number | null; waiver: number | null; newCost: ReturnType<typeof keeperCost> }[] = [];
+    for (const row of keeperRows) {
+      const pid = row.pick.playerId;
+      const c = pid != null ? byPlayer.get(pid) : undefined;
+      if (!c) continue;
+      const base = priceBasis ? c.bid : c.round;
+      const waiver = priceBasis ? c.waiver : null;
+      if (base === row.base && (waiver ?? null) === (row.waiver ?? null)) continue;
+      const newCost = keeperCost({ base, waiver, fa: base == null, kept: row.kept }, rule);
+      const changed = priceBasis ? newCost.price !== row.cost.price : newCost.round !== row.cost.round;
+      if (changed) out.push({ row, base, waiver, newCost });
+    }
+    return out;
+  }, [importedCandidates, keeperRows, priceBasis, rule]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshCosts = async () => {
+    if (staleKeepers.length === 0 || refreshing) return;
+    setRefreshing(true);
+    try {
+      // No API to patch a pick's marker, so re-create each with the new cost.
+      for (const { row, base, waiver, newCost } of staleKeepers) {
+        await removePick(row.pick.pickId);
+        await addPick({
+          playerId: row.pick.playerId as number,
+          mine: row.owner === "Me",
+          price: priceBasis ? (newCost.price ?? undefined) : undefined,
+          slot: encodeKeeper({
+            k: 1, owner: row.owner, basis: rule.basis, kept: row.kept,
+            base, waiver, round: newCost.round ?? undefined,
+          }),
+        });
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const validation = useMemo(
     () => validateKeepers(keeperRows.map((r) => ({ owner: r.owner, base: r.base, fa: r.fa, kept: r.kept })), rule),
@@ -274,7 +329,15 @@ export default function KeeperPlanner({
                 : " Their round is the pick that team forfeits."}
             </p>
 
-            <KeeperAutofill rule={rule} takenIds={takenIds} addPick={addPick} onCandidates={setImportedCandidates} source={settings.source} />
+            <KeeperAutofill
+              rule={rule}
+              takenIds={takenIds}
+              addPick={addPick}
+              onCandidates={setImportedCandidates}
+              source={settings.source}
+              cached={settings.keeperImport}
+              onCache={cacheImport}
+            />
           </div>
 
           {/* ── Current keepers ───────────────────────────────────── */}
@@ -292,6 +355,23 @@ export default function KeeperPlanner({
               ) : null}
             </div>
 
+            {staleKeepers.length > 0 && (
+              <div className="mb-2 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-2xs text-amber-800">
+                <AlertTriangle className="h-3 w-3 shrink-0" />
+                <span>
+                  {staleKeepers.length} keeper{staleKeepers.length === 1 ? " was" : "s were"} saved with an older cost
+                  {priceBasis ? " (before waiver claims were pulled)" : ""}.
+                </span>
+                <button
+                  onClick={refreshCosts}
+                  disabled={refreshing}
+                  className="ml-auto shrink-0 font-medium underline hover:no-underline disabled:opacity-50"
+                >
+                  {refreshing ? "Updating…" : "Update costs"}
+                </button>
+              </div>
+            )}
+
             <div className="card divide-y divide-hair">
               {keeperRows.length === 0 && (
                 <div className="px-3 py-6 text-center text-xs italic text-faint">No keepers yet.</div>
@@ -307,8 +387,16 @@ export default function KeeperPlanner({
                       {r.player?.name ?? `#${r.pick.playerId}`}
                       {r.player && <span className="ml-1 font-mono text-2xs text-faint">{r.player.pos}·{r.player.team}</span>}
                     </span>
-                    <span className="font-mono text-2xs text-muted">
+                    <span
+                      className="font-mono text-2xs text-muted"
+                      title={r.cost.basis === "price"
+                        ? `draft ${r.base != null ? `$${r.base}` : "FA"}${r.waiver != null ? ` · waiver $${r.waiver}` : ""} + $${rule.priceSurcharge}`
+                        : `drafted R${r.base ?? rule.undraftedRound}`}
+                    >
                       {r.cost.basis === "price" ? `$${r.cost.price}` : `R${r.cost.round}`}
+                      {r.waiver != null && r.base != null && r.waiver > r.base && (
+                        <span className="ml-1 text-amber-600" title="priced off the waiver claim">w</span>
+                      )}
                     </span>
                     <button
                       onClick={() => removePick(r.pick.pickId)}

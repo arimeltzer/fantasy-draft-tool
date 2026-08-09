@@ -177,6 +177,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
       {showKeepers && (
         <KeeperPlanner
           format="snake"
+          leagueId={leagueId}
           settings={settings}
           board={board}
           picks={picks}

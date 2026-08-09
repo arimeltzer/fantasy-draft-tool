@@ -48,8 +48,15 @@ def transactions_url(league_id: str, season: int) -> str:
             f"{league_id}?view=mTransactions2")
 
 
-# Filter header ESPN wants to actually return executed waiver/FA transactions.
-TXN_FILTER = '{"transactions":{"filterType":{"value":["WAIVER","FREEAGENT"]},"filterStatus":{"value":["EXECUTED"]}}}'
+def history_transactions_url(league_id: str, season: int) -> str:
+    """Completed prior seasons often only answer on the leagueHistory host."""
+    return (f"{READ_HOST}/apis/v3/games/ffl/leagueHistory/{league_id}"
+            f"?seasonId={season}&view=mTransactions2")
+
+
+# ESPN is picky about the transaction filter and 400s on keys it doesn't know,
+# so try the known-good shape first, then no filter, then the history endpoint.
+TXN_FILTER = '{"transactions":{"filterType":{"value":["WAIVER","FREEAGENT"]}}}'
 
 
 def _team_name(t: dict) -> str:
@@ -194,15 +201,39 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
 
         # Best-effort: pull waiver/FAAB transactions so keeper costs can use the
         # higher of draft vs. waiver. Never let this break the core import.
-        if "transactions" not in data:
-            try:
-                tr = await client.get(transactions_url(league_id, season),
-                                      headers={"x-fantasy-filter": TXN_FILTER})
-                if tr.status_code == 200:
+        txn_diag: dict = {"source": None, "attempts": []}
+        if "transactions" in data:
+            txn_diag["source"] = "league"
+        else:
+            attempts = [
+                ("filtered", transactions_url(league_id, season), {"x-fantasy-filter": TXN_FILTER}),
+                ("bare", transactions_url(league_id, season), {}),
+                ("history", history_transactions_url(league_id, season), {"x-fantasy-filter": TXN_FILTER}),
+            ]
+            for label, url, hdrs in attempts:
+                try:
+                    tr = await client.get(url, headers=hdrs)
+                    if tr.status_code != 200:
+                        txn_diag["attempts"].append(f"{label}:HTTP {tr.status_code}")
+                        continue
                     tj = tr.json()
                     if isinstance(tj, list):
-                        tj = tj[0]
-                    data["transactions"] = tj.get("transactions", []) or []
-            except Exception:  # noqa: BLE001 — transactions are optional
-                pass
-    return parse_league(data, season, my_team)
+                        tj = tj[0] if tj else {}
+                    txns = tj.get("transactions") or []
+                    txn_diag["attempts"].append(f"{label}:{len(txns)} txns")
+                    if txns:
+                        data["transactions"] = txns
+                        txn_diag["source"] = label
+                        break
+                except Exception as e:  # noqa: BLE001 — transactions are optional
+                    txn_diag["attempts"].append(f"{label}:{type(e).__name__}")
+
+    lg = parse_league(data, season, my_team)
+    waivers = _waiver_map(data)
+    lg.meta["transactions"] = {
+        **txn_diag,
+        "count": len(data.get("transactions", []) or []),
+        "waiver_players": len(waivers),
+        "max_bid": max(waivers.values()) if waivers else 0,
+    }
+    return lg

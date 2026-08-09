@@ -59,12 +59,30 @@ export interface KeeperCandidate {
   matched: boolean;
 }
 
+export interface WaiverReport {
+  players: number;          // candidates carrying a waiver claim
+  count?: number;           // raw transactions ESPN returned
+  waiver_players?: number;  // players with a FAAB acquisition
+  max_bid?: number;
+  source?: string | null;   // which fetch strategy worked
+  attempts?: string[];      // per-strategy outcome (diagnostics)
+}
+
 export interface KeeperCandidatesResult {
   fmt: "auction" | "snake";
   season: number;
   candidates: KeeperCandidate[];
   matched: number;
   unmatched: number;
+  waivers?: WaiverReport;
+}
+
+/** Cached ESPN keeper import, persisted in league settings (no migration). */
+export interface KeeperImportCache {
+  season: number;
+  fetchedAt: string;
+  candidates: KeeperCandidate[];
+  waivers?: WaiverReport;
 }
 
 export interface KeeperRule {
@@ -92,6 +110,7 @@ export interface LeagueSettings {
   keeper?: KeeperRule;
   opponents?: string[];   // labels for opponent teams (auction budget tracking); index = team_id
   source?: { provider: string; extId: string };  // set on league import; drives keeper auto-fill
+  keeperImport?: KeeperImportCache;              // cached prior-season pull (avoids refetching)
 }
 
 function getToken(): string | null {

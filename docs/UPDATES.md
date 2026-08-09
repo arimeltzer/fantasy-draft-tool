@@ -6,6 +6,25 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-07 — Keeper import: cached, diagnosable, and refreshable
+- **Cached import.** A successful ESPN pull is saved to
+  `settings.keeperImport = {season, fetchedAt, candidates, waivers}` via the
+  existing `PATCH /api/leagues/{id}` (JSONB — no migration). Reopening the planner
+  loads the saved pull instantly instead of refetching; a **Refresh from ESPN**
+  link re-pulls on demand.
+- **Waiver diagnostics.** `fetch_league` now tries three transaction strategies
+  (filtered `mTransactions2` → bare → `leagueHistory`) and records each outcome in
+  `NormLeague.meta`; the keeper-candidates response returns a `waivers` report
+  (source, per-attempt result, players, max bid). The autofill panel shows
+  "N waiver claims · max $X" or an explicit "No waiver data (attempts…)" so a
+  league without FAAB history is obvious rather than silently draft-only.
+  Fixes an earlier filter that included a `filterStatus` key ESPN 400s on.
+- **Stale keeper costs.** Keeper costs live in the stored pick marker, so keepers
+  committed before an import (or before waiver support) never recompute. The
+  planner now detects those and offers **"Update costs"**, re-deriving each from
+  the latest pull. Rows show a `w` flag when priced off the waiver claim, with the
+  full derivation in the tooltip.
+
 ## 2026-07 — Keepers: waiver/FAAB claim value (higher of draft vs waiver)
 - Many leagues set a keeper's cost to the **higher of what he was drafted for and
   what it cost to claim him off waivers**. `keeperCost` now takes an optional

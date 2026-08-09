@@ -575,6 +575,12 @@ async def espn_keeper_candidates(
         "candidates": cands,
         "matched": matched,
         "unmatched": len(cands) - matched,
+        # How the waiver/FAAB pull went — surfaced in the UI so a league with no
+        # transaction data is obvious instead of silently costing draft-only.
+        "waivers": {
+            "players": sum(1 for c in cands if c.get("waiver")),
+            **(norm.meta.get("transactions") or {}),
+        },
     }
 
 

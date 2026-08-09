@@ -50,6 +50,7 @@ class NormLeague:
     fmt: str                      # "auction" | "snake"
     settings: dict                # app LeagueSettings shape
     teams: list[NormTeam] = field(default_factory=list)
+    meta: dict = field(default_factory=dict)   # adapter diagnostics (non-essential)
 
 
 def make_settings(*, teams: int, ppr: float, roster: dict, fmt: str,

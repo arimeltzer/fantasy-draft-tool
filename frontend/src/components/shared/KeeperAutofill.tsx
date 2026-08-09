@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Loader2, ChevronDown, AlertTriangle } from "lucide-react";
 import { keeperCost } from "@/engine/keeper.js";
-import { api, KeeperCandidate, KeeperRule } from "@/lib/api";
+import { api, KeeperCandidate, KeeperImportCache, KeeperRule, WaiverReport } from "@/lib/api";
 import { encodeKeeper } from "@/lib/keeperPick";
 import { posStyle } from "@/lib/posStyles";
 
@@ -15,17 +15,21 @@ interface Props {
   // If the league was imported from ESPN, its source id — used to pre-fill and
   // auto-fetch the prior season's draft.
   source?: { provider: string; extId: string };
+  // Previously-saved pull (from league settings) + a way to persist a new one,
+  // so the draft data survives reloads instead of refetching every time.
+  cached?: KeeperImportCache;
+  onCache?: (c: KeeperImportCache) => void;
 }
 
 const CURRENT_SEASON = 2026;
 
-export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, source }: Props) {
+export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, source, cached, onCache }: Props) {
   const priceBasis = rule.basis === "price";
   const espnSource = source?.provider === "espn" ? source.extId : "";
 
-  const [open, setOpen] = useState(!!espnSource);
+  const [open, setOpen] = useState(!!espnSource || !!cached);
   const [leagueId, setLeagueId] = useState(espnSource);
-  const [season, setSeason] = useState(CURRENT_SEASON - 1);
+  const [season, setSeason] = useState(cached?.season ?? CURRENT_SEASON - 1);
   const [priv, setPriv] = useState(false);
   const [s2, setS2] = useState("");
   const [swid, setSwid] = useState("");
@@ -33,10 +37,12 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cands, setCands] = useState<KeeperCandidate[] | null>(null);
+  const [cands, setCands] = useState<KeeperCandidate[] | null>(cached?.candidates ?? null);
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(0);
+  const [waivers, setWaivers] = useState<WaiverReport | undefined>(cached?.waivers);
+  const [fetchedAt, setFetchedAt] = useState<string | undefined>(cached?.fetchedAt);
 
   // base per current rule basis; null => free agent / undrafted
   const baseOf = (c: KeeperCandidate) => (priceBasis ? c.bid : c.round);
@@ -54,7 +60,12 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
         my_team: myTeam.trim() || undefined,
       });
       setCands(res.candidates);
+      setWaivers(res.waivers);
+      const stamp = new Date().toISOString();
+      setFetchedAt(stamp);
       onCandidates?.(res.candidates);
+      // Persist so reopening the planner doesn't refetch from ESPN.
+      onCache?.({ season, fetchedAt: stamp, candidates: res.candidates, waivers: res.waivers });
       // Don't pre-select: the recommender below analyzes your roster
       // automatically (nothing committed). This list is only for directly
       // committing specific keepers you already know.
@@ -66,10 +77,16 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
     }
   };
 
-  // Auto-fetch once for an imported ESPN league (public leagues just work; a
-  // private one 401s and the user adds cookies + refetches).
+  // Use the saved pull when there is one; otherwise auto-fetch once for an
+  // imported ESPN league (public leagues just work; a private one 401s and the
+  // user adds cookies + refetches).
   const autoTried = useRef(false);
   useEffect(() => {
+    if (cached?.candidates?.length && !autoTried.current) {
+      autoTried.current = true;
+      onCandidates?.(cached.candidates);
+      return;
+    }
     if (espnSource && !autoTried.current) {
       autoTried.current = true;
       fetchCands();
@@ -203,9 +220,30 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
 
           {cands && (
             <div className="space-y-2">
+              {/* where this data came from + whether waiver/FAAB claims arrived */}
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md border border-line bg-sunken px-2.5 py-1.5 text-2xs">
+                {fetchedAt && (
+                  <span className="text-muted">
+                    Saved pull · {new Date(fetchedAt).toLocaleDateString()} ({season})
+                  </span>
+                )}
+                {priceBasis && (
+                  waivers?.players
+                    ? <span className="text-emerald-600">
+                        {waivers.players} waiver claim{waivers.players === 1 ? "" : "s"}
+                        {waivers.max_bid ? ` · max $${waivers.max_bid}` : ""}
+                      </span>
+                    : <span className="text-amber-600" title={(waivers?.attempts || []).join(" · ") || "no diagnostics"}>
+                        No waiver data{waivers?.attempts?.length ? ` (${waivers.attempts.join("; ")})` : ""}
+                      </span>
+                )}
+                <button onClick={fetchCands} disabled={loading} className="ml-auto text-brand hover:underline disabled:opacity-50">
+                  {loading ? "Refreshing…" : "Refresh from ESPN"}
+                </button>
+              </div>
               <div className="max-h-60 overflow-y-auto rounded-md border border-line bg-surface">
                 {rows.length === 0 && <div className="px-3 py-4 text-center text-2xs italic text-faint">No rostered players found.</div>}
-                {rows.map(({ c, i, base, fa, alreadyKept, cost, selectable }) => {
+                {rows.map(({ c, i, waiver, fa, alreadyKept, cost, selectable }) => {
                   const st = posStyle(c.pos as string);
                   return (
                     <label
@@ -224,9 +262,16 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
                       <span className="w-16 truncate font-mono text-2xs text-faint" title={c.owner}>
                         {c.is_mine ? "Me" : c.owner}
                       </span>
+                      <span
+                        className="w-12 text-right font-mono text-2xs text-faint"
+                        title={waiver != null ? `waiver/FAAB claim $${waiver}` : "no waiver claim"}
+                      >
+                        {waiver != null ? `w$${waiver}` : ""}
+                      </span>
                       <span className="w-14 text-right font-mono text-2xs text-muted">
-                        {!c.matched ? "no match" : alreadyKept ? "added" : fa ? "FA" :
-                          cost.basis === "price" ? `$${cost.price}` : `R${cost.round}`}
+                        {!c.matched ? "no match" : alreadyKept ? "added" :
+                          cost.basis === "price" ? `$${cost.price}` :
+                          fa ? "FA" : `R${cost.round}`}
                       </span>
                     </label>
                   );
