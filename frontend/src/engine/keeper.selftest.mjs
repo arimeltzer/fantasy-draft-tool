@@ -34,6 +34,18 @@ const escal = { ...KEEPER_PRESETS.yahoo, roundInflation: 1, noConsecutive: false
 eq(keeperCost({ base: 8, kept: 2 }, escal).round, 6, "Escalation: R8 kept 2yrs -> R6");
 eq(keeperCost({ base: 1, kept: 5 }, escal).round, 1, "Escalation floors at R1");
 
+// ── Waiver claim: keeper costs the HIGHER of draft vs waiver ─────────
+// price basis (ESPN): drafted $15, claimed off waivers for $30 -> $30 + $7.
+eq(keeperCost({ base: 15, waiver: 30, kept: 0 }, espn).price, 37, "price: higher waiver $30 wins (+$7)");
+eq(keeperCost({ base: 40, waiver: 12, kept: 0 }, espn).price, 47, "price: higher draft $40 wins (+$7)");
+// a pure waiver pickup (undrafted) is valued at the claim, not the FA default.
+eq(keeperCost({ base: null, fa: true, waiver: 25 }, espn).price, 32, "price: FA-but-claimed uses waiver $25 (+$7)");
+eq(keeperCost({ base: null, fa: true }, espn).price, 7, "price: true FA (no waiver) -> surcharge only");
+// round basis (Yahoo): higher value = EARLIER round -> min(round).
+eq(keeperCost({ base: 10, waiver: 4 }, yahoo).round, 4, "round: waiver R4 beats draft R10 (earlier=costlier)");
+eq(keeperCost({ base: 3, waiver: 12 }, yahoo).round, 3, "round: draft R3 beats waiver R12");
+eq(keeperCost({ base: null, fa: true, waiver: 6 }, yahoo).round, 6, "round: FA-but-claimed uses waiver R6");
+
 // ── maxKeepers validation, per owner ────────────────────────────────
 const entries = [
   { owner: "Me", base: 10 }, { owner: "Me", base: 5 }, { owner: "Me", base: 3 },

@@ -2,6 +2,7 @@ import { KeeperRule } from "@/lib/api";
 
 export interface KeeperEntry {
   base: number | null;
+  waiver?: number | null;
   fa?: boolean;
   kept?: number;
   owner?: string;

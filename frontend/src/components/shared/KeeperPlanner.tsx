@@ -58,7 +58,7 @@ export default function KeeperPlanner({
         base: meta.base,
         fa: meta.base == null,
         kept: meta.kept ?? 0,
-        cost: keeperCost({ base: meta.base, fa: meta.base == null, kept: meta.kept ?? 0 }, rule),
+        cost: keeperCost({ base: meta.base, waiver: meta.waiver ?? null, fa: meta.base == null, kept: meta.kept ?? 0 }, rule),
       }));
   }, [picks, playerById, rule]);
 
@@ -79,6 +79,7 @@ export default function KeeperPlanner({
   const [query, setQuery] = useState("");
   const [owner, setOwner] = useState("Me");
   const [base, setBase] = useState<string>("");
+  const [waiver, setWaiver] = useState<string>("");
   const [fa, setFa] = useState(false);
   const [kept, setKept] = useState(0);
   const [selected, setSelected] = useState<BoardPlayer | null>(null);
@@ -94,16 +95,17 @@ export default function KeeperPlanner({
   }, [query, board, takenIds]);
 
   const baseNum = base === "" ? null : Number(base);
+  const waiverNum = waiver === "" ? null : Number(waiver);
   const preview = selected
-    ? keeperCost({ base: fa ? null : baseNum, fa: fa || baseNum == null, kept }, rule)
+    ? keeperCost({ base: fa ? null : baseNum, waiver: waiverNum, fa: fa || baseNum == null, kept }, rule)
     : null;
 
-  const reset = () => { setSelected(null); setQuery(""); setBase(""); setFa(false); setKept(0); };
+  const reset = () => { setSelected(null); setQuery(""); setBase(""); setWaiver(""); setFa(false); setKept(0); };
 
   const add = async () => {
     if (!selected) return;
     setSaving(true);
-    const cost = keeperCost({ base: fa ? null : baseNum, fa: fa || baseNum == null, kept }, rule);
+    const cost = keeperCost({ base: fa ? null : baseNum, waiver: waiverNum, fa: fa || baseNum == null, kept }, rule);
     try {
       await addPick({
         playerId: selected.id as number,
@@ -112,6 +114,7 @@ export default function KeeperPlanner({
         slot: encodeKeeper({
           k: 1, owner, basis: rule.basis, kept,
           base: fa ? null : baseNum,
+          waiver: waiverNum,
           round: cost.round ?? undefined,
         }),
       });
@@ -206,6 +209,22 @@ export default function KeeperPlanner({
                       />
                     </label>
                   </div>
+
+                  <label className="block text-xs">
+                    <span className="mb-1 block text-muted">
+                      {priceBasis ? "Waiver / FAAB claim ($, optional)" : "Waiver claim round (optional)"}
+                    </span>
+                    <input
+                      type="number"
+                      value={waiver}
+                      onChange={(e) => setWaiver(e.target.value)}
+                      placeholder={priceBasis ? "e.g. 30" : "e.g. 4"}
+                      className="w-full rounded-md border border-line bg-sunken px-2 py-1 text-right font-mono text-sm text-ink focus:border-brand focus:outline-none"
+                    />
+                    <span className="mt-1 block text-2xs text-faint">
+                      If claimed off waivers, the keeper cost is the higher of draft {priceBasis ? "price" : "round"} and this claim.
+                    </span>
+                  </label>
 
                   <div className="flex flex-wrap items-center gap-4">
                     <label className="flex items-center gap-1.5 text-xs text-muted">

@@ -8,7 +8,8 @@ import { DraftEntry } from "@/store/draftStore";
 export interface KeeperMeta {
   k: 1;                       // marker discriminant
   owner: string;              // "Me" or an opponent team label
-  base: number | null;        // last year's price (auction) or round (snake)
+  base: number | null;        // last year's DRAFT price (auction) or round (snake)
+  waiver?: number | null;     // last year's WAIVER/FAAB claim value (same unit as base)
   basis: "price" | "round";
   kept: number;               // consecutive years already kept
   round?: number;             // computed round cost (snake)

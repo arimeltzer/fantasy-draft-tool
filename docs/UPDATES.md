@@ -6,6 +6,18 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-07 — Keepers: waiver/FAAB claim value (higher of draft vs waiver)
+- Many leagues set a keeper's cost to the **higher of what he was drafted for and
+  what it cost to claim him off waivers**. `keeperCost` now takes an optional
+  `waiver` value (same unit as `base`) and resolves the more-expensive of the two
+  — bigger $ for price basis, earlier round for round basis — then applies the
+  surcharge/escalation. A pure waiver pickup (undrafted) is valued at the claim
+  instead of the generic FA default. Node-tested (`keeper.selftest.mjs`).
+- Plumbed through the marker (`keeperPick.ts` `waiver`), the planner's Add form
+  (a "Waiver / FAAB claim" field), and the recommender (cost re-derivation +
+  commit re-encode). ESPN auto-fill still supplies draft cost only — waiver is
+  entered manually for now.
+
 ## 2026-07 — Fix: import no longer drafts the whole league (keeper setup)
 - **Root cause:** `POST /api/leagues/import` seeded *every* rostered player (all
   teams) as a drafted `DraftPick`. The keeper recommender counted any committed

@@ -60,15 +60,24 @@ export function normalizeKeeperRule(rule, format) {
  * Compute this year's keeper cost for one entry.
  *
  * entry = {
- *   base: number | null,   // last year's price (price basis) or round (round basis)
- *   fa:   boolean,         // true if the player was a free agent / undrafted last year
- *   kept: number,          // consecutive years already kept (for advisories / escalation)
+ *   base:   number | null,  // last year's DRAFT price (price basis) or round (round basis)
+ *   waiver: number | null,  // last year's WAIVER/FAAB claim value, same unit as base
+ *   fa:     boolean,        // true if the player was undrafted (no draft base)
+ *   kept:   number,         // consecutive years already kept (advisories / escalation)
  * }
+ *
+ * Many leagues set a keeper's cost to the HIGHER of what he was drafted for and
+ * what it cost to claim him off waivers — so a waiver pickup isn't a cheap
+ * keeper. We resolve the more-expensive of the two (bigger $ for price, earlier
+ * round for round), then apply the surcharge / escalation on top. When neither
+ * is present the player is a true free agent → the undrafted default.
+ *
  * Returns { basis, price|null, round|null, advisory: string[] }.
  */
 export function keeperCost(entry, rule) {
   const kept = Math.max(0, Math.round(entry?.kept ?? 0));
-  const fa = !!entry?.fa || entry?.base == null;
+  const draftBase = entry?.fa || entry?.base == null ? null : Number(entry.base);
+  const waiverBase = entry?.waiver == null ? null : Number(entry.waiver);
   const advisory = [];
 
   if (rule.noConsecutive && kept >= 1) {
@@ -76,24 +85,26 @@ export function keeperCost(entry, rule) {
   }
 
   if (rule.basis === "round") {
+    // "Higher value" in a round league = an EARLIER round (smaller number).
+    const rounds = [draftBase, waiverBase].filter((v) => v != null);
     let round;
-    if (fa) {
+    if (rounds.length === 0) {
       round = rule.undraftedRound || 13;
     } else {
-      // Escalation (if any) makes a keeper cost an earlier round each year held.
-      round = Math.round(entry.base) - (rule.roundInflation || 0) * kept;
+      round = Math.round(Math.min(...rounds)) - (rule.roundInflation || 0) * kept;
     }
     round = Math.max(1, round);
     return { basis: "round", price: null, round, advisory };
   }
 
-  // price basis
+  // price basis — higher value = more dollars.
+  const prices = [draftBase, waiverBase].filter((v) => v != null);
   let price;
-  if (fa) {
-    // No prior price — a FA keeper just costs the surcharge (min $1).
+  if (prices.length === 0) {
+    // No prior price at all — a FA keeper just costs the surcharge (min $1).
     price = Math.max(1, rule.priceSurcharge || 1);
   } else {
-    price = Math.round(entry.base) + (rule.priceSurcharge || 0);
+    price = Math.round(Math.max(...prices)) + (rule.priceSurcharge || 0);
   }
   price = Math.max(1, price);
   return { basis: "price", price, round: null, advisory };

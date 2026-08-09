@@ -57,7 +57,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
       .map(({ pick, meta }) => ({
         pickId: pick.pickId, id: pick.playerId as number, owner: meta!.owner,
         player: playerById.get(pick.playerId as number),
-        cost: keeperCost({ base: meta!.base, fa: meta!.base == null, kept: meta!.kept ?? 0 }, rule),
+        cost: keeperCost({ base: meta!.base, waiver: meta!.waiver ?? null, fa: meta!.base == null, kept: meta!.kept ?? 0 }, rule),
       }))
       .filter((x) => x.player);
   }, [picks, playerById, rule]);
@@ -105,7 +105,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
   // you explicitly commit — imports are hypothetical candidates.
   const myCandidates = useMemo(() => {
     const out = new Map<number, {
-      id: number; player: BoardPlayer; base: number | null; kept: number;
+      id: number; player: BoardPlayer; base: number | null; waiver: number | null; kept: number;
       cost: ReturnType<typeof keeperCost>; committed: boolean; pickId?: number;
     }>();
     // committed "Me" keepers first
@@ -115,8 +115,8 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
       const player = playerById.get(pick.playerId);
       if (!player) continue;
       out.set(pick.playerId, {
-        id: pick.playerId, player, base: meta.base, kept: meta.kept ?? 0,
-        cost: keeperCost({ base: meta.base, fa: meta.base == null, kept: meta.kept ?? 0 }, rule),
+        id: pick.playerId, player, base: meta.base, waiver: meta.waiver ?? null, kept: meta.kept ?? 0,
+        cost: keeperCost({ base: meta.base, waiver: meta.waiver ?? null, fa: meta.base == null, kept: meta.kept ?? 0 }, rule),
         committed: true, pickId: pick.pickId,
       });
     }
@@ -127,7 +127,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
       if (!player) continue;
       const base = priceBasis ? c.bid : c.round;
       out.set(c.player_id, {
-        id: c.player_id, player, base, kept: 0,
+        id: c.player_id, player, base, waiver: null, kept: 0,
         cost: keeperCost({ base: base == null ? null : base, fa: base == null, kept: 0 }, rule),
         committed: false,
       });
@@ -170,7 +170,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
       await addPick({
         playerId: c.id, mine: true,
         price: priceBasis ? (c.cost.price ?? undefined) : undefined,
-        slot: encodeKeeper({ k: 1, owner: "Me", basis: rule.basis, kept: c.kept, base: c.base, round: c.cost.round ?? undefined }),
+        slot: encodeKeeper({ k: 1, owner: "Me", basis: rule.basis, kept: c.kept, base: c.base, waiver: c.waiver, round: c.cost.round ?? undefined }),
       });
     }
     for (const c of toDrop) if (c.pickId != null) await removePick(c.pickId);
