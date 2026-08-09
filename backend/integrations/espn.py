@@ -43,6 +43,15 @@ def league_url(league_id: str, season: int) -> str:
     return f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{league_id}?{q}"
 
 
+def transactions_url(league_id: str, season: int) -> str:
+    return (f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/"
+            f"{league_id}?view=mTransactions2")
+
+
+# Filter header ESPN wants to actually return executed waiver/FA transactions.
+TXN_FILTER = '{"transactions":{"filterType":{"value":["WAIVER","FREEAGENT"]},"filterStatus":{"value":["EXECUTED"]}}}'
+
+
 def _team_name(t: dict) -> str:
     if t.get("name"):
         return t["name"]
@@ -102,8 +111,38 @@ def _draft_map(data: dict) -> dict[int, dict]:
     return out
 
 
+def _waiver_map(data: dict) -> dict[int, int]:
+    """playerId -> the highest FAAB/waiver bid spent to ACQUIRE that player,
+    across executed waiver/free-agent transactions. Keeper leagues often set a
+    keeper's cost to the higher of his draft value and his waiver claim, so this
+    is the waiver-claim basis. Non-FAAB (priority-order) claims have no dollar
+    value and are ignored (bid 0/None)."""
+    out: dict[int, int] = {}
+    for txn in data.get("transactions", []) or []:
+        status = str(txn.get("status", "") or "").upper()
+        if status and status != "EXECUTED":
+            continue
+        bid = txn.get("bidAmount")
+        try:
+            bid = int(bid) if bid is not None else 0
+        except (TypeError, ValueError):
+            bid = 0
+        if bid <= 0:
+            continue
+        for item in txn.get("items", []) or []:
+            if str(item.get("type", "") or "").upper() != "ADD":
+                continue
+            pid = item.get("playerId")
+            if pid is None:
+                continue
+            if bid > out.get(pid, 0):
+                out[pid] = bid
+    return out
+
+
 def parse_teams(data: dict, my_team: str | None) -> list[NormTeam]:
     draft = _draft_map(data)
+    waivers = _waiver_map(data)
     mine_key = (my_team or "").strip().lower()
     out: list[NormTeam] = []
     for t in data.get("teams", []) or []:
@@ -121,6 +160,7 @@ def parse_teams(data: dict, my_team: str | None) -> list[NormTeam]:
                 ext_id=str(pid) if pid is not None else None,
                 bid=d.get("bid"),
                 round=d.get("round"),
+                waiver=waivers.get(pid),
             ))
         out.append(NormTeam(name=name, is_mine=is_mine, players=players))
     return out
@@ -149,6 +189,20 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
             raise PermissionError("ESPN league is private — espn_s2 and SWID cookies required.")
         resp.raise_for_status()
         data = resp.json()
-    if isinstance(data, list):  # ESPN sometimes wraps a single league in a list
-        data = data[0]
+        if isinstance(data, list):  # ESPN sometimes wraps a single league in a list
+            data = data[0]
+
+        # Best-effort: pull waiver/FAAB transactions so keeper costs can use the
+        # higher of draft vs. waiver. Never let this break the core import.
+        if "transactions" not in data:
+            try:
+                tr = await client.get(transactions_url(league_id, season),
+                                      headers={"x-fantasy-filter": TXN_FILTER})
+                if tr.status_code == 200:
+                    tj = tr.json()
+                    if isinstance(tj, list):
+                        tj = tj[0]
+                    data["transactions"] = tj.get("transactions", []) or []
+            except Exception:  # noqa: BLE001 — transactions are optional
+                pass
     return parse_league(data, season, my_team)

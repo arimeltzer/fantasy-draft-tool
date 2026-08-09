@@ -55,6 +55,7 @@ export interface KeeperCandidate {
   is_mine: boolean;
   bid: number | null;
   round: number | null;
+  waiver: number | null;   // top FAAB/waiver claim last year (price basis only)
   matched: boolean;
 }
 

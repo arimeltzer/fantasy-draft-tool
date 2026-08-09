@@ -77,20 +77,24 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [espnSource]);
 
+  // Waiver/FAAB claim is a dollar amount → only a cost basis in price leagues.
+  const waiverOf = (c: KeeperCandidate) => (priceBasis ? c.waiver : null);
+
   const rows = useMemo(() => (cands ?? []).map((c, i) => {
     const base = baseOf(c);
+    const waiver = waiverOf(c);
     const fa = base == null;
     const alreadyKept = c.player_id != null && takenIds.has(c.player_id);
-    const cost = keeperCost({ base: fa ? null : base, fa, kept: 0 }, rule);
+    const cost = keeperCost({ base: fa ? null : base, waiver, fa, kept: 0 }, rule);
     const selectable = c.matched && c.player_id != null && !alreadyKept;
-    return { c, i, base, fa, alreadyKept, cost, selectable };
+    return { c, i, base, waiver, fa, alreadyKept, cost, selectable };
   }), [cands, rule, takenIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const addSelected = async () => {
     setAdding(true);
     let n = 0;
     try {
-      for (const { c, i, base, fa, cost, selectable } of rows) {
+      for (const { c, i, base, waiver, fa, cost, selectable } of rows) {
         if (!selectable || !sel.has(i) || c.player_id == null) continue;
         await addPick({
           playerId: c.player_id,
@@ -99,6 +103,7 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
           slot: encodeKeeper({
             k: 1, owner: c.owner, basis: rule.basis, kept: 0,
             base: fa ? null : base,
+            waiver,
             round: cost.round ?? undefined,
           }),
         });

@@ -133,6 +133,7 @@ def keeper_candidates(norm, index) -> list[dict]:
                 "is_mine": team.is_mine,
                 "bid": np.bid,       # auction price paid last year (or None)
                 "round": np.round,   # draft round last year (or None => FA)
+                "waiver": np.waiver, # top FAAB/waiver claim last year (or None)
                 "matched": pid is not None,
             })
     return out

@@ -15,8 +15,13 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   instead of the generic FA default. Node-tested (`keeper.selftest.mjs`).
 - Plumbed through the marker (`keeperPick.ts` `waiver`), the planner's Add form
   (a "Waiver / FAAB claim" field), and the recommender (cost re-derivation +
-  commit re-encode). ESPN auto-fill still supplies draft cost only — waiver is
-  entered manually for now.
+  commit re-encode).
+- **ESPN auto-fill now pulls waiver/FAAB claims.** `espn.py` fetches
+  `mTransactions2` (best-effort, isolated so it can't break the core import) and
+  `_waiver_map` reduces it to each player's top executed FAAB acquisition bid;
+  `keeper_candidates` carries `waiver`, and the autofill/recommender apply the
+  higher-of-draft-vs-waiver cost automatically. Parser fixture-tested
+  (`integrations.selftest`); waiver is a price-basis concept (ignored for snake).
 
 ## 2026-07 — Fix: import no longer drafts the whole league (keeper setup)
 - **Root cause:** `POST /api/leagues/import` seeded *every* rostered player (all

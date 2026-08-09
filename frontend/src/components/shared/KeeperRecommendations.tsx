@@ -75,7 +75,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
     if (!predictOn || importedCandidates.length === 0) return null;
     return predictOpponentKeepers(
       importedCandidates.map((c) => ({
-        player_id: c.player_id, is_mine: c.is_mine, owner: c.owner, bid: c.bid, round: c.round,
+        player_id: c.player_id, is_mine: c.is_mine, owner: c.owner, bid: c.bid, round: c.round, waiver: c.waiver,
       })),
       {
         format, board: pricedBoard, marketBoard, settings: { teams: settings.teams }, rule, floor: 0,
@@ -126,9 +126,10 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
       const player = playerById.get(c.player_id);
       if (!player) continue;
       const base = priceBasis ? c.bid : c.round;
+      const waiver = priceBasis ? c.waiver : null;
       out.set(c.player_id, {
-        id: c.player_id, player, base, waiver: null, kept: 0,
-        cost: keeperCost({ base: base == null ? null : base, fa: base == null, kept: 0 }, rule),
+        id: c.player_id, player, base, waiver, kept: 0,
+        cost: keeperCost({ base: base == null ? null : base, waiver, fa: base == null, kept: 0 }, rule),
         committed: false,
       });
     }

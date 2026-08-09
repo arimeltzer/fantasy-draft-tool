@@ -66,6 +66,7 @@ export interface PredictInput {
   owner: string;
   bid: number | null;
   round: number | null;
+  waiver?: number | null;
 }
 
 export interface PredictedKeeper {

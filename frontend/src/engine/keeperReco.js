@@ -281,8 +281,9 @@ export function predictOpponentKeepers(candidates, ctx) {
     if (slots === 0) { byTeam[owner] = []; continue; }
     const scored = list.map(({ c, player }) => {
       const base = roundBasis ? c.round : c.bid;
+      const waiver = roundBasis ? null : c.waiver ?? null; // FAAB is a price-basis concept
       const fa = base == null;
-      const cost = keeperCost({ base: fa ? null : base, fa, kept: 0 }, rule);
+      const cost = keeperCost({ base: fa ? null : base, waiver, fa, kept: 0 }, rule);
       let surplus;
       if (roundBasis) {
         // slot-agnostic mid-round pick for the round they'd forfeit

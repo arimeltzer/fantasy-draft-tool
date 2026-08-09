@@ -99,6 +99,17 @@ def test_keeper_candidates():
             ]}},
         ],
         "draftDetail": {"picks": [{"teamId": 1, "playerId": 11, "bidAmount": 55, "roundId": 3}]},
+        "transactions": [
+            # Mahomes claimed twice off waivers — keep the higher ($35).
+            {"status": "EXECUTED", "bidAmount": 20, "items": [{"type": "ADD", "playerId": 11}]},
+            {"status": "EXECUTED", "bidAmount": 35, "items": [{"type": "ADD", "playerId": 11}]},
+            # 49ers claimed for $12.
+            {"status": "EXECUTED", "bidAmount": 12, "items": [{"type": "ADD", "playerId": 1}]},
+            # Ignored: not executed, a DROP, and a $0 priority claim.
+            {"status": "CANCELED", "bidAmount": 99, "items": [{"type": "ADD", "playerId": 11}]},
+            {"status": "EXECUTED", "bidAmount": 5, "items": [{"type": "DROP", "playerId": 11}]},
+            {"status": "EXECUTED", "bidAmount": 0, "items": [{"type": "ADD", "playerId": 1}]},
+        ],
     }
     norm = espn.parse_league(data, season=2026, my_team="Team Ari")
     cands = keeper_candidates(norm, idx)
@@ -106,9 +117,11 @@ def test_keeper_candidates():
     me = next(c for c in cands if c["name"] == "Patrick Mahomes")
     assert me["player_id"] == 11 and me["owner"] == "Me" and me["is_mine"]
     assert me["bid"] == 55 and me["round"] == 3 and me["matched"]
+    assert me["waiver"] == 35, f"Mahomes waiver should be max($20,$35)=35, got {me['waiver']}"
     fa = next(c for c in cands if c["pos"] == "DST")
     assert fa["player_id"] == 7 and fa["owner"] == "Rivals" and not fa["is_mine"]
     assert fa["bid"] is None and fa["round"] is None  # undrafted -> FA basis
+    assert fa["waiver"] == 12, f"49ers waiver should be $12 (the $0 claim ignored), got {fa['waiver']}"
 
     # snake, no kicker, full PPR
     snake = {"id": 9, "settings": {"size": 10,

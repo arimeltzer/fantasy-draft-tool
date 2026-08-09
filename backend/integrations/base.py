@@ -31,6 +31,7 @@ class NormPlayer:
     ext_id: str | None = None     # platform player id (for reference/debug)
     bid: int | None = None        # auction price paid, if known
     round: int | None = None      # draft round, if known (snake keeper cost)
+    waiver: int | None = None     # top FAAB/waiver claim spent to acquire, if any
 
 
 @dataclass
