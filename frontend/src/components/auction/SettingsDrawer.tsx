@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { X, RotateCcw } from "lucide-react";
 import { KEEPER_PRESETS, normalizeKeeperRule } from "@/engine/keeper.js";
-import { DEFAULT_SCORING, resolveScoring } from "@/engine/valuation-engine.js";
+import { DEFAULT_SCORING, resolveScoring, snakePicks } from "@/engine/valuation-engine.js";
 import { LeagueSettings, KeeperRule, ScoringRules } from "@/lib/api";
 
 interface Props {
@@ -14,6 +14,10 @@ interface Props {
 export default function SettingsDrawer({ settings, onSave, onClose, format = "auction" }: Props) {
   const [local, setLocal] = useState<LeagueSettings>(settings);
   const keeper: KeeperRule = normalizeKeeperRule(local.keeper, format);
+  const isAuction = format === "auction";
+  // Standard serpentine picks for this slot — shown as the placeholder so the
+  // "Your picks" override is edited against the real default, not from scratch.
+  const serpentine = snakePicks(local.draftSlot ?? 1, local.teams || 12, 16);
 
   const set = (patch: Partial<LeagueSettings>) => setLocal((s) => ({ ...s, ...patch }));
   const setRoster = (k: string, v: number) =>
@@ -47,9 +51,13 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
     <div className="border-b border-gray-200 bg-gray-50">
       <div className="max-w-6xl mx-auto px-4 py-4 grid sm:grid-cols-3 gap-5">
         <div className="space-y-2">
-          <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Auction</h3>
+          <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">
+            {isAuction ? "Auction" : "League"}
+          </h3>
           {numField("Teams", local.teams, (v) => set({ teams: v }))}
-          {numField("Budget / team ($)", local.budget, (v) => set({ budget: v }))}
+          {/* Budget is meaningless in a snake draft — don't show a field whose
+              value can never affect anything in this format. */}
+          {isAuction && numField("Budget / team ($)", local.budget, (v) => set({ budget: v }))}
           {numField("Points / reception", local.ppr, (v) => set({ ppr: v }), 0.5)}
           <label className="flex items-center justify-between gap-2 text-xs">
             <span className="text-gray-500">Superflex</span>
@@ -70,11 +78,41 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
         </div>
 
         <div className="space-y-2">
-          <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Your draft slot</h3>
-          {numField("Draft slot", local.draftSlot ?? 1, (v) => set({ draftSlot: v }))}
+          {/* Draft slot / pick order only mean something in a snake draft. */}
+          {!isAuction && (
+            <>
+              <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Your draft slot</h3>
+              {numField("Draft slot", local.draftSlot ?? 1, (v) => set({ draftSlot: v }))}
+
+              <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold pt-2">Your picks</h3>
+              <p className="text-xs text-gray-400 leading-snug">
+                Overall pick numbers you own. Leave blank for standard serpentine order — edit only if
+                you've <span className="text-gray-500">traded picks</span> (added, lost, or two in one round).
+              </p>
+              <input
+                value={(local.myPicks ?? []).join(", ")}
+                placeholder={serpentine.join(", ")}
+                onChange={(e) => {
+                  const nums = e.target.value
+                    .split(/[,\s]+/).map((s) => parseInt(s, 10))
+                    .filter((n) => Number.isFinite(n) && n > 0);
+                  set({ myPicks: nums.length ? Array.from(new Set(nums)).sort((a, b) => a - b) : undefined });
+                }}
+                className="w-full px-2 py-1 rounded bg-gray-50 border border-gray-300 font-mono text-xs text-gray-700 focus:outline-none focus:border-gray-400"
+              />
+              {(local.myPicks?.length ?? 0) > 0 && (
+                <p className="text-2xs text-amber-600">
+                  Overriding serpentine with {local.myPicks!.length} pick{local.myPicks!.length === 1 ? "" : "s"} —
+                  keeper costs and the pick clock use these.
+                </p>
+              )}
+            </>
+          )}
 
           <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold pt-2">Opponent teams</h3>
-          <p className="text-xs text-gray-400 leading-snug">One name per line (for auction budget tracking). Leave blank to auto-name.</p>
+          <p className="text-xs text-gray-400 leading-snug">
+            One name per line{isAuction ? " (for budget tracking)" : ""}. Leave blank to auto-name.
+          </p>
           <textarea
             rows={4}
             value={(local.opponents ?? []).join("\n")}

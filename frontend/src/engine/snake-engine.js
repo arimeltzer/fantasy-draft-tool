@@ -187,3 +187,22 @@ export function snakePicks(slot, teams, rounds = 18) {
     out.push(r % 2 === 1 ? (r - 1) * teams + slot : r * teams - slot + 1);
   return out;
 }
+
+/**
+ * The overall pick numbers YOU actually own — the single source of truth for
+ * pick timing and for what a keeper costs you.
+ *
+ * Serpentine order is only the default. Leagues trade picks, which breaks the
+ * assumption that a draft slot determines your picks: you can hold two picks in
+ * one round and none in another. When `settings.myPicks` is set it wins
+ * outright, so a traded-pick league gets correct keeper costs and pick-clock
+ * timing instead of a tidy formula that happens to be wrong.
+ */
+export function myPickNumbers(settings = {}, rounds = 18) {
+  const override = settings.myPicks;
+  if (Array.isArray(override) && override.length) {
+    return [...new Set(override.filter((n) => Number.isFinite(n) && n > 0))]
+      .sort((a, b) => a - b);
+  }
+  return snakePicks(settings.draftSlot ?? 1, settings.teams ?? 12, rounds);
+}

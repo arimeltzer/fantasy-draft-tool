@@ -6,6 +6,32 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Traded picks, snake settings fix, team names from paste
+- **Snake leagues showed auction settings.** `SettingsDrawer` hardcoded an
+  "Auction" heading and a "Budget / team" field regardless of format, even
+  though it already received `format`. Budget is now auction-only; draft slot
+  and pick order are snake-only; the opponents hint no longer claims to be
+  about budget tracking in a snake league.
+- **Traded draft picks are now modelled.** Serpentine order assumes your draft
+  slot determines your picks — false the moment a league trades them (you can
+  hold two picks in one round and none in another; the reference Yahoo league
+  does exactly this). New `settings.myPicks` holds the overall pick numbers you
+  actually own, editable in League Settings → Your picks (placeholder shows the
+  serpentine default, so it's an override, not data entry from scratch).
+  - `myPickNumbers(settings)` in `snake-engine.js` is the single source of
+    truth: the override when present, serpentine otherwise.
+  - `keeperReco` uses it, and `pickForRound()` now looks a round UP rather than
+    indexing `myPicks[round-1]` — with two picks in a round the earlier (more
+    valuable) one is the honest cost; with none you forfeit the next pick you
+    own. Under serpentine this is identical to the old behavior.
+  - The pick clock counts down to a pick you really own.
+  - Tested end to end: trading away a round-3 pick pushes the forfeited pick
+    later and raises that keeper's surplus (keeperReco 40/40).
+- **Team names from the Yahoo paste**: the parse already knows all ten real
+  names and your draft slot, so the keeper paste panel now offers to save them
+  straight into `settings.opponents` (+ `draftSlot`) instead of making you
+  retype them.
+
 ## 2026-08 — Yahoo import with NO API access (paste-based)
 - **Why**: Yahoo's developer program no longer reliably grants the Fantasy
   Sports scope, so the OAuth path in `yahoo.py` can stay blocked indefinitely.

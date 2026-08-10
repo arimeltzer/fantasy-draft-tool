@@ -22,7 +22,7 @@
  *
  * Pure + node-tested (keeperReco.selftest.mjs).
  * ================================================================== */
-import { snakePicks } from "./valuation-engine.js";
+import { myPickNumbers } from "./valuation-engine.js";
 import { keeperCost } from "./keeper.js";
 
 /** Market draft order: who leaves the board when. ADP → ECR → our VBD rank.
@@ -99,10 +99,28 @@ export function auctionCandidateValue(cand, board, keptIds, scarceFactor = 1) {
   return { market, cost, surplus, scarcity, forfeit: null, forfeitPick: null };
 }
 
-export function snakeCandidateValue(cand, board, marketBoard, keptIds, myPicks, assignedRound, scarceFactor) {
+/**
+ * Which of YOUR picks a round-R keeper actually costs.
+ *
+ * Indexing `myPicks[round-1]` only works when you own exactly one pick per
+ * round — true under serpentine, false once picks are traded. Look the round
+ * up instead: if you hold two picks in it, the earlier (more valuable) one is
+ * the honest cost; if you hold none, you forfeit the next pick you do own.
+ */
+export function pickForRound(myPicks, round, teams) {
+  if (!myPicks?.length) return round * (teams || 12);
+  const roundOf = (p) => Math.ceil(p / (teams || 12));
+  const inRound = myPicks.filter((p) => roundOf(p) === round);
+  if (inRound.length) return Math.min(...inRound);
+  const later = myPicks.filter((p) => roundOf(p) > round);
+  if (later.length) return Math.min(...later);
+  return myPicks[myPicks.length - 1];
+}
+
+export function snakeCandidateValue(cand, board, marketBoard, keptIds, myPicks, assignedRound, scarceFactor, teams) {
   const p = cand.player;
   const round = assignedRound ?? cand.cost.round ?? 1;
-  const forfeitPick = myPicks[round - 1] ?? round * 999; // beyond the board if unknown
+  const forfeitPick = pickForRound(myPicks, round, teams);
   const exp = expectedAtPick(marketBoard, forfeitPick, keptIds);
   const forfeitVbd = exp ? exp.vbd : 0;
   const surplus = +(p.vbd - forfeitVbd).toFixed(1);
@@ -131,7 +149,9 @@ export function recommendKeepers(candidates, ctx) {
   const roster = settings.roster ?? {};
   const teams = settings.teams ?? 12;
   const slot = settings.draftSlot ?? 1;
-  const myPicks = format === "snake" ? snakePicks(slot, teams, 30) : [];
+  // Honors settings.myPicks when the league has traded picks; otherwise this is
+  // the serpentine schedule, unchanged.
+  const myPicks = format === "snake" ? myPickNumbers({ ...settings, teams }, 30) : [];
   const scarceFactor = format === "snake" ? wheelFactor(slot, teams) : 1;
 
   // Evaluate one subset: assign distinct forfeited rounds (snake) and sum KV.
@@ -151,7 +171,7 @@ export function recommendKeepers(candidates, ctx) {
       }
       const posSeen = {};
       for (const c of order) {
-        const v = snakeCandidateValue(c, board, marketBoard, allKeptIds, myPicks, assign[c.id], scarceFactor);
+        const v = snakeCandidateValue(c, board, marketBoard, allKeptIds, myPicks, assign[c.id], scarceFactor, teams);
         const before = posSeen[c.player.pos] ?? 0;
         const fit = fitAdjust(c.player, before, roster);
         posSeen[c.player.pos] = before + 1;

@@ -7,6 +7,11 @@ interface Props {
    *  recommender/planner consume them exactly like an ESPN pull. */
   onCandidates: (c: KeeperCandidate[]) => void;
   matchSeason?: number;
+  /** Real opponent names + your draft slot, parsed from the same pages — the
+   *  planner writes them into league settings so you don't retype them. */
+  onLeagueInfo?: (info: { opponents: string[]; draftSlot?: number }) => void;
+  /** Opponent names already saved, so the offer to apply can be hidden once used. */
+  currentOpponents?: string[];
 }
 
 const CURRENT_SEASON = 2026;
@@ -20,7 +25,7 @@ const CURRENT_SEASON = 2026;
  * gives the keeper tools everything they need (who's on each roster, and what
  * round each player cost).
  */
-export default function YahooPasteImport({ onCandidates, matchSeason = CURRENT_SEASON }: Props) {
+export default function YahooPasteImport({ onCandidates, matchSeason = CURRENT_SEASON, onLeagueInfo, currentOpponents }: Props) {
   const [open, setOpen] = useState(false);
   const [draftText, setDraftText] = useState("");
   const [rostersText, setRostersText] = useState("");
@@ -29,6 +34,7 @@ export default function YahooPasteImport({ onCandidates, matchSeason = CURRENT_S
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<YahooPasteReport | null>(null);
   const [count, setCount] = useState<{ matched: number; total: number } | null>(null);
+  const [applied, setApplied] = useState(false);
 
   const parse = async () => {
     setLoading(true); setError(null); setReport(null); setCount(null);
@@ -141,6 +147,44 @@ export default function YahooPasteImport({ onCandidates, matchSeason = CURRENT_S
                   </div>
                 )}
               </div>
+
+              {/* The same paste already contains the real team names — offer to
+                  save them rather than making the user retype ten of them. */}
+              {onLeagueInfo && report.team_names.length > 0 && (
+                <div className="rounded-md border border-line bg-sunken px-2.5 py-2 text-2xs">
+                  <div className="mb-1 font-medium text-ink">
+                    Team names found ({report.team_names.length})
+                  </div>
+                  <div className="mb-1.5 leading-relaxed text-muted">
+                    {report.team_names.join(", ")}
+                  </div>
+                  {applied ? (
+                    <span className="inline-flex items-center gap-1 text-emerald-600">
+                      <Check className="h-3 w-3" /> Saved to league settings
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        const opponents = myTeam.trim()
+                          ? report.team_names.filter((t) => t !== myTeam.trim())
+                          : report.team_names;
+                        onLeagueInfo({
+                          opponents,
+                          draftSlot: myTeam.trim() ? report.draft_slots[myTeam.trim()] : undefined,
+                        });
+                        setApplied(true);
+                      }}
+                      className="text-brand hover:underline"
+                    >
+                      Save as opponent teams
+                      {myTeam.trim() && report.draft_slots[myTeam.trim()]
+                        ? ` + draft slot ${report.draft_slots[myTeam.trim()]}`
+                        : ""}
+                      {currentOpponents?.length ? " (replaces current)" : ""}
+                    </button>
+                  )}
+                </div>
+              )}
 
               {report.kept_detected.length > 0 && (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-2xs text-amber-900">

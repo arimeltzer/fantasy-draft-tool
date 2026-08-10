@@ -47,3 +47,9 @@ export declare function pickScore(
   player: BoardPlayer, liveState: SnakeLiveState, P?: SnakeParams
 ): PickScoreResult;
 export declare function snakePicks(slot: number, teams: number, rounds?: number): number[];
+/** Overall pick numbers you own: `settings.myPicks` when set (traded picks),
+ *  otherwise serpentine from `draftSlot`. */
+export declare function myPickNumbers(
+  settings: { teams?: number; draftSlot?: number; myPicks?: number[] },
+  rounds?: number,
+): number[];

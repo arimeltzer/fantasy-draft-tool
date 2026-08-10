@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, X, Lock } from "lucide-react";
-import { snakePicks, rankByAdp } from "@/engine/snake-engine.js";
+import { myPickNumbers, rankByAdp } from "@/engine/snake-engine.js";
 import type { BoardPlayer, SnakeLiveState } from "@/engine/snake-engine.js";
 import { LeagueSettings, ApiLeague } from "@/lib/api";
 import { useDraftStore } from "@/store/draftStore";
@@ -47,8 +47,8 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   const overallPick = livePickCount + 1;
 
   const myPickNums = useMemo(
-    () => snakePicks(settings.draftSlot ?? 1, settings.teams),
-    [settings.draftSlot, settings.teams]
+    () => myPickNumbers(settings),
+    [settings.draftSlot, settings.teams, settings.myPicks]
   );
   const nextMine = myPickNums.find((p) => p >= overallPick);
   const untilMine = nextMine != null ? nextMine - overallPick : null;
@@ -148,6 +148,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
               draftSlot={settings.draftSlot ?? 1}
               teams={settings.teams}
               overallPick={overallPick}
+              myPicks={myPickNums}
             />
             <button
               onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); }}

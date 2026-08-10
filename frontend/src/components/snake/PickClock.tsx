@@ -4,10 +4,13 @@ interface Props {
   draftSlot: number;
   teams: number;
   overallPick: number;
+  /** Your actual picks — pass when the league has traded picks, so the clock
+   *  counts down to a pick you really own rather than a serpentine guess. */
+  myPicks?: number[];
 }
 
-export default function PickClock({ draftSlot, teams, overallPick }: Props) {
-  const myPicks = snakePicks(draftSlot, teams);
+export default function PickClock({ draftSlot, teams, overallPick, myPicks: owned }: Props) {
+  const myPicks = owned?.length ? owned : snakePicks(draftSlot, teams);
   const nextMine = myPicks.find((p) => p >= overallPick);
   const untilMine = nextMine != null ? nextMine - overallPick : null;
 

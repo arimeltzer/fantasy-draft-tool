@@ -12,4 +12,4 @@
    ===================================================================== */
 export * from "./engine-core.js";
 export { DEFAULT_AUCTION_PARAMS, auctionValues, applyInflation, maxBid } from "./auction-engine.js";
-export { DEFAULT_SNAKE_PARAMS, snakePicks } from "./snake-engine.js";
+export { DEFAULT_SNAKE_PARAMS, snakePicks, myPickNumbers } from "./snake-engine.js";

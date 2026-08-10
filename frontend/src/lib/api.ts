@@ -141,6 +141,9 @@ export interface LeagueSettings {
   source?: { provider: string; extId: string };  // set on league import; drives keeper auto-fill
   keeperImport?: KeeperImportCache;              // cached prior-season pull (avoids refetching)
   scoring?: ScoringRules;  // per-stat scoring beyond PPR; drives valuations via resolveScoring()
+  /** Overall pick numbers you own (snake). Set only when picks were TRADED —
+   *  unset means standard serpentine order from `draftSlot`. */
+  myPicks?: number[];
 }
 
 function getToken(): string | null {

@@ -3,8 +3,9 @@ import { snakePicks } from "./valuation-engine.js";
 import {
   marketOrder, expectedAtPick, wheelFactor, scarcityBonus,
   snakeCandidateValue, auctionCandidateValue, recommendKeepers,
-  predictOpponentKeepers,
+  predictOpponentKeepers, pickForRound,
 } from "./keeperReco.js";
+import { myPickNumbers } from "./snake-engine.js";
 
 let pass = 0, fail = 0;
 const eq = (g, w, m) => (JSON.stringify(g) === JSON.stringify(w)
@@ -147,6 +148,46 @@ const pred2 = predictOpponentKeepers(predCands, {
 eq(pred2.byTeam["Team 2"].length, 0, "no extra prediction once a team's slot is filled");
 ok(!pred2.keptIds.has(board[49].id), "does not fill a filled team with its next-best");
 ok(pred2.keptIds.has(board[3].id), "still predicts for a team with open slots (Team 3)");
+
+// ── TRADED PICKS: myPicks overrides serpentine end to end ───────────
+// Serpentine default is untouched when no override is present.
+eq(myPickNumbers({ teams: 12, draftSlot: 1 }, 3), [1, 24, 25], "no override => serpentine");
+eq(myPickNumbers({ teams: 12, draftSlot: 1, myPicks: [] }, 3), [1, 24, 25], "empty override ignored");
+// An explicit list wins, is de-duped and sorted.
+eq(myPickNumbers({ teams: 12, draftSlot: 1, myPicks: [25, 1, 25, 40] }), [1, 25, 40], "override sorted+deduped");
+
+// pickForRound looks the round up rather than indexing positionally.
+eq(pickForRound([1, 24, 25, 48], 1, 12), 1, "round 1 -> pick 1");
+eq(pickForRound([1, 24, 25, 48], 2, 12), 24, "round 2 -> pick 24");
+// Two picks in one round (acquired): the earlier/more valuable one is the cost.
+eq(pickForRound([1, 20, 24, 25], 2, 12), 20, "two picks in a round -> the earlier one");
+// No pick in that round (traded away): you forfeit the next one you own.
+eq(pickForRound([1, 48], 2, 12), 48, "traded-away round -> next owned pick");
+
+// Trading away an early pick must change the keeper math: with the round-3
+// pick gone, a round-3 keeper costs a much later pick, so surplus rises.
+const tradeBoard = board, tradeMkt = mkt;
+const tCand = { id: board[1].id, player: board[1], cost: { basis: "round", price: null, round: 3 } };
+const normalPicks = myPickNumbers({ teams: 12, draftSlot: 1 }, 30);
+const tradedPicks = normalPicks.filter((p) => Math.ceil(p / 12) !== 3); // R3 dealt away
+const vNormal = snakeCandidateValue(tCand, tradeBoard, tradeMkt, new Set(), normalPicks, 3, 1, 12);
+const vTraded = snakeCandidateValue(tCand, tradeBoard, tradeMkt, new Set(), tradedPicks, 3, 1, 12);
+ok(vTraded.forfeitPick > vNormal.forfeitPick, "trading the R3 pick pushes the forfeited pick later");
+ok(vTraded.surplus > vNormal.surplus, "a later forfeited pick means the keeper is worth more");
+
+// recommendKeepers honours settings.myPicks (same override, full pipeline).
+const recNormal = recommendKeepers([tCand], {
+  format: "snake", board: tradeBoard, marketBoard: tradeMkt,
+  settings: { teams: 12, draftSlot: 1, roster: { RB: 2, WR: 2 } },
+  allKeptIds: new Set(), maxKeepers: 1, flexFloor: 0,
+});
+const recTraded = recommendKeepers([tCand], {
+  format: "snake", board: tradeBoard, marketBoard: tradeMkt,
+  settings: { teams: 12, draftSlot: 1, roster: { RB: 2, WR: 2 }, myPicks: tradedPicks },
+  allKeptIds: new Set(), maxKeepers: 1, flexFloor: 0,
+});
+ok(recTraded.ranked[0].forfeitPick > recNormal.ranked[0].forfeitPick,
+   "recommendKeepers uses settings.myPicks for the forfeited pick");
 
 console.log(`\nkeeperReco.selftest: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
