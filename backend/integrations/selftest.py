@@ -133,6 +133,14 @@ def test_keeper_candidates():
     both = {**legacy, "topics": [{"messages": [{"messageTypeId": 180, "targetId": 11, "from": 50}]}]}
     assert espn.all_waivers(both) == {11: 50}, "merge should keep the higher bid"
 
+    # The activity view is only valid on the league's /communication/ sub-resource;
+    # on the base league URL ESPN 400s regardless of filter.
+    for url in (espn.activity_url("1", 2025), espn.activity_url("1", 2025, history=True)):
+        assert "/communication/" in url, f"activity URL missing /communication/: {url}"
+        assert espn.ACTIVITY_VIEW in url, url
+    # ESPN 400s this feed above 25 per page.
+    assert espn.ACTIVITY_PAGE <= 25, "activity feed limit must stay <= 25"
+
     # snake, no kicker, full PPR
     snake = {"id": 9, "settings": {"size": 10,
              "scoringSettings": {"scoringItems": [{"statId": 53, "points": 1.0}]},

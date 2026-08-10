@@ -57,12 +57,17 @@ def history_transactions_url(league_id: str, season: int) -> str:
 
 
 def activity_url(league_id: str, season: int, history: bool = False) -> str:
-    """ESPN football serves transactions through the league ACTIVITY feed."""
+    """ESPN football serves transactions through the league ACTIVITY feed.
+
+    The `kona_league_communication` view is only valid on the league's
+    `/communication/` sub-resource — requesting it on the base league URL 400s
+    no matter what filter you send.
+    """
     if history:
-        return (f"{READ_HOST}/apis/v3/games/ffl/leagueHistory/{league_id}"
+        return (f"{READ_HOST}/apis/v3/games/ffl/leagueHistory/{league_id}/communication/"
                 f"?seasonId={season}&view={ACTIVITY_VIEW}")
     return (f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/"
-            f"{league_id}?view={ACTIVITY_VIEW}")
+            f"{league_id}/communication/?view={ACTIVITY_VIEW}")
 
 
 ACTIVITY_VIEW = "kona_league_communication"

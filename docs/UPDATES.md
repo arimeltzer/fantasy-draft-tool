@@ -18,6 +18,12 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   **180**, `targetId`=player, `from`=winning FAAB bid). That feed is now the
   primary source (paged, with a leagueHistory fallback); the transactions array
   is kept as a fallback and both merge to the highest bid per player.
+- **The actual 400:** `kona_league_communication` is only valid on the league's
+  **`/communication/` sub-resource** — on the base league URL ESPN 400s no matter
+  what filter you send (which is exactly what the live diagnostics showed: all
+  six filter/endpoint variants 400, while `mTransactions2` on the base URL
+  answered 200). `activity_url()` now appends `/communication/`; the selftest
+  asserts it so it can't silently regress.
 - **Filter negotiation.** The activity feed 400s on a `limit` above 25 and on
   filter keys it dislikes, so the page size is now 25 and `activity_filters()`
   offers three shapes (full → typed → plain); page 0 probes for one ESPN accepts
