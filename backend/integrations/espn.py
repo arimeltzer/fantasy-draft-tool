@@ -67,21 +67,28 @@ def activity_url(league_id: str, season: int, history: bool = False) -> str:
 
 ACTIVITY_VIEW = "kona_league_communication"
 MSG_WAIVER_ADDED = 180   # FAAB claim: targetId=player, to=team, from=winning bid
-ACTIVITY_PAGE = 100      # topics per request (paged through the season)
-ACTIVITY_MAX_PAGES = 12
+ACTIVITY_PAGE = 25       # ESPN 400s on a larger limit for this feed
+ACTIVITY_MAX_PAGES = 40  # -> up to 1000 topics (a full season of claims)
 
 
-def activity_filter(size: int, offset: int) -> str:
-    """x-fantasy-filter for the activity feed, limited to waiver claims."""
-    return json.dumps({"topics": {
-        "filterType": {"value": ["ACTIVITY_TRANSACTIONS"]},
-        "limit": size,
-        "limitPerMessageSet": {"value": 25},
-        "offset": offset,
-        "sortMessageDate": {"sortPriority": 1, "sortAsc": False},
-        "sortFor": {"sortPriority": 2, "sortAsc": False},
-        "filterIncludeMessageTypeIds": {"value": [MSG_WAIVER_ADDED]},
-    }})
+def activity_filters(size: int, offset: int) -> list[tuple[str, str]]:
+    """Progressively simpler x-fantasy-filter shapes. ESPN 400s on anything it
+    doesn't like, and the exact accepted shape varies by league/season, so try
+    a few and keep the first that answers."""
+    base = {"filterType": {"value": ["ACTIVITY_TRANSACTIONS"]}, "limit": size, "offset": offset}
+    return [
+        ("full", json.dumps({"topics": {
+            **base,
+            "limitPerMessageSet": {"value": size},
+            "sortMessageDate": {"sortPriority": 1, "sortAsc": False},
+            "sortFor": {"sortPriority": 2, "sortAsc": False},
+            "filterIncludeMessageTypeIds": {"value": [MSG_WAIVER_ADDED]},
+        }})),
+        ("typed", json.dumps({"topics": {
+            **base, "filterIncludeMessageTypeIds": {"value": [MSG_WAIVER_ADDED]},
+        }})),
+        ("plain", json.dumps({"topics": base})),
+    ]
 
 
 # ESPN is picky about the transaction filter and 400s on keys it doesn't know,
@@ -276,31 +283,51 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
         # since a season's claims easily exceed one response.
         if not data.get("topics") and not data.get("transactions"):
             for label, hist in (("activity", False), ("activity-history", True)):
-                topics: list = []
+                url = activity_url(league_id, season, history=hist)
+                # Negotiate a filter shape ESPN accepts, using page 0 as the probe.
+                shape, topics = None, []
+                for name, filt in activity_filters(ACTIVITY_PAGE, 0):
+                    try:
+                        ar = await client.get(url, headers={"x-fantasy-filter": filt})
+                    except Exception as e:  # noqa: BLE001 — waiver data is optional
+                        txn_diag["attempts"].append(f"{label}/{name}:{type(e).__name__}")
+                        continue
+                    if ar.status_code != 200:
+                        txn_diag["attempts"].append(f"{label}/{name}:HTTP {ar.status_code}")
+                        continue
+                    aj = ar.json()
+                    if isinstance(aj, list):
+                        aj = aj[0] if aj else {}
+                    topics = aj.get("topics") or []
+                    shape = name
+                    txn_diag["attempts"].append(f"{label}/{name}:{len(topics)} topics")
+                    break
+                if shape is None:
+                    continue
+
+                # Page through the rest with the shape that worked.
                 try:
-                    for page in range(ACTIVITY_MAX_PAGES):
-                        ar = await client.get(
-                            activity_url(league_id, season, history=hist),
-                            headers={"x-fantasy-filter": activity_filter(ACTIVITY_PAGE, page * ACTIVITY_PAGE)},
-                        )
-                        if ar.status_code != 200:
-                            txn_diag["attempts"].append(f"{label}:HTTP {ar.status_code}")
-                            break
-                        aj = ar.json()
-                        if isinstance(aj, list):
-                            aj = aj[0] if aj else {}
-                        batch = aj.get("topics") or []
-                        topics.extend(batch)
-                        if len(batch) < ACTIVITY_PAGE:
-                            break
-                    if topics:
-                        data["topics"] = topics
-                        txn_diag["source"] = label
-                        txn_diag["attempts"].append(f"{label}:{len(topics)} topics")
-                        break
-                    txn_diag["attempts"].append(f"{label}:0 topics")
-                except Exception as e:  # noqa: BLE001 — waiver data is optional
-                    txn_diag["attempts"].append(f"{label}:{type(e).__name__}")
+                    if len(topics) >= ACTIVITY_PAGE:
+                        for page in range(1, ACTIVITY_MAX_PAGES):
+                            filt = dict(activity_filters(ACTIVITY_PAGE, page * ACTIVITY_PAGE))[shape]
+                            ar = await client.get(url, headers={"x-fantasy-filter": filt})
+                            if ar.status_code != 200:
+                                break
+                            aj = ar.json()
+                            if isinstance(aj, list):
+                                aj = aj[0] if aj else {}
+                            batch = aj.get("topics") or []
+                            topics.extend(batch)
+                            if len(batch) < ACTIVITY_PAGE:
+                                break
+                except Exception as e:  # noqa: BLE001 — partial pages are fine
+                    txn_diag["attempts"].append(f"{label}/paging:{type(e).__name__}")
+
+                if topics:
+                    data["topics"] = topics
+                    txn_diag["source"] = f"{label}/{shape}"
+                    txn_diag["attempts"].append(f"{label}:{len(topics)} topics total")
+                    break
 
         # Fallback: the transactions array (works on some league configurations).
         if not data.get("topics") and not data.get("transactions"):

@@ -94,6 +94,28 @@ export default function KeeperPlanner({
     return out;
   }, [importedCandidates, keeperRows, priceBasis, rule]);
 
+  // Edit a committed keeper's waiver claim in place (ESPN can't always supply
+  // prior-season FAAB, so this is the manual path). Markers aren't patchable,
+  // so the pick is re-created with the new value.
+  const [editing, setEditing] = useState<{ pickId: number; value: string } | null>(null);
+  const saveWaiver = async (row: KeeperRow, raw: string) => {
+    setEditing(null);
+    const waiver = raw.trim() === "" ? null : Number(raw);
+    if (waiver != null && !Number.isFinite(waiver)) return;
+    if ((waiver ?? null) === (row.waiver ?? null)) return;
+    const cost = keeperCost({ base: row.base, waiver, fa: row.base == null, kept: row.kept }, rule);
+    await removePick(row.pick.pickId);
+    await addPick({
+      playerId: row.pick.playerId as number,
+      mine: row.owner === "Me",
+      price: priceBasis ? (cost.price ?? undefined) : undefined,
+      slot: encodeKeeper({
+        k: 1, owner: row.owner, basis: rule.basis, kept: row.kept,
+        base: row.base, waiver, round: cost.round ?? undefined,
+      }),
+    });
+  };
+
   const [refreshing, setRefreshing] = useState(false);
   const refreshCosts = async () => {
     if (staleKeepers.length === 0 || refreshing) return;
@@ -387,6 +409,31 @@ export default function KeeperPlanner({
                       {r.player?.name ?? `#${r.pick.playerId}`}
                       {r.player && <span className="ml-1 font-mono text-2xs text-faint">{r.player.pos}·{r.player.team}</span>}
                     </span>
+                    {priceBasis && (
+                      editing?.pickId === r.pick.pickId ? (
+                        <input
+                          autoFocus
+                          type="number"
+                          value={editing.value}
+                          placeholder="w$"
+                          onChange={(e) => setEditing({ pickId: r.pick.pickId, value: e.target.value })}
+                          onBlur={(e) => saveWaiver(r, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") saveWaiver(r, (e.target as HTMLInputElement).value);
+                            if (e.key === "Escape") setEditing(null);
+                          }}
+                          className="w-14 rounded border border-brand bg-sunken px-1 py-0.5 text-right font-mono text-2xs text-ink focus:outline-none"
+                        />
+                      ) : (
+                        <button
+                          onClick={() => setEditing({ pickId: r.pick.pickId, value: r.waiver?.toString() ?? "" })}
+                          className="w-14 rounded px-1 py-0.5 text-right font-mono text-2xs text-faint hover:bg-raised hover:text-ink"
+                          title="Waiver / FAAB claim — click to edit"
+                        >
+                          {r.waiver != null ? `w$${r.waiver}` : "w$ –"}
+                        </button>
+                      )
+                    )}
                     <span
                       className="font-mono text-2xs text-muted"
                       title={r.cost.basis === "price"

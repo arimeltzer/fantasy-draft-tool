@@ -18,6 +18,14 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   **180**, `targetId`=player, `from`=winning FAAB bid). That feed is now the
   primary source (paged, with a leagueHistory fallback); the transactions array
   is kept as a fallback and both merge to the highest bid per player.
+- **Filter negotiation.** The activity feed 400s on a `limit` above 25 and on
+  filter keys it dislikes, so the page size is now 25 and `activity_filters()`
+  offers three shapes (full → typed → plain); page 0 probes for one ESPN accepts
+  and the rest is paged with that shape (verified offline against a simulated
+  400). The winning shape is reported in the diagnostics (`activity/typed`).
+- **Manual waiver editing.** Committed keepers now have an inline editable
+  waiver field in the planner list (click `w$ –`), since ESPN doesn't reliably
+  expose prior-season FAAB. Editing re-derives the cost immediately.
 - **Waiver diagnostics.** `fetch_league` now tries three transaction strategies
   (filtered `mTransactions2` → bare → `leagueHistory`) and records each outcome in
   `NormLeague.meta`; the keeper-candidates response returns a `waivers` report
