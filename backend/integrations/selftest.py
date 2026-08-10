@@ -10,6 +10,8 @@ Run:  python -m integrations.selftest   (from the backend/ dir)
 """
 from __future__ import annotations
 
+import json
+
 from .base import NormPlayer
 from .matching import build_index, match_player, keeper_candidates
 from . import espn, yahoo
@@ -140,6 +142,19 @@ def test_keeper_candidates():
         assert espn.ACTIVITY_VIEW in url, url
     # ESPN 400s this feed above 25 per page.
     assert espn.ACTIVITY_PAGE <= 25, "activity feed limit must stay <= 25"
+    # ESPN rejects `limit` without a sort (FILTER_LIMIT_MISSING_SORT), so every
+    # filter variant must carry one — both on /communication/ and the base URL.
+    for name, filt in espn.activity_filters(25, 0) + espn.base_activity_filters(25, 0):
+        assert "sortMessageDate" in filt, f"{name} filter is missing a sort"
+    # Base-league filters nest under `communication` (CommunicationGroupFilterParams).
+    for name, filt in espn.base_activity_filters(25, 0):
+        assert list(json.loads(filt).keys()) == ["communication"], name
+        assert "topics" in json.loads(filt)["communication"], name
+    # Both response shapes yield waivers.
+    assert espn.all_waivers({"topics": [{"messages": [
+        {"messageTypeId": 180, "targetId": 9, "from": 12}]}]}) == {9: 12}
+    assert espn.all_waivers({"communication": {"topics": [{"messages": [
+        {"messageTypeId": 180, "targetId": 7, "from": 33}]}]}}) == {7: 33}
 
     # snake, no kicker, full PPR
     snake = {"id": 9, "settings": {"size": 10,

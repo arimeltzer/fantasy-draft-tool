@@ -18,6 +18,21 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   **180**, `targetId`=player, `from`=winning FAAB bid). That feed is now the
   primary source (paged, with a leagueHistory fallback); the transactions array
   is kept as a fallback and both merge to the highest bid per player.
+- **Resolved by probing (what ESPN actually requires).** Three rounds of live
+  probes settled the waiver feed:
+  1. `limit` is rejected without a sort (`FILTER_LIMIT_MISSING_SORT`) — every
+     filter variant now carries `sortMessageDate`. With that, the current
+     season's `/communication/` endpoint returns **200 `{"topics": [...]}`**, so
+     the mechanism is proven.
+  2. On the **base league** endpoint the filter nests under `communication`
+     (`CommunicationGroupFilterParams` → `topics` / `topicsByType`), not `topics`
+     at the root. Added as a second route, since it doesn't depend on the
+     per-season communication group. `_topics()` reads either response shape.
+  3. `mTransactions2` returns **no `transactions` key at all** for football, in
+     any season, with or without a filter — a dead end, kept only as a fallback.
+  - **Prior seasons:** the 2025 communication group is genuinely deleted
+    (`404 COMMUNICATION_GROUP_NOT_FOUND`), so historical FAAB may be
+    unrecoverable; the manual `w$` editor covers it. Live seasons will auto-pull.
 - **Waiver probe.** `/api/integrations/espn/probe-activity` (+ a "Diagnose"
   button in the autofill panel) reports what ESPN actually returns — status,
   top-level JSON keys, body snippet — for ~9 candidate transaction/activity URLs

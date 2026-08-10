@@ -103,6 +103,15 @@ def activity_filters(size: int, offset: int) -> list[tuple[str, str]]:
     ]
 
 
+def base_activity_filters(size: int, offset: int) -> list[tuple[str, str]]:
+    """Same feed via the BASE league endpoint, where the filter nests under
+    `communication` (ESPN: CommunicationGroupFilterParams knows topics /
+    topicsByType). Worth trying when the per-season /communication/ group is
+    missing, as it is for completed seasons."""
+    return [(f"base-{name}", json.dumps({"communication": json.loads(f)}))
+            for name, f in activity_filters(size, offset)]
+
+
 # ESPN is picky about the transaction filter and 400s on keys it doesn't know,
 # so try the known-good shape first, then no filter, then the history endpoint.
 TXN_FILTER = '{"transactions":{"filterType":{"value":["WAIVER","FREEAGENT"]}}}'
@@ -167,6 +176,18 @@ def _draft_map(data: dict) -> dict[int, dict]:
     return out
 
 
+def _topics(data: dict) -> list:
+    """Activity topics, from either response shape: the /communication/ endpoint
+    returns {"topics": [...]}; the base league endpoint nests them under
+    {"communication": {"topics": [...]}}."""
+    if isinstance(data.get("topics"), list):
+        return data["topics"]
+    comm = data.get("communication")
+    if isinstance(comm, dict) and isinstance(comm.get("topics"), list):
+        return comm["topics"]
+    return []
+
+
 def _waiver_map_from_topics(data: dict) -> dict[int, int]:
     """playerId -> highest FAAB bid, read from ESPN's league ACTIVITY feed.
 
@@ -177,7 +198,7 @@ def _waiver_map_from_topics(data: dict) -> dict[int, int]:
     free-agent adds (178) have no bid, so they're skipped.
     """
     out: dict[int, int] = {}
-    for topic in data.get("topics", []) or []:
+    for topic in _topics(data):
         for msg in topic.get("messages", []) or []:
             if msg.get("messageTypeId") != MSG_WAIVER_ADDED:
                 continue
@@ -293,12 +314,21 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
         # Primary: the league ACTIVITY feed, which is where ESPN football keeps
         # waiver claims (the mTransactions2 array is empty for FFL). Paged,
         # since a season's claims easily exceed one response.
-        if not data.get("topics") and not data.get("transactions"):
-            for label, hist in (("activity", False), ("activity-history", True)):
-                url = activity_url(league_id, season, history=hist)
+        if not _topics(data) and not data.get("transactions"):
+            routes = [
+                # The /communication/ sub-resource (works for the live season).
+                ("activity", activity_url(league_id, season), activity_filters),
+                # The base league endpoint, filter nested under `communication` —
+                # a route that doesn't depend on the per-season communication
+                # group, which ESPN deletes for completed seasons.
+                ("base-comm", league_url(league_id, season).split("?")[0] + f"?view={ACTIVITY_VIEW}",
+                 base_activity_filters),
+                ("activity-history", activity_url(league_id, season, history=True), activity_filters),
+            ]
+            for label, url, filters in routes:
                 # Negotiate a filter shape ESPN accepts, using page 0 as the probe.
                 shape, topics = None, []
-                for name, filt in activity_filters(ACTIVITY_PAGE, 0):
+                for name, filt in filters(ACTIVITY_PAGE, 0):
                     try:
                         ar = await client.get(url, headers={"x-fantasy-filter": filt})
                     except Exception as e:  # noqa: BLE001 — waiver data is optional
@@ -310,7 +340,7 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
                     aj = ar.json()
                     if isinstance(aj, list):
                         aj = aj[0] if aj else {}
-                    topics = aj.get("topics") or []
+                    topics = _topics(aj)
                     shape = name
                     txn_diag["attempts"].append(f"{label}/{name}:{len(topics)} topics")
                     break
@@ -321,14 +351,14 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
                 try:
                     if len(topics) >= ACTIVITY_PAGE:
                         for page in range(1, ACTIVITY_MAX_PAGES):
-                            filt = dict(activity_filters(ACTIVITY_PAGE, page * ACTIVITY_PAGE))[shape]
+                            filt = dict(filters(ACTIVITY_PAGE, page * ACTIVITY_PAGE))[shape]
                             ar = await client.get(url, headers={"x-fantasy-filter": filt})
                             if ar.status_code != 200:
                                 break
                             aj = ar.json()
                             if isinstance(aj, list):
                                 aj = aj[0] if aj else {}
-                            batch = aj.get("topics") or []
+                            batch = _topics(aj)
                             topics.extend(batch)
                             if len(batch) < ACTIVITY_PAGE:
                                 break
@@ -342,7 +372,7 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
                     break
 
         # Fallback: the transactions array (works on some league configurations).
-        if not data.get("topics") and not data.get("transactions"):
+        if not _topics(data) and not data.get("transactions"):
             attempts = [
                 ("filtered", transactions_url(league_id, season), {"x-fantasy-filter": TXN_FILTER}),
                 ("history", history_transactions_url(league_id, season), {"x-fantasy-filter": TXN_FILTER}),
@@ -369,7 +399,7 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
     waivers = all_waivers(data)
     lg.meta["transactions"] = {
         **txn_diag,
-        "count": len(data.get("topics", []) or []) or len(data.get("transactions", []) or []),
+        "count": len(_topics(data)) or len(data.get("transactions", []) or []),
         "waiver_players": len(waivers),
         "max_bid": max(waivers.values()) if waivers else 0,
     }
