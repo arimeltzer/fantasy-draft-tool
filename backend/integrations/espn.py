@@ -382,16 +382,19 @@ async def probe_activity(league_id: str, season: int, espn_s2: str | None = None
     hist = f"{READ_HOST}/apis/v3/games/ffl/leagueHistory/{league_id}"
     simple = json.dumps({"topics": {"filterType": {"value": ["ACTIVITY_TRANSACTIONS"]},
                                     "limit": 25, "offset": 0}})
+    cur = f"{READ_HOST}/apis/v3/games/ffl/seasons/{season + 1}/segments/0/leagues/{league_id}"
+    txn_filter = json.dumps({"transactions": {"filterType": {"value": ["WAIVER", "FREEAGENT"]}}})
     candidates = [
         ("league+mTeam (auth sanity)", f"{base}?view=mTeam", None),
         ("comm/ trailing slash", f"{base}/communication/?view={ACTIVITY_VIEW}", simple),
-        ("comm no slash", f"{base}/communication?view={ACTIVITY_VIEW}", simple),
         ("comm/ no filter", f"{base}/communication/?view={ACTIVITY_VIEW}", None),
-        ("base + activity view", f"{base}?view={ACTIVITY_VIEW}", simple),
+        # Decisive: does the activity feed exist for the CURRENT season? If yes,
+        # prior-season history is simply purged by ESPN.
+        (f"comm/ CURRENT season {season + 1}", f"{cur}/communication/?view={ACTIVITY_VIEW}", simple),
+        ("base + activity view (lists valid filter fields)", f"{base}?view={ACTIVITY_VIEW}", simple),
+        ("mTransactions2 + txn filter", f"{base}?view=mTransactions2", txn_filter),
+        ("mTransactions2 bare", f"{base}?view=mTransactions2", None),
         ("hist comm/", f"{hist}/communication/?seasonId={season}&view={ACTIVITY_VIEW}", simple),
-        ("hist base", f"{hist}?seasonId={season}&view={ACTIVITY_VIEW}", simple),
-        ("mTransactions2", f"{base}?view=mTransactions2", None),
-        ("mDraftDetail+mTransactions2", f"{base}?view=mDraftDetail&view=mTransactions2", None),
     ]
     out: list[dict] = []
     verify = ca_bundle if ca_bundle else True
@@ -417,10 +420,10 @@ async def probe_activity(league_id: str, season: int, espn_s2: str | None = None
                                 if v:
                                     row[f"{k}_sample"] = str(v[0])[:300]
                     except Exception:  # noqa: BLE001
-                        row["body"] = r.text[:200]
+                        row["body"] = r.text[:700]
                 else:
-                    row["body"] = r.text[:200]
+                    row["body"] = r.text[:700]
             except Exception as e:  # noqa: BLE001
-                row["error"] = f"{type(e).__name__}: {e}"[:200]
+                row["error"] = f"{type(e).__name__}: {e}"[:300]
             out.append(row)
     return out
