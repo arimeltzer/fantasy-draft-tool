@@ -107,6 +107,27 @@ def flatten(node):
 
 # ── parsing ─────────────────────────────────────────────────────────────────
 
+def raw_stat_modifiers(league_node) -> list[dict]:
+    """The league's full stat_modifiers, as Yahoo sent them (stat_id/value) —
+    everything beyond the one stat (receptions, stat_id 11) this adapter maps
+    automatically. Yahoo's numbering isn't something we're confident enough to
+    guess a full category mapping for without a real payload to check field-by-
+    field (guessing wrong would mean silently incorrect valuations — worse than
+    not mapping at all). Surfaced so the import report can point the user at
+    Settings -> Scoring, and so a real mapping can be calibrated from evidence
+    later if wanted."""
+    settings_raw = {}
+    if isinstance(league_node, list) and len(league_node) > 1:
+        settings_raw = flatten(league_node[1]).get("settings") or flatten(league_node[1])
+    settings_raw = flatten(settings_raw)
+    out = []
+    for sm in (flatten(settings_raw.get("stat_modifiers")) or {}).get("stats", []) or []:
+        st = flatten(sm.get("stat", sm))
+        if st.get("stat_id") is not None:
+            out.append({"stat_id": st.get("stat_id"), "value": st.get("value")})
+    return out
+
+
 def parse_settings(league_node) -> tuple[dict, str, str]:
     """league_node = fantasy_content.league (a 2-elem list). Returns
     (settings dict, fmt, league_name)."""
@@ -260,5 +281,12 @@ async def fetch_league(league_key: str, access_token: str, my_guid: str | None =
     if isinstance(tn, list) and len(tn) > 1:
         teams_node = flatten(tn[1]).get("teams")
     teams = parse_teams(teams_node, my_guid) if teams_node else []
-    return NormLeague(provider="yahoo", ext_id=league_key, name=name, season=0,
-                      fmt=fmt, settings=settings, teams=teams)
+    raw_stats = raw_stat_modifiers(league_node)
+    lg = NormLeague(provider="yahoo", ext_id=league_key, name=name, season=0,
+                    fmt=fmt, settings=settings, teams=teams)
+    lg.meta["scoring"] = {
+        "auto_mapped": ["ptsPerRec"],   # only PPR — see raw_stat_modifiers()
+        "raw_rule_count": len(raw_stats),
+        "raw": raw_stats,
+    }
+    return lg

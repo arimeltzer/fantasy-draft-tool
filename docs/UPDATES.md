@@ -6,6 +6,44 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Full per-stat scoring (not just PPR) + real team names on import
+- **The gap:** valuations only ever configured points-per-reception. Every
+  other scoring category (pass/rush/rec yards+TDs, INTs, fumbles) was
+  hardcoded to a standard 4pt-pass-TD/-2-INT/6pt-rush-rec-TD table, silently,
+  even though ESPN/Yahoo leagues frequently run something else (6pt passing
+  TDs, -1 INT, TE premium, etc.) — a real accuracy gap in the exact numbers
+  the app exists to produce.
+- **Engine** (`engine-core.js`): `DEFAULT_SCORING` extracted as the single
+  standard-scoring source of truth; new `resolveScoring(settings)` merges it
+  with an optional `settings.scoring` per-category override, with `settings.ppr`
+  always winning for receptions (unchanged single source of truth — never
+  duplicated in `scoring`). Omitting `settings.scoring` entirely reproduces the
+  old `defaultScoring(ppr)` byte for byte — purely additive, no behavior change
+  for existing leagues. `useBoard.ts` (the single choke point feeding every
+  board) now calls `resolveScoring` instead of `defaultScoring(ppr)`.
+  Node-tested (`engine-core.selftest.mjs`), including a full-pipeline proof
+  that a QB's `valuePoints` rises under 6pt-pass-TD/-1-INT scoring while an
+  unrelated RB's is unaffected.
+- **Settings UI**: new "Scoring" section in `SettingsDrawer` — editable
+  Passing/Rushing/Receiving/Misc fields (yards, TDs, INT, fumble), pre-filled
+  with the effective (default-or-overridden) values, "Reset to standard".
+  Points/reception stays exactly where it was.
+- **Import auto-detection stays PPR-only, on purpose.** ESPN/Yahoo both expose
+  full scoring rules, but only as unlabeled numeric stat IDs; neither adapter's
+  ID→category mapping could be verified from this build sandbox (no live
+  egress), and a wrong guess would be a *silent* valuation bug — worse than
+  not mapping at all, especially given the point of this change. Receptions
+  (ESPN statId 53, Yahoo stat_id 11) stay auto-detected because they're already
+  validated. Everything else is pulled and counted (not discarded) via
+  `raw_scoring_items()` (ESPN) / `raw_stat_modifiers()` (Yahoo) and surfaced in
+  the import report + a note pointing at the new Scoring editor. Fixture-tested.
+- **Real team names on import** (opponents, not "Team 2"/"Team 3"): `NormTeam`
+  names from ESPN/Yahoo now populate `settings.opponents`, and each opponent's
+  seeded `DraftPick.team_id` is set to the matching index
+  (`integrations/base.py opponent_team_ids()`, fixture-tested) — so an imported
+  league's auction budget tracking and labels are correct immediately instead
+  of landing in "Unassigned". Import report lists the imported team names.
+
 ## 2026-07 — Keeper import: cached, diagnosable, and refreshable
 - **Cached import.** A successful ESPN pull is saved to
   `settings.keeperImport = {season, fetchedAt, candidates, waivers}` via the

@@ -166,6 +166,25 @@ def _team_name(t: dict) -> str:
     return nm or f"Team {t.get('id')}"
 
 
+def raw_scoring_items(data: dict) -> list[dict]:
+    """The league's full scoringItems, as ESPN sent them (statId/points/
+    isReverseItem) — everything beyond the one stat (receptions, statId 53)
+    this adapter maps automatically. ESPN's statId scheme for scoring rules is
+    undocumented and not something we're confident enough to guess a full
+    mapping for (guessing wrong here would mean silently incorrect valuations —
+    worse than not mapping at all). Surfaced so the import report can point the
+    user at Settings -> Scoring instead of pretending scoring was fully
+    auto-detected, and so a future mapping can be calibrated from real evidence
+    (the same way the waiver-transactions endpoint was worked out) rather than
+    guesswork."""
+    items = (data.get("settings", {}) or {}).get("scoringSettings", {}).get("scoringItems", []) or []
+    return [
+        {"statId": it.get("statId"), "points": it.get("points"),
+         "isReverseItem": it.get("isReverseItem")}
+        for it in items if it.get("statId") is not None
+    ]
+
+
 def parse_settings(data: dict) -> tuple[dict, str]:
     """Returns (app LeagueSettings dict, fmt)."""
     s = data.get("settings", {}) or {}
@@ -457,6 +476,12 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
         "count": len(_topics(data)) or len(data.get("transactions", []) or []),
         "waiver_players": len(waivers),
         "max_bid": max(waivers.values()) if waivers else 0,
+    }
+    raw_items = raw_scoring_items(data)
+    lg.meta["scoring"] = {
+        "auto_mapped": ["ptsPerRec"],       # only PPR — see raw_scoring_items()
+        "raw_rule_count": len(raw_items),
+        "raw": raw_items,
     }
     return lg
 

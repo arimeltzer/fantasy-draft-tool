@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from .base import NormPlayer
+from .base import NormPlayer, NormTeam, opponent_team_ids
 from .matching import build_index, match_player, keeper_candidates
 from . import espn, yahoo
 
@@ -78,6 +78,60 @@ def test_espn():
     assert lg.teams[1].players[0].pos == "DST" and lg.teams[1].players[0].team == "SF"
     # DST was not in the draft -> no bid/round (a free-agent keeper).
     assert lg.teams[1].players[0].bid is None and lg.teams[1].players[0].round is None
+
+
+def test_opponent_team_ids():
+    """Real team names -> settings.opponents + a name->team_id lookup, so an
+    imported opponent's picks attribute to the right label instead of an
+    'Unassigned' bucket or generic 'Team N' placeholder."""
+    teams = [
+        NormTeam(name="Me", is_mine=True),
+        NormTeam(name="The Gridiron Gurus", is_mine=False),
+        NormTeam(name="Dynasty Warriors", is_mine=False),
+    ]
+    names, by_name = opponent_team_ids(teams)
+    assert names == ["The Gridiron Gurus", "Dynasty Warriors"], names
+    assert by_name == {"The Gridiron Gurus": 0, "Dynasty Warriors": 1}, by_name
+    # "my" team never appears in opponents / gets no team_id.
+    assert "Me" not in by_name
+
+    # A name clash keeps the first team's index (stable, doesn't crash).
+    clash = [NormTeam(name="Team A", is_mine=False), NormTeam(name="Team A", is_mine=False)]
+    names2, by_name2 = opponent_team_ids(clash)
+    assert names2 == ["Team A", "Team A"]
+    assert by_name2 == {"Team A": 0}
+
+    # No opponents (single-team fixture / everyone unnamed) -> empty, not an error.
+    assert opponent_team_ids([NormTeam(name="Me", is_mine=True)]) == ([], {})
+
+
+def test_scoring_diagnostics():
+    """ESPN/Yahoo: only PPR is auto-mapped into valuations (statId/stat_id
+    schemes for the rest are undocumented and not guessed — see the docstrings
+    on raw_scoring_items/raw_stat_modifiers) but the FULL raw scoring rules are
+    still surfaced, not silently dropped, so the import report can point at
+    League Settings -> Scoring instead of pretending everything was detected."""
+    espn_data = {
+        "settings": {"scoringSettings": {"scoringItems": [
+            {"statId": 53, "points": 0.5},                          # PPR (mapped)
+            {"statId": 4, "points": 6, "isReverseItem": False},     # unmapped, still surfaced
+            {"statId": 20, "points": -2, "isReverseItem": True},    # unmapped, still surfaced
+        ]}}
+    }
+    raw = espn.raw_scoring_items(espn_data)
+    assert len(raw) == 3
+    assert {"statId": 53, "points": 0.5, "isReverseItem": None} in raw
+    assert {"statId": 4, "points": 6, "isReverseItem": False} in raw
+
+    yahoo_node = [
+        {"name": "L"},
+        {"settings": [{"stat_modifiers": {"stats": [
+            {"stat": {"stat_id": "11", "value": "1"}},   # PPR (mapped)
+            {"stat": {"stat_id": "2", "value": "6"}},    # unmapped, still surfaced
+        ]}}]},
+    ]
+    raw_y = yahoo.raw_stat_modifiers(yahoo_node)
+    assert raw_y == [{"stat_id": "11", "value": "1"}, {"stat_id": "2", "value": "6"}], raw_y
 
 
 def test_keeper_candidates():
@@ -236,10 +290,12 @@ def test_yahoo_leagues():
 def main():
     test_matching(); print("✓ matching")
     test_espn(); print("✓ espn parse")
+    test_opponent_team_ids(); print("✓ opponent team ids")
+    test_scoring_diagnostics(); print("✓ scoring diagnostics")
     test_keeper_candidates(); print("✓ keeper candidates")
     test_yahoo(); print("✓ yahoo parse")
     test_yahoo_leagues(); print("✓ yahoo leagues list")
-    test_waiver_weekly_fetch()
+    test_waiver_weekly_fetch(); print("✓ waiver weekly fetch")
     print("\nALL INTEGRATION SELFTESTS PASS")
 
 
@@ -297,7 +353,6 @@ def test_waiver_weekly_fetch():
     p = lg.teams[0].players[0]
     assert p.bid == 15 and p.waiver == 44, (p.bid, p.waiver)   # highest executed bid
     assert lg.meta["transactions"]["waiver_players"] == 1
-    print("✓ waiver weekly fetch")
 
 if __name__ == "__main__":
     main()

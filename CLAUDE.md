@@ -66,6 +66,7 @@ VBD/auction values client-side from the player rows + league settings.
 ```bash
 # frontend
 cd frontend && npm install && npm run build      # tsc -b && vite build
+node frontend/src/engine/engine-core.selftest.mjs # scoring/VBD engine tests
 node frontend/src/engine/keeper.selftest.mjs      # keeper-rule engine tests
 node frontend/src/engine/keeperReco.selftest.mjs  # keeper recommender tests
 # backend (needs DATABASE_URL etc.)
@@ -103,6 +104,16 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     apps (token gets `additional_authorization_required`). Pursuing access via
     https://sports.yahoo.com/developer/access/ — once a Fantasy-scoped credential
     exists, swap the Railway `YAHOO_*` vars (+ `YAHOO_SCOPE` if needed) and it works.
+  - **Team names**: `settings.opponents` and each opponent `DraftPick.team_id`
+    are populated from the platform's real team display names
+    (`integrations/base.py opponent_team_ids()`) — not generic "Team N" labels.
+  - **Scoring**: only points-per-reception is auto-detected (ESPN statId 53,
+    Yahoo stat_id 11 — both validated). Full per-stat scoring (pass/rush/rec
+    yards+TDs, INTs, fumbles) is NOT auto-mapped from ESPN/Yahoo — their statId
+    schemes for the rest are undocumented/unlabeled and a wrong guess would be
+    a *silent* valuation bug, so it's left to the League Settings → Scoring
+    editor instead (raw rules are still pulled + counted in the import report,
+    just not category-mapped). See `docs/METHODOLOGY.md` §2.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.
@@ -163,3 +174,7 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   as import).
 - **FantasyPros**: AAV is wired (migration `002_add_aav.sql`); tier surfacing
   (FantasyPros tiers vs. the computed VBD-gap tiers) is still open.
+- **ESPN/Yahoo full scoring auto-detect** (optional): currently PPR-only by
+  design (see Integrations) — could be added for real if calibrated against a
+  captured live payload cross-checked against the league's own scoring page,
+  same evidence-driven approach that resolved the waiver-transactions endpoint.

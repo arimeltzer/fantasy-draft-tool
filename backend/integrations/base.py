@@ -53,6 +53,20 @@ class NormLeague:
     meta: dict = field(default_factory=dict)   # adapter diagnostics (non-essential)
 
 
+def opponent_team_ids(teams: list[NormTeam]) -> tuple[list[str], dict[str, int]]:
+    """Real opponent names (in stable NormLeague.teams order, "my" team
+    excluded) plus a name -> index lookup — the index IS the DraftPick.team_id
+    each opponent's picks should carry, and the list IS settings.opponents, so
+    a picked team_id always resolves back to the label the user sees. A name
+    clash keeps the first team's index (rare; opponents are typically unique
+    league display names)."""
+    names = [t.name for t in teams if not t.is_mine and t.name]
+    by_name: dict[str, int] = {}
+    for i, name in enumerate(names):
+        by_name.setdefault(name, i)
+    return names, by_name
+
+
 def make_settings(*, teams: int, ppr: float, roster: dict, fmt: str,
                   budget: int = 200, superflex: bool = False,
                   draft_slot: int | None = None) -> dict:

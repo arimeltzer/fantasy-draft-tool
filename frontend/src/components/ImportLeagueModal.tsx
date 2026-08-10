@@ -141,6 +141,19 @@ export default function ImportLeagueModal({ onClose }: Props) {
                   : "Pool left open for keepers — open the Keepers planner to set them up."}
               </div>
             </div>
+            {report.team_names && report.team_names.length > 0 && (
+              <div className="rounded-lg border border-line bg-sunken p-3">
+                <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-faint">
+                  Opponent teams imported
+                </div>
+                <div className="text-xs text-muted">{report.team_names.join(", ")}</div>
+              </div>
+            )}
+            {report.scoring_note && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                {report.scoring_note}
+              </div>
+            )}
             {report.players_unmatched > 0 && (
               <div className="rounded-lg border border-line bg-sunken p-3">
                 <div className="mb-1 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">

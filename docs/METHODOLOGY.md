@@ -29,9 +29,39 @@ it → the browser computes values.
 
 ## 2. Scoring
 
-Configurable PPR (0 / 0.5 / 1.0). A stat line → fantasy points:
-`passYd*0.04 + passTD*4 + int*(-2) + rushYd*0.1 + rushTD*6 + rec*PPR + recYd*0.1
-+ recTD*6 + fumbles*(-2)`. K/DST may carry a pre-scored `pts`.
+Fully configurable per-stat-category, not just PPR. A stat line → fantasy points:
+`passYd*ptsPerPassYd + passTD*ptsPerPassTD + int*ptsPerInt + rushYd*ptsPerRushYd
++ rushTD*ptsPerRushTD + rec*ppr + recYd*ptsPerRecYd + recTD*ptsPerRecTD
++ fumbles*ptsPerFumble`. K/DST may carry a pre-scored `pts`.
+
+`resolveScoring(settings)` (`engine-core.js`) builds this per-stat table: every
+field defaults to standard (`DEFAULT_SCORING`: 0.04/4/-2 passing yard/TD/INT,
+0.1/6 rushing yard/TD, 0.1/6 receiving yard/TD, -2 fumble lost) and
+`settings.scoring` overrides only the categories a league sets explicitly —
+omitting it entirely reproduces the old PPR-only behavior byte for byte, so
+existing leagues are unaffected. `settings.ppr` remains the single source of
+truth for receptions (edited in one place; `scoring` never duplicates it).
+This is the one place valuations turn league scoring into points — get it
+wrong and every downstream number (VBD, dollar values, tiers) is off by
+however much that stat category matters to a given player, so a league running
+non-standard rules (6pt passing TDs, -1 INT, TE premium, etc.) should set them
+under League Settings → Scoring.
+
+**Import auto-detection is PPR-only, by design.** ESPN and Yahoo both expose a
+league's full scoring rules, but only as raw numeric stat IDs with no
+human-readable labels, and neither adapter is confident enough in an
+undocumented/reverse-engineered ID→category mapping to auto-fill the rest —
+a wrong guess there would be a *silent* accuracy bug, which is worse than not
+mapping at all. The one exception is receptions (ESPN statId 53, Yahoo
+stat_id 11), validated and stable. The full raw scoring rules ARE still
+pulled and surfaced (`raw_scoring_items()` / `raw_stat_modifiers()` in
+`backend/integrations/{espn,yahoo}.py`, returned in the import report) so nothing
+is silently dropped — the import report tells you how many rules exist and
+points at the Scoring editor to enter them (a 60-second copy from the league's
+own scoring settings page). If a real payload is captured to calibrate against
+(the same evidence-driven approach that resolved the ESPN waiver-transactions
+endpoint — see `docs/UPDATES.md`), auto-mapping can be added later from ground
+truth instead of guesswork.
 
 ## 3. Player value blend (the core forecast)
 

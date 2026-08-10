@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { X } from "lucide-react";
+import { X, RotateCcw } from "lucide-react";
 import { KEEPER_PRESETS, normalizeKeeperRule } from "@/engine/keeper.js";
-import { LeagueSettings, KeeperRule } from "@/lib/api";
+import { DEFAULT_SCORING, resolveScoring } from "@/engine/valuation-engine.js";
+import { LeagueSettings, KeeperRule, ScoringRules } from "@/lib/api";
 
 interface Props {
   settings: LeagueSettings;
@@ -17,6 +18,13 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
   const set = (patch: Partial<LeagueSettings>) => setLocal((s) => ({ ...s, ...patch }));
   const setRoster = (k: string, v: number) =>
     setLocal((s) => ({ ...s, roster: { ...s.roster, [k]: v } }));
+  const setScoring = (k: keyof ScoringRules, v: number) =>
+    setLocal((s) => ({ ...s, scoring: { ...s.scoring, [k]: v } }));
+  const resetScoring = () => setLocal((s) => ({ ...s, scoring: {} }));
+  // Effective values (defaults merged with any override) — what actually
+  // drives valuations right now, whether or not the league has customized it.
+  const sc = resolveScoring(local);
+  const scoringCustomized = Object.keys(local.scoring ?? {}).length > 0;
   const setKeeper = (patch: Partial<KeeperRule>) =>
     setLocal((s) => ({ ...s, keeper: { ...normalizeKeeperRule(s.keeper, format), ...patch } }));
   const applyPreset = (p: "yahoo" | "espn" | "custom") =>
@@ -74,6 +82,56 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
             onChange={(e) => set({ opponents: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
             className="w-full px-2 py-1 rounded bg-gray-50 border border-gray-300 font-mono text-xs text-gray-700 focus:outline-none focus:border-gray-400"
           />
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-6xl border-t border-hair px-4 py-4">
+        <div className="mb-2.5 flex flex-wrap items-center gap-2">
+          <h3 className="eyebrow">Scoring</h3>
+          <span className="chip border-line bg-raised text-muted">
+            Points / reception is set above ({local.ppr})
+          </span>
+          {scoringCustomized && (
+            <button
+              onClick={resetScoring}
+              className="ml-auto flex items-center gap-1 text-2xs text-muted hover:text-ink"
+              title="Clear all overrides and go back to standard scoring for every category below"
+            >
+              <RotateCcw className="h-3 w-3" /> Reset to standard
+            </button>
+          )}
+        </div>
+        <p className="mb-2.5 text-2xs text-faint leading-snug">
+          Every category below feeds directly into projections and dollar values — a league using 6pt
+          passing TDs or -1 INTs (instead of the 4pt / -2 standard) should enter that here, or QB value
+          in particular will be under/over-valued. Importing a league only auto-detects points/reception;
+          everything else defaults to standard until you set it.
+        </p>
+        <div className="grid gap-x-6 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-2">
+            <h4 className="text-2xs font-semibold uppercase tracking-wide text-faint">Passing</h4>
+            {numField("Pts / pass yard", sc.ptsPerPassYd, (v) => setScoring("ptsPerPassYd", v), 0.01)}
+            {numField("Pts / pass TD", sc.ptsPerPassTD, (v) => setScoring("ptsPerPassTD", v), 0.5)}
+            {numField("Pts / INT", sc.ptsPerInt, (v) => setScoring("ptsPerInt", v), 0.5)}
+          </div>
+          <div className="space-y-2">
+            <h4 className="text-2xs font-semibold uppercase tracking-wide text-faint">Rushing</h4>
+            {numField("Pts / rush yard", sc.ptsPerRushYd, (v) => setScoring("ptsPerRushYd", v), 0.01)}
+            {numField("Pts / rush TD", sc.ptsPerRushTD, (v) => setScoring("ptsPerRushTD", v), 0.5)}
+          </div>
+          <div className="space-y-2">
+            <h4 className="text-2xs font-semibold uppercase tracking-wide text-faint">Receiving</h4>
+            {numField("Pts / rec yard", sc.ptsPerRecYd, (v) => setScoring("ptsPerRecYd", v), 0.01)}
+            {numField("Pts / rec TD", sc.ptsPerRecTD, (v) => setScoring("ptsPerRecTD", v), 0.5)}
+          </div>
+          <div className="space-y-2">
+            <h4 className="text-2xs font-semibold uppercase tracking-wide text-faint">Misc</h4>
+            {numField("Pts / fumble lost", sc.ptsPerFumble, (v) => setScoring("ptsPerFumble", v), 0.5)}
+            <p className="pt-1 text-2xs text-faint leading-snug">
+              Standard: {DEFAULT_SCORING.ptsPerPassTD}pt pass TD, {DEFAULT_SCORING.ptsPerInt} INT,{" "}
+              {DEFAULT_SCORING.ptsPerRushTD}/{DEFAULT_SCORING.ptsPerRecTD}pt rush/rec TD.
+            </p>
+          </div>
         </div>
       </div>
 

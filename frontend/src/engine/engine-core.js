@@ -63,13 +63,35 @@ export const SCORING_PRESETS = {
   PPR:        { ppr: 1 },
 };
 
+// Standard scoring, everything except receptions (which is the league's PPR
+// setting). This is the single source of truth for "what we score a stat
+// category at when the league hasn't told us otherwise" — both
+// defaultScoring() and resolveScoring() build off it, so there's exactly one
+// place to change if the baseline ever needs adjusting.
+export const DEFAULT_SCORING = {
+  ptsPerPassYd: 0.04, ptsPerPassTD: 4, ptsPerInt: -2,
+  ptsPerRushYd: 0.1,  ptsPerRushTD: 6,
+  ptsPerRecYd: 0.1,   ptsPerRecTD: 6,
+  ptsPerFumble: -2,
+};
+
 export function defaultScoring(ppr = 0.5) {
-  return {
-    ptsPerPassYd: 0.04, ptsPerPassTD: 4, ptsPerInt: -2,
-    ptsPerRushYd: 0.1,  ptsPerRushTD: 6,
-    ptsPerRec: ppr,     ptsPerRecYd: 0.1, ptsPerRecTD: 6,
-    ptsPerFumble: -2,
-  };
+  return { ...DEFAULT_SCORING, ptsPerRec: ppr };
+}
+
+/**
+ * Resolve a league's FULL scoring rules from its settings, not just PPR.
+ *
+ * `settings.ppr` remains the single source of truth for reception points
+ * (unchanged from before — it's what every league form already edits).
+ * `settings.scoring` is an optional partial override for every OTHER stat
+ * category (pass/rush/rec yards+TDs, INTs, fumbles); any field left unset
+ * falls back to DEFAULT_SCORING, so a league that never touches `scoring`
+ * gets byte-identical behavior to the old defaultScoring(ppr) call — this is
+ * a pure additive capability, not a behavior change for existing leagues.
+ */
+export function resolveScoring(settings = {}) {
+  return { ...DEFAULT_SCORING, ...(settings.scoring || {}), ptsPerRec: settings.ppr ?? 0.5 };
 }
 
 export function points(line = {}, sc) {

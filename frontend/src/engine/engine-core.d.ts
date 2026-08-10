@@ -80,8 +80,16 @@ export interface BoardPlayer extends Player {
 
 export declare const DEFAULT_PARAMS: EngineParams;
 export declare const SCORING_PRESETS: Record<string, { ppr: number }>;
+export declare const DEFAULT_SCORING: Omit<Scoring, "ptsPerRec">;
 
 export declare function defaultScoring(ppr?: number): Scoring;
+/** Resolve a league's full scoring rules: DEFAULT_SCORING + settings.scoring
+ *  overrides, with settings.ppr always winning for ptsPerRec. Omitting
+ *  settings.scoring reproduces defaultScoring(settings.ppr) exactly. */
+export declare function resolveScoring(settings: {
+  ppr?: number;
+  scoring?: Partial<Omit<Scoring, "ptsPerRec">>;
+}): Scoring;
 export declare function points(line: StatLine, sc: Scoring): number;
 export declare function ageMultiplier(pos: string, age: number, P?: EngineParams): number;
 export declare function projectPoints(

@@ -39,11 +39,13 @@ export interface ImportReport {
   provider: string;
   format: "auction" | "snake";
   teams: number;
+  team_names?: string[];   // real opponent team names, now in settings.opponents
   players_matched: number;
   players_unmatched: number;
   unmatched_sample: string[];
   mine_found: boolean;
   seeded?: boolean;
+  scoring_note?: string;   // what scoring was/wasn't auto-detected (see Scoring settings)
 }
 
 export interface KeeperCandidate {
@@ -97,6 +99,17 @@ export interface KeeperRule {
   noConsecutive: boolean;
 }
 
+/** Per-stat-category scoring, everything except receptions (that's `ppr`,
+ *  below — unchanged single source of truth so nothing double-edits it).
+ *  Any field left unset falls back to the engine's standard default
+ *  (engine-core.js DEFAULT_SCORING) — this is a fully optional override. */
+export interface ScoringRules {
+  ptsPerPassYd?: number; ptsPerPassTD?: number; ptsPerInt?: number;
+  ptsPerRushYd?: number; ptsPerRushTD?: number;
+  ptsPerRecYd?: number; ptsPerRecTD?: number;
+  ptsPerFumble?: number;
+}
+
 export interface LeagueSettings {
   teams: number;
   budget: number;
@@ -111,6 +124,7 @@ export interface LeagueSettings {
   opponents?: string[];   // labels for opponent teams (auction budget tracking); index = team_id
   source?: { provider: string; extId: string };  // set on league import; drives keeper auto-fill
   keeperImport?: KeeperImportCache;              // cached prior-season pull (avoids refetching)
+  scoring?: ScoringRules;  // per-stat scoring beyond PPR; drives valuations via resolveScoring()
 }
 
 function getToken(): string | null {

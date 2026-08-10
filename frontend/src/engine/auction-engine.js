@@ -11,7 +11,7 @@
 import { DEFAULT_PARAMS } from "./engine-core.js";
 
 export {
-  DEFAULT_PARAMS, SCORING_PRESETS, defaultScoring,
+  DEFAULT_PARAMS, SCORING_PRESETS, DEFAULT_SCORING, defaultScoring, resolveScoring,
   points, ageMultiplier, projectValue, replacementRanks, valueBoard,
   rankByAdp,
 } from "./engine-core.js";

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { valueBoard, defaultScoring } from "@/engine/valuation-engine.js";
+import { valueBoard, resolveScoring } from "@/engine/valuation-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
 import { ApiPlayer, LeagueSettings } from "@/lib/api";
 
@@ -29,7 +29,7 @@ export function useBoard(
   return useMemo(() => {
     if (!players?.length || !settings) return [];
 
-    const sc = defaultScoring(settings.ppr);
+    const sc = resolveScoring(settings);
     const league = {
       teams: settings.teams,
       roster: settings.roster,

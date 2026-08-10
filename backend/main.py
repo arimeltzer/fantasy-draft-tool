@@ -19,6 +19,7 @@ from models import (
     Schedule, SosMult, User,
 )
 from integrations import espn as espn_provider, yahoo as yahoo_provider
+from integrations.base import opponent_team_ids
 from integrations.matching import build_index, match_player, keeper_candidates
 
 load_dotenv()
@@ -490,7 +491,13 @@ async def import_league(
 
     # 3. Create the league. Remember the source league so the keeper planner can
     #    auto-pull the prior season's draft (ESPN ids are stable across seasons).
+    #    Opponent labels are the REAL team names from the platform (index =
+    #    DraftPick.team_id below), not generic "Team 2" placeholders.
+    opponent_names, team_id_by_name = opponent_team_ids(norm.teams)
+
     settings = {**norm.settings, "source": {"provider": norm.provider, "extId": norm.ext_id}}
+    if opponent_names:
+        settings["opponents"] = opponent_names
     league = League(user_id=user.id, name=data.name or norm.name,
                     format=LeagueFormat(norm.fmt), settings=settings)
     db.add(league)
@@ -499,9 +506,12 @@ async def import_league(
     # 4. Map each rostered player (for the report), and — only when seeding an
     #    in-progress draft — log each as a drafted pick. Keeper setups skip this
     #    so the pool stays clean and the keeper planner drives it instead.
+    #    Opponent picks carry team_id so budget tracking/labels attach to the
+    #    right real team immediately, not an "Unassigned" bucket.
     overall = matched = 0
     unmatched: list[str] = []
     for team in norm.teams:
+        team_id = None if team.is_mine else team_id_by_name.get(team.name)
         for np in team.players:
             if not np.name:
                 continue
@@ -513,9 +523,20 @@ async def import_league(
             if data.seed_rosters:
                 overall += 1
                 db.add(DraftPick(league_id=league.id, player_id=pid, overall_pick=overall,
-                                 mine=team.is_mine, price=np.bid, slot=None))
+                                 mine=team.is_mine, team_id=team_id, price=np.bid, slot=None))
     await db.commit()
     await db.refresh(league)
+
+    scoring_meta = norm.meta.get("scoring") or {}
+    rule_count = scoring_meta.get("raw_rule_count")
+    scoring_note = (
+        f"Detected point-per-reception ({norm.settings.get('ppr')}) only"
+        + (f" — {rule_count} other scoring rules exist on {data.provider.upper()} but aren't auto-mapped"
+           if rule_count else "")
+        + ". Passing/rushing/receiving TD & yardage values, INTs, and fumbles default to standard "
+          "(4pt pass TD, -2 INT, 6pt rush/rec TD, 0.04/0.1 pt per pass/rush-rec yard) until you set them "
+          "in League Settings → Scoring."
+    )
 
     return {
         "league": LeagueOut.model_validate(league).model_dump(mode="json"),
@@ -523,11 +544,13 @@ async def import_league(
             "provider": norm.provider,
             "format": norm.fmt,
             "teams": len(norm.teams),
+            "team_names": opponent_names,
             "players_matched": matched,
             "players_unmatched": len(unmatched),
             "unmatched_sample": unmatched[:30],
             "mine_found": any(t.is_mine for t in norm.teams),
             "seeded": data.seed_rosters,
+            "scoring_note": scoring_note,
         },
     }
 
