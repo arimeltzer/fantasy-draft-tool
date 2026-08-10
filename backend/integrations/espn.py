@@ -22,6 +22,19 @@ from .base import DEFAULT_ROSTER, NormLeague, NormPlayer, NormTeam, make_setting
 READ_HOST = "https://lm-api-reads.fantasy.espn.com"
 VIEWS = ("mSettings", "mTeam", "mRoster", "mDraftDetail")
 
+# Headers ESPN's own web app sends. Some payloads (transaction/activity data in
+# particular) are gated on the client identifying itself as the fantasy web app,
+# so send the same set rather than a bare User-Agent.
+SITE_HEADERS = {
+    "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                   "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"),
+    "accept": "application/json",
+    "x-fantasy-source": "kona",
+    "x-fantasy-platform": "espn-fantasy-web",
+    "origin": "https://fantasy.espn.com",
+    "referer": "https://fantasy.espn.com/",
+}
+
 # ESPN proTeamId -> NFL abbreviation.
 PRO_TEAM = {
     0: "", 1: "ATL", 2: "BUF", 3: "CHI", 4: "CIN", 5: "CLE", 6: "DAL", 7: "DEN",
@@ -312,7 +325,7 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
     verify = ca_bundle if ca_bundle else True
     async with httpx.AsyncClient(timeout=30, follow_redirects=True, trust_env=True,
                                  verify=verify, cookies=cookies,
-                                 headers={"User-Agent": "Mozilla/5.0"}) as client:
+                                 headers=SITE_HEADERS) as client:
         resp = await client.get(league_url(league_id, season))
         if resp.status_code in (401, 403):
             raise PermissionError("ESPN league is private — espn_s2 and SWID cookies required.")
@@ -485,7 +498,7 @@ async def probe_activity(league_id: str, season: int, espn_s2: str | None = None
     verify = ca_bundle if ca_bundle else True
     async with httpx.AsyncClient(timeout=20, follow_redirects=True, trust_env=True,
                                  verify=verify, cookies=cookies,
-                                 headers={"User-Agent": "Mozilla/5.0"}) as client:
+                                 headers=SITE_HEADERS) as client:
         for label, url, filt in candidates:
             row: dict = {"probe": label, "url": url.replace(str(league_id), "<league>")}
             try:
