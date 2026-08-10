@@ -455,7 +455,13 @@ async def probe_activity(league_id: str, season: int, espn_s2: str | None = None
         "sortDate": {"sortPriority": 1, "sortAsc": False},
     }})
     comm_nested = json.dumps({"communication": {"topics": activity_body}})
-    comm_by_type = json.dumps({"communication": {"topicsByType": activity_body}})
+    # topicsByType is a Map keyed by TopicType (ESPN enumerated the valid keys:
+    # CHAT, ACTIVITY_TRANSACTIONS, MSG_BOARD, ...), not a filter object.
+    comm_by_type = json.dumps({"communication": {
+        "topicsByType": {"ACTIVITY_TRANSACTIONS": {
+            "limit": 25, "offset": 0,
+            "sortMessageDate": {"sortPriority": 1, "sortAsc": False},
+        }}}})
     candidates = [
         # EXACT replica of the request ESPN's site makes for the transactions
         # report (mTransactions2 only populates alongside these views).
@@ -470,7 +476,12 @@ async def probe_activity(league_id: str, season: int, espn_s2: str | None = None
         ("base mTransactions2 alone (known empty)", f"{base}?view=mTransactions2", txn_root),
         (f"comm/ CURRENT {season + 1} (control)", f"{cur}/communication/?view={ACTIVITY_VIEW}", sorted_topics),
     ]
-    out: list[dict] = []
+    # Transaction/FAAB history is league-member data; without cookies ESPN serves
+    # the public subset (settings/teams/draft) and silently omits transactions.
+    out: list[dict] = [{"probe": "AUTH", "cookies_sent": bool(cookies),
+                        "note": ("authenticated request" if cookies else
+                                 "NO espn_s2/SWID cookies — transactions are likely "
+                                 "omitted for that reason")}]
     verify = ca_bundle if ca_bundle else True
     async with httpx.AsyncClient(timeout=20, follow_redirects=True, trust_env=True,
                                  verify=verify, cookies=cookies,

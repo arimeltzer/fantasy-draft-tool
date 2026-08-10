@@ -262,6 +262,15 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
                           No waiver data{waivers?.attempts?.length ? ` (${waivers.attempts.join("; ")})` : ""}
                         </span>
                 )}
+                {priceBasis && !waivers?.players && !priv && (
+                  <button
+                    onClick={() => { setPriv(true); setOpen(true); }}
+                    className="text-brand hover:underline"
+                    title="Waiver/FAAB history is league-member data — ESPN omits it from unauthenticated requests"
+                  >
+                    Add cookies (waivers need sign-in)
+                  </button>
+                )}
                 <button onClick={fetchCands} disabled={loading} className="ml-auto text-brand hover:underline disabled:opacity-50">
                   {loading ? "Refreshing…" : "Refresh from ESPN"}
                 </button>
