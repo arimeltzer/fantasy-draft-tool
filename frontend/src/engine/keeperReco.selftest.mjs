@@ -189,5 +189,48 @@ const recTraded = recommendKeepers([tCand], {
 ok(recTraded.ranked[0].forfeitPick > recNormal.ranked[0].forfeitPick,
    "recommendKeepers uses settings.myPicks for the forfeited pick");
 
+// ── PER-TEAM PICKS drive opponent predictions ───────────────────────
+// Same player, same keeper round, two teams at opposite ends of the draft.
+// The team picking LAST in that round forfeits a worse pick, so the keeper is
+// worth more to them — an effect the old mid-round guess couldn't see.
+const oppCands = [
+  { player_id: board[3].id, is_mine: false, owner: "Early", bid: null, round: 5 },
+  { player_id: board[3].id, is_mine: false, owner: "Late", bid: null, round: 5 },
+];
+const predSlots = predictOpponentKeepers(
+  [oppCands[0]],
+  { format: "snake", board, marketBoard: mkt,
+    settings: { teams: 12, teamSlots: { Early: 1 } },
+    rule: { maxKeepers: 1, basis: "round" }, floor: -999 },
+);
+const predSlotsLate = predictOpponentKeepers(
+  [{ ...oppCands[1] }],
+  { format: "snake", board, marketBoard: mkt,
+    settings: { teams: 12, teamSlots: { Late: 12 } },
+    rule: { maxKeepers: 1, basis: "round" }, floor: -999 },
+);
+ok(predSlotsLate.byTeam["Late"][0].surplus > predSlots.byTeam["Early"][0].surplus,
+   "a late-drafting team values the same round-5 keeper more than an early one");
+
+// An explicit per-team traded-pick list beats the slot-derived default.
+const predTraded = predictOpponentKeepers(
+  [{ player_id: board[3].id, is_mine: false, owner: "Early", bid: null, round: 5 }],
+  { format: "snake", board, marketBoard: mkt,
+    settings: { teams: 12, teamSlots: { Early: 1 },
+                // traded away everything early; their next pick is deep
+                teamPicks: { Early: [110, 120] } },
+    rule: { maxKeepers: 1, basis: "round" }, floor: -999 },
+);
+ok(predTraded.byTeam["Early"][0].surplus > predSlots.byTeam["Early"][0].surplus,
+   "teamPicks override beats teamSlots and raises surplus when picks were traded away");
+
+// Unknown team => mid-round fallback, still produces a prediction (no crash).
+const predUnknown = predictOpponentKeepers(
+  [{ player_id: board[3].id, is_mine: false, owner: "Mystery", bid: null, round: 5 }],
+  { format: "snake", board, marketBoard: mkt,
+    settings: { teams: 12 }, rule: { maxKeepers: 1, basis: "round" }, floor: -999 },
+);
+eq(predUnknown.byTeam["Mystery"].length, 1, "unknown team still predicted via mid-round fallback");
+
 console.log(`\nkeeperReco.selftest: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -165,11 +165,20 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   the planner from it. The keeper *rule* still comes from league settings.
 - **Recommendation**: `keeperReco.js` scores KV = surplus + scarcity + fit and
   set-optimizes (can keep fewer than max/none). Snake surplus is draft-slot aware
-  (forfeited pick from `snakePicks`); availability valued on a market order
-  (ADP→ECR→rank) minus all keepers. `KeeperRecommendations.tsx` in the planner.
+  (forfeited pick from `myPickNumbers`, which honors `settings.myPicks` for
+  traded picks); availability valued on a market order (ADP→ECR→rank) minus all
+  keepers. `KeeperRecommendations.tsx` in the planner.
   `predictOpponentKeepers()` predicts each opponent's likely keepers from the
   ESPN import and removes them from the availability pool (editable in the UI);
   `KeeperAutofill` "Load my roster" seeds your whole roster as candidates.
+  Rivals' forfeited picks are priced from `settings.teamSlots` (team → draft
+  slot) / `settings.teamPicks` (team → owned picks, traded), falling back to
+  mid-round only for teams with neither — edited in League Settings → Draft
+  position by team, and auto-filled by the Yahoo paste import.
+- **Import persistence**: both keeper importers cache into
+  `settings.keeperImport` (`KeeperImportCache.source` = `espn` | `yahoo-paste`),
+  so the analysis is restored — and re-fed to the recommender — when the planner
+  reopens. Committed keepers are separate: they're `DraftPick` rows.
 
 ## Open threads / next up
 
@@ -178,8 +187,9 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   Workaround shipped: paste-based import needs no credential at all.
 - **Keeper refinements** (optional): true serpentine slot forfeiture in snake
   (v1 removes the player + shows the round cost but doesn't reorder the exact
-  picks); Yahoo keeper auto-fill (blocked on the same Fantasy-scope credential
-  as import).
+  picks); Yahoo keeper auto-fill via OAuth (blocked on the same Fantasy-scope
+  credential as import — the paste path covers it meanwhile). Draft slots and
+  traded picks are handled, for you and per opponent.
 - **FantasyPros**: AAV is wired (migration `002_add_aav.sql`); tier surfacing
   (FantasyPros tiers vs. the computed VBD-gap tiers) is still open.
 - **ESPN/Yahoo full scoring auto-detect** (optional): currently PPR-only by

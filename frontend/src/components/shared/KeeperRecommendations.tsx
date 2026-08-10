@@ -83,11 +83,19 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
           player_id: c.player_id, is_mine: c.is_mine, owner: c.owner, bid: c.bid, round: c.round, waiver: c.waiver,
         })),
       {
-        format, board: pricedBoard, marketBoard, settings: { teams: settings.teams }, rule, floor: 0,
+        format, board: pricedBoard, marketBoard,
+        // Per-team draft slots / traded picks let a rival's forfeited pick be
+        // priced from THEIR draft position instead of a mid-round guess.
+        settings: {
+          teams: settings.teams,
+          teamSlots: settings.teamSlots,
+          teamPicks: settings.teamPicks,
+        },
+        rule, floor: 0,
         baseKept: committedKeeperIds, committedIds: committedKeeperIds, committedByOwner,
       },
     );
-  }, [predictOn, importedCandidates, format, pricedBoard, marketBoard, settings.teams, rule, committedKeeperIds, committedByOwner]);
+  }, [predictOn, importedCandidates, format, pricedBoard, marketBoard, settings.teams, settings.teamSlots, settings.teamPicks, rule, committedKeeperIds, committedByOwner]);
 
   // Depletion pool = your committed keepers ∪ predicted opponent keepers
   // (minus any the user marked back as available).

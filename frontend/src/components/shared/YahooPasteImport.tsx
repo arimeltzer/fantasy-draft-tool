@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ClipboardPaste, Loader2, AlertTriangle, Check, ChevronDown } from "lucide-react";
-import { api, KeeperCandidate, YahooPasteReport } from "@/lib/api";
+import { api, KeeperCandidate, KeeperImportCache, YahooPasteReport } from "@/lib/api";
 
 interface Props {
   /** Same contract as KeeperAutofill: hand the parsed candidates upward so the
@@ -9,9 +9,17 @@ interface Props {
   matchSeason?: number;
   /** Real opponent names + your draft slot, parsed from the same pages — the
    *  planner writes them into league settings so you don't retype them. */
-  onLeagueInfo?: (info: { opponents: string[]; draftSlot?: number }) => void;
+  onLeagueInfo?: (info: {
+    opponents: string[];
+    draftSlot?: number;
+    teamSlots?: Record<string, number>;
+  }) => void;
   /** Opponent names already saved, so the offer to apply can be hidden once used. */
   currentOpponents?: string[];
+  /** Previously-parsed paste, restored from league settings so the import
+   *  survives closing the planner (same persistence the ESPN pull has). */
+  cached?: KeeperImportCache;
+  onCache?: (c: KeeperImportCache) => void;
 }
 
 const CURRENT_SEASON = 2026;
@@ -25,16 +33,30 @@ const CURRENT_SEASON = 2026;
  * gives the keeper tools everything they need (who's on each roster, and what
  * round each player cost).
  */
-export default function YahooPasteImport({ onCandidates, matchSeason = CURRENT_SEASON, onLeagueInfo, currentOpponents }: Props) {
-  const [open, setOpen] = useState(false);
+export default function YahooPasteImport({ onCandidates, matchSeason = CURRENT_SEASON, onLeagueInfo, currentOpponents, cached, onCache }: Props) {
+  const restored = cached?.source === "yahoo-paste" ? cached : undefined;
+  const [open, setOpen] = useState(!!restored);
   const [draftText, setDraftText] = useState("");
   const [rostersText, setRostersText] = useState("");
   const [myTeam, setMyTeam] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [report, setReport] = useState<YahooPasteReport | null>(null);
-  const [count, setCount] = useState<{ matched: number; total: number } | null>(null);
+  const [report, setReport] = useState<YahooPasteReport | null>(restored?.paste ?? null);
+  const [count, setCount] = useState<{ matched: number; total: number } | null>(
+    restored ? { matched: restored.candidates.length, total: restored.candidates.length } : null);
+  const [restoredAt] = useState<string | undefined>(restored?.fetchedAt);
   const [applied, setApplied] = useState(false);
+
+  // Re-feed a restored import to the recommender on mount, so reopening the
+  // planner shows the same analysis without another paste.
+  const rehydrated = useRef(false);
+  useEffect(() => {
+    if (restored?.candidates?.length && !rehydrated.current) {
+      rehydrated.current = true;
+      onCandidates(restored.candidates);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restored]);
 
   const parse = async () => {
     setLoading(true); setError(null); setReport(null); setCount(null);
@@ -48,6 +70,14 @@ export default function YahooPasteImport({ onCandidates, matchSeason = CURRENT_S
       setReport(res.paste ?? null);
       setCount({ matched: res.matched, total: res.candidates.length });
       onCandidates(res.candidates);
+      // Persist so reopening the planner doesn't require pasting again.
+      onCache?.({
+        season: 0,
+        fetchedAt: new Date().toISOString(),
+        candidates: res.candidates,
+        source: "yahoo-paste",
+        paste: res.paste,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -123,6 +153,12 @@ export default function YahooPasteImport({ onCandidates, matchSeason = CURRENT_S
             Parse pasted pages
           </button>
 
+          {restoredAt && (
+            <p className="rounded-md border border-line bg-sunken px-2.5 py-1.5 text-2xs text-muted">
+              Showing a saved import from {new Date(restoredAt).toLocaleDateString()} — paste again to refresh.
+            </p>
+          )}
+
           {error && (
             <p className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-2xs text-rose-700">
               {error}
@@ -171,12 +207,15 @@ export default function YahooPasteImport({ onCandidates, matchSeason = CURRENT_S
                         onLeagueInfo({
                           opponents,
                           draftSlot: myTeam.trim() ? report.draft_slots[myTeam.trim()] : undefined,
+                          // Every team's slot — lets opponent keeper predictions
+                          // price a rival's forfeited pick from their real spot.
+                          teamSlots: report.draft_slots,
                         });
                         setApplied(true);
                       }}
                       className="text-brand hover:underline"
                     >
-                      Save as opponent teams
+                      Save team names + draft slots
                       {myTeam.trim() && report.draft_slots[myTeam.trim()]
                         ? ` + draft slot ${report.draft_slots[myTeam.trim()]}`
                         : ""}

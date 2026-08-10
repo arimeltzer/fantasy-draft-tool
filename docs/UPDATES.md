@@ -6,6 +6,38 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Per-team draft position, and Yahoo pastes that persist
+- **Opponent keeper predictions now use each team's real draft position.**
+  `predictOpponentKeepers` priced every rival's forfeited pick at the middle of
+  the round (`(round-1)*teams + ceil(teams/2)`) — a flat assumption that makes a
+  team drafting 1st and a team drafting 10th value the same round-5 keeper
+  identically. They shouldn't: the late-drafting team gives up a worse pick, so
+  the keeper is worth more to them, and that changes *who* gets predicted kept
+  and therefore who's off the board.
+  - New `settings.teamSlots` (team name → draft slot) and `settings.teamPicks`
+    (team name → owned overall picks, for traded picks). `teamPicks` wins over
+    `teamSlots`; the mid-round fallback survives only for teams we know nothing
+    about, so nothing regresses for leagues that never enter this.
+  - Same `pickForRound()` semantics as your own picks: two picks in a round →
+    the earlier one; none → the next pick that team owns.
+  - Edited in **League Settings → Draft position by team** (snake only, shown
+    once opponents exist). Slot per team, plus an optional owned-picks override.
+  - keeperReco selftest 40 → **43**: a late-drafting team values the same
+    round-5 keeper more; `teamPicks` overrides `teamSlots`; an unknown team is
+    still predicted via the fallback.
+- **Yahoo paste imports now survive closing the planner.** `KeeperAutofill`
+  (ESPN) cached its pull into `settings.keeperImport`, but `YahooPasteImport`
+  cached nothing — so a snake/Yahoo league's keeper analysis vanished on
+  reopening and read as "keeper data doesn't save for snake leagues". (The
+  *committed* keeper picks always persisted; it was the imported analysis
+  source that didn't.) `KeeperImportCache` gained `source` + `paste`, the paste
+  panel writes the cache on parse and re-feeds the candidates to the recommender
+  on mount, and shows a "saved import from …" banner so a stale paste is never
+  mistaken for a fresh one.
+- **"Save team names + draft slots"** now writes `teamSlots` for every team
+  alongside `opponents`/`draftSlot` — one click wires the paste's draft order
+  straight into the prediction math above.
+
 ## 2026-08 — Traded picks, snake settings fix, team names from paste
 - **Snake leagues showed auction settings.** `SettingsDrawer` hardcoded an
   "Auction" heading and a "Budget / team" field regardless of format, even

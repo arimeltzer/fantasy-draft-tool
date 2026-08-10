@@ -373,12 +373,15 @@ export default function KeeperPlanner({
             <YahooPasteImport
               onCandidates={setImportedCandidates}
               currentOpponents={settings.opponents}
-              onLeagueInfo={({ opponents, draftSlot }) =>
+              cached={settings.keeperImport}
+              onCache={cacheImport}
+              onLeagueInfo={({ opponents, draftSlot, teamSlots }) =>
                 patchLeague.mutate({
                   settings: {
                     ...settings,
                     opponents,
                     ...(draftSlot ? { draftSlot } : {}),
+                    ...(teamSlots ? { teamSlots } : {}),
                   },
                 })
               }

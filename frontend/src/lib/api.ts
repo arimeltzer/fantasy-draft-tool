@@ -101,6 +101,10 @@ export interface KeeperImportCache {
   fetchedAt: string;
   candidates: KeeperCandidate[];
   waivers?: WaiverReport;
+  /** Which importer produced this — the planner reopens the matching panel. */
+  source?: "espn" | "yahoo-paste";
+  /** Parse report when sourced from a Yahoo paste (kept list, warnings, slots). */
+  paste?: YahooPasteReport;
 }
 
 export interface KeeperRule {
@@ -144,6 +148,12 @@ export interface LeagueSettings {
   /** Overall pick numbers you own (snake). Set only when picks were TRADED —
    *  unset means standard serpentine order from `draftSlot`. */
   myPicks?: number[];
+  /** Each team's draft slot, keyed by team name — imported from a Yahoo paste
+   *  (round 1) or entered by hand. Lets opponent keeper predictions price a
+   *  rival's forfeited pick from their REAL draft position. */
+  teamSlots?: Record<string, number>;
+  /** Per-team traded-pick overrides, keyed by team name. Wins over teamSlots. */
+  teamPicks?: Record<string, number[]>;
 }
 
 function getToken(): string | null {

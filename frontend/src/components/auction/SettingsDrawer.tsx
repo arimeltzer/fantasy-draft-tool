@@ -18,6 +18,10 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
   // Standard serpentine picks for this slot — shown as the placeholder so the
   // "Your picks" override is edited against the real default, not from scratch.
   const serpentine = snakePicks(local.draftSlot ?? 1, local.teams || 12, 16);
+  // "Me" is a real team in the draft order too, so it gets a slot row — but it
+  // is never an opponent, so it stays out of the opponents list.
+  const opponentNames = local.opponents ?? [];
+  const myTeamLabel = "Me";
 
   const set = (patch: Partial<LeagueSettings>) => setLocal((s) => ({ ...s, ...patch }));
   const setRoster = (k: string, v: number) =>
@@ -122,6 +126,59 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
           />
         </div>
       </div>
+
+      {/* Per-team draft position — snake only. Opponent keeper predictions
+          price a rival's forfeited pick from THEIR slot, so a team drafting
+          1st and one drafting last value the same round-5 keeper differently. */}
+      {!isAuction && opponentNames.length > 0 && (
+        <div className="mx-auto max-w-6xl border-t border-hair px-4 py-4">
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <h3 className="eyebrow">Draft position by team</h3>
+            <span className="chip border-line bg-raised text-muted">
+              improves opponent keeper predictions
+            </span>
+          </div>
+          <p className="mb-2.5 text-2xs text-faint leading-snug">
+            Slot is each team's round-1 pick (a Yahoo paste import fills these in). Leave
+            <span className="text-muted"> picks</span> blank unless that team <span className="text-muted">traded picks</span> —
+            it overrides their serpentine order. Teams left blank fall back to a mid-round estimate.
+          </p>
+          <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
+            {[myTeamLabel, ...opponentNames].map((team) => (
+              <div key={team} className="flex items-center gap-2 text-xs">
+                <span className="min-w-0 flex-1 truncate text-muted" title={team}>{team}</span>
+                <input
+                  type="number"
+                  min={1}
+                  placeholder="slot"
+                  value={local.teamSlots?.[team] ?? ""}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10);
+                    const next = { ...(local.teamSlots ?? {}) };
+                    if (Number.isFinite(v) && v > 0) next[team] = v; else delete next[team];
+                    set({ teamSlots: Object.keys(next).length ? next : undefined });
+                  }}
+                  className="w-14 rounded border border-gray-300 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-gray-700 focus:border-gray-400 focus:outline-none"
+                />
+                <input
+                  placeholder="traded picks"
+                  value={(local.teamPicks?.[team] ?? []).join(", ")}
+                  onChange={(e) => {
+                    const nums = e.target.value.split(/[,\s]+/)
+                      .map((x) => parseInt(x, 10))
+                      .filter((n) => Number.isFinite(n) && n > 0);
+                    const next = { ...(local.teamPicks ?? {}) };
+                    if (nums.length) next[team] = Array.from(new Set(nums)).sort((a, b) => a - b);
+                    else delete next[team];
+                    set({ teamPicks: Object.keys(next).length ? next : undefined });
+                  }}
+                  className="w-32 rounded border border-gray-300 bg-gray-50 px-1.5 py-0.5 font-mono text-2xs text-gray-700 focus:border-gray-400 focus:outline-none"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mx-auto max-w-6xl border-t border-hair px-4 py-4">
         <div className="mb-2.5 flex flex-wrap items-center gap-2">

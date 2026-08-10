@@ -84,7 +84,14 @@ export declare function predictOpponentKeepers(
     format: "auction" | "snake";
     board: BoardPlayer[];
     marketBoard: (BoardPlayer & { marketIdx: number })[];
-    settings: { teams: number; roster?: Record<string, number> };
+    settings: {
+      teams: number;
+      roster?: Record<string, number>;
+      /** Team name -> draft slot; prices a rival's forfeited pick correctly. */
+      teamSlots?: Record<string, number>;
+      /** Team name -> owned overall picks (traded); wins over teamSlots. */
+      teamPicks?: Record<string, number[]>;
+    };
     rule: KeeperRule;
     floor?: number;
     baseKept?: Set<number>;

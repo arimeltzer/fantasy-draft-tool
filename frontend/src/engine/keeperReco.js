@@ -22,7 +22,7 @@
  *
  * Pure + node-tested (keeperReco.selftest.mjs).
  * ================================================================== */
-import { myPickNumbers } from "./valuation-engine.js";
+import { myPickNumbers, snakePicks } from "./valuation-engine.js";
 import { keeperCost } from "./keeper.js";
 
 /** Market draft order: who leaves the board when. ADP → ECR → our VBD rank.
@@ -285,6 +285,22 @@ export function predictOpponentKeepers(candidates, ctx) {
   const roundBasis = rule?.basis === "round";
   const byId = new Map(board.map((p) => [p.id, p]));
 
+  // What each opponent's round-R keeper actually costs THEM. Use their real
+  // picks when we know them — an explicit traded-pick list first, else their
+  // draft slot — and only fall back to a slot-agnostic mid-round guess when we
+  // know nothing. A team drafting 1st and a team drafting last forfeit very
+  // different players for the same round, which changes who they keep.
+  const teamPicks = settings.teamPicks ?? {};
+  const teamSlots = settings.teamSlots ?? {};
+  const picksForOwner = (owner) => {
+    const explicit = teamPicks[owner];
+    if (Array.isArray(explicit) && explicit.length) {
+      return [...new Set(explicit.filter((n) => Number.isFinite(n) && n > 0))].sort((a, b) => a - b);
+    }
+    const slot = teamSlots[owner];
+    return slot ? snakePicks(slot, teams, 30) : null;
+  };
+
   const groups = {};
   for (const c of candidates) {
     if (c.is_mine || c.player_id == null) continue;
@@ -306,8 +322,12 @@ export function predictOpponentKeepers(candidates, ctx) {
       const cost = keeperCost({ base: fa ? null : base, waiver, fa, kept: 0 }, rule);
       let surplus;
       if (roundBasis) {
-        // slot-agnostic mid-round pick for the round they'd forfeit
-        const pick = (Math.max(1, cost.round) - 1) * teams + Math.ceil(teams / 2);
+        const owned = picksForOwner(owner);
+        const pick = owned
+          ? pickForRound(owned, Math.max(1, cost.round), teams)
+          // Nothing known about this team's picks — mid-round is the least-wrong
+          // guess (better than assuming they pick 1st or last).
+          : (Math.max(1, cost.round) - 1) * teams + Math.ceil(teams / 2);
         const exp = expectedAtPick(marketBoard, pick, keptIds);
         surplus = +(player.vbd - (exp ? exp.vbd : 0)).toFixed(1);
       } else {
