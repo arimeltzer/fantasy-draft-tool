@@ -47,10 +47,18 @@ export default function KeeperPlanner({
   // recommender can predict opponents' keepers.
   const [importedCandidates, setImportedCandidates] = useState<KeeperCandidate[]>([]);
 
-  const owners = useMemo(
-    () => ["Me", ...Array.from({ length: Math.max(0, settings.teams - 1) }, (_, i) => `Team ${i + 2}`)],
-    [settings.teams],
-  );
+  // Real opponent names when the league has them (import, or typed into
+  // League Settings) — falls back to generic labels only when it doesn't.
+  // Matters beyond display: predicted/confirmed opponent keepers key off the
+  // REAL ESPN/Yahoo team name (see KeeperRecommendations), so a manually
+  // -added keeper picked from a generic "Team 2" here would silently fail to
+  // match the same team's prediction instead of replacing it.
+  const owners = useMemo(() => {
+    const real = settings.opponents ?? [];
+    return ["Me", ...(real.length
+      ? real
+      : Array.from({ length: Math.max(0, settings.teams - 1) }, (_, i) => `Team ${i + 2}`))];
+  }, [settings.teams, settings.opponents]);
 
   const playerById = useMemo(() => new Map(board.map((p) => [p.id as number, p])), [board]);
   const takenIds = useMemo(() => new Set(picks.map((p) => p.playerId).filter(Boolean) as number[]), [picks]);
