@@ -77,22 +77,29 @@ ACTIVITY_MAX_PAGES = 40  # -> up to 1000 topics (a full season of claims)
 
 
 def activity_filters(size: int, offset: int) -> list[tuple[str, str]]:
-    """Progressively simpler x-fantasy-filter shapes. ESPN 400s on anything it
-    doesn't like, and the exact accepted shape varies by league/season, so try
-    a few and keep the first that answers."""
-    base = {"filterType": {"value": ["ACTIVITY_TRANSACTIONS"]}, "limit": size, "offset": offset}
+    """x-fantasy-filter shapes for the activity feed.
+
+    ESPN rejects `limit` without a sort ("FILTER_LIMIT_MISSING_SORT"), so every
+    variant here carries sortMessageDate. On the `/communication/` sub-resource
+    the filter root is `topics`; on the base league endpoint it is `communication`
+    (ESPN enumerates the valid league roots as players / transactions /
+    communication / schedule).
+    """
+    body = {
+        "filterType": {"value": ["ACTIVITY_TRANSACTIONS"]},
+        "limit": size,
+        "offset": offset,
+        "sortMessageDate": {"sortPriority": 1, "sortAsc": False},
+    }
+    typed = {**body, "filterIncludeMessageTypeIds": {"value": [MSG_WAIVER_ADDED]}}
     return [
         ("full", json.dumps({"topics": {
-            **base,
+            **typed,
             "limitPerMessageSet": {"value": size},
-            "sortMessageDate": {"sortPriority": 1, "sortAsc": False},
             "sortFor": {"sortPriority": 2, "sortAsc": False},
-            "filterIncludeMessageTypeIds": {"value": [MSG_WAIVER_ADDED]},
         }})),
-        ("typed", json.dumps({"topics": {
-            **base, "filterIncludeMessageTypeIds": {"value": [MSG_WAIVER_ADDED]},
-        }})),
-        ("plain", json.dumps({"topics": base})),
+        ("typed", json.dumps({"topics": typed})),
+        ("all-msgs", json.dumps({"topics": body})),
     ]
 
 
@@ -380,21 +387,35 @@ async def probe_activity(league_id: str, season: int, espn_s2: str | None = None
         cookies = {"espn_s2": espn_s2, "SWID": swid if swid.startswith("{") else "{" + swid + "}"}
     base = f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{league_id}"
     hist = f"{READ_HOST}/apis/v3/games/ffl/leagueHistory/{league_id}"
-    simple = json.dumps({"topics": {"filterType": {"value": ["ACTIVITY_TRANSACTIONS"]},
-                                    "limit": 25, "offset": 0}})
     cur = f"{READ_HOST}/apis/v3/games/ffl/seasons/{season + 1}/segments/0/leagues/{league_id}"
+    # ESPN: "Limit request must be accompanied by a sort" — every limited filter
+    # must carry one.
+    activity_body = {
+        "filterType": {"value": ["ACTIVITY_TRANSACTIONS"]},
+        "limit": 25, "offset": 0,
+        "sortMessageDate": {"sortPriority": 1, "sortAsc": False},
+    }
+    sorted_topics = json.dumps({"topics": activity_body})
+    comm_root = json.dumps({"communication": activity_body})
     txn_filter = json.dumps({"transactions": {"filterType": {"value": ["WAIVER", "FREEAGENT"]}}})
+    txn_root = json.dumps({"transactions": {
+        "filterType": {"value": ["WAIVER", "FREEAGENT"]},
+        "limit": 100, "offset": 0,
+        "sortDate": {"sortPriority": 1, "sortAsc": False},
+    }})
     candidates = [
         ("league+mTeam (auth sanity)", f"{base}?view=mTeam", None),
-        ("comm/ trailing slash", f"{base}/communication/?view={ACTIVITY_VIEW}", simple),
-        ("comm/ no filter", f"{base}/communication/?view={ACTIVITY_VIEW}", None),
-        # Decisive: does the activity feed exist for the CURRENT season? If yes,
-        # prior-season history is simply purged by ESPN.
-        (f"comm/ CURRENT season {season + 1}", f"{cur}/communication/?view={ACTIVITY_VIEW}", simple),
-        ("base + activity view (lists valid filter fields)", f"{base}?view={ACTIVITY_VIEW}", simple),
-        ("mTransactions2 + txn filter", f"{base}?view=mTransactions2", txn_filter),
-        ("mTransactions2 bare", f"{base}?view=mTransactions2", None),
-        ("hist comm/", f"{hist}/communication/?seasonId={season}&view={ACTIVITY_VIEW}", simple),
+        # ESPN requires a sort alongside limit; `sorted` is the corrected filter.
+        ("comm/ sorted filter", f"{base}/communication/?view={ACTIVITY_VIEW}", sorted_topics),
+        (f"comm/ CURRENT {season + 1} sorted", f"{cur}/communication/?view={ACTIVITY_VIEW}", sorted_topics),
+        # ESPN enumerated the base league filter roots: players / transactions /
+        # communication / schedule. Try the two that could carry waiver history —
+        # this route isn't tied to the (missing) prior-season communication group.
+        ("base + comm-root filter", f"{base}?view={ACTIVITY_VIEW}", comm_root),
+        ("base mTransactions2 + txn-root sorted", f"{base}?view=mTransactions2", txn_root),
+        ("base mTransactions2 + txn-root (no sort)", f"{base}?view=mTransactions2", txn_filter),
+        (f"CURRENT {season + 1} mTransactions2 + txn-root", f"{cur}?view=mTransactions2", txn_root),
+        ("hist comm/ sorted", f"{hist}/communication/?seasonId={season}&view={ACTIVITY_VIEW}", sorted_topics),
     ]
     out: list[dict] = []
     verify = ca_bundle if ca_bundle else True
