@@ -367,3 +367,60 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
         "max_bid": max(waivers.values()) if waivers else 0,
     }
     return lg
+
+
+async def probe_activity(league_id: str, season: int, espn_s2: str | None = None,
+                         swid: str | None = None, ca_bundle: str | None = None) -> list[dict]:
+    """Diagnostic: try every plausible way to reach the transaction/activity feed
+    and report what ESPN actually returns for each (status, top-level JSON keys,
+    a short body snippet). Read-only; used to settle where FAAB history lives
+    for a given league instead of guessing one deploy at a time."""
+    cookies = {}
+    if espn_s2 and swid:
+        cookies = {"espn_s2": espn_s2, "SWID": swid if swid.startswith("{") else "{" + swid + "}"}
+    base = f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{league_id}"
+    hist = f"{READ_HOST}/apis/v3/games/ffl/leagueHistory/{league_id}"
+    simple = json.dumps({"topics": {"filterType": {"value": ["ACTIVITY_TRANSACTIONS"]},
+                                    "limit": 25, "offset": 0}})
+    candidates = [
+        ("league+mTeam (auth sanity)", f"{base}?view=mTeam", None),
+        ("comm/ trailing slash", f"{base}/communication/?view={ACTIVITY_VIEW}", simple),
+        ("comm no slash", f"{base}/communication?view={ACTIVITY_VIEW}", simple),
+        ("comm/ no filter", f"{base}/communication/?view={ACTIVITY_VIEW}", None),
+        ("base + activity view", f"{base}?view={ACTIVITY_VIEW}", simple),
+        ("hist comm/", f"{hist}/communication/?seasonId={season}&view={ACTIVITY_VIEW}", simple),
+        ("hist base", f"{hist}?seasonId={season}&view={ACTIVITY_VIEW}", simple),
+        ("mTransactions2", f"{base}?view=mTransactions2", None),
+        ("mDraftDetail+mTransactions2", f"{base}?view=mDraftDetail&view=mTransactions2", None),
+    ]
+    out: list[dict] = []
+    verify = ca_bundle if ca_bundle else True
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True, trust_env=True,
+                                 verify=verify, cookies=cookies,
+                                 headers={"User-Agent": "Mozilla/5.0"}) as client:
+        for label, url, filt in candidates:
+            row: dict = {"probe": label, "url": url.replace(str(league_id), "<league>")}
+            try:
+                hdrs = {"x-fantasy-filter": filt} if filt else {}
+                r = await client.get(url, headers=hdrs)
+                row["status"] = r.status_code
+                if r.status_code == 200:
+                    try:
+                        j = r.json()
+                        if isinstance(j, list):
+                            j = j[0] if j else {}
+                        row["keys"] = sorted(j.keys())[:25] if isinstance(j, dict) else type(j).__name__
+                        for k in ("topics", "transactions", "communication"):
+                            v = j.get(k) if isinstance(j, dict) else None
+                            if isinstance(v, list):
+                                row[f"{k}_len"] = len(v)
+                                if v:
+                                    row[f"{k}_sample"] = str(v[0])[:300]
+                    except Exception:  # noqa: BLE001
+                        row["body"] = r.text[:200]
+                else:
+                    row["body"] = r.text[:200]
+            except Exception as e:  # noqa: BLE001
+                row["error"] = f"{type(e).__name__}: {e}"[:200]
+            out.append(row)
+    return out

@@ -584,6 +584,22 @@ async def espn_keeper_candidates(
     }
 
 
+@app.post("/api/integrations/espn/probe-activity")
+async def espn_probe_activity(
+    data: KeeperCandidatesRequest,
+    _: User = Depends(get_current_user),
+) -> dict:
+    """Diagnostic: report what ESPN returns for each plausible transaction /
+    activity URL, so waiver-history support can be fixed from evidence rather
+    than guessed. Read-only, no data stored."""
+    try:
+        probes = await espn_provider.probe_activity(
+            data.ext_id, data.season, espn_s2=data.espn_s2, swid=data.swid)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"probe failed: {e}")
+    return {"season": data.season, "probes": probes}
+
+
 @app.get("/api/integrations/yahoo/auth-url")
 async def yahoo_auth_url(_: User = Depends(get_current_user)) -> dict:
     """Return the Yahoo OAuth consent URL to open in the browser."""

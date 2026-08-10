@@ -18,6 +18,12 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   **180**, `targetId`=player, `from`=winning FAAB bid). That feed is now the
   primary source (paged, with a leagueHistory fallback); the transactions array
   is kept as a fallback and both merge to the highest bid per player.
+- **Waiver probe.** `/api/integrations/espn/probe-activity` (+ a "Diagnose"
+  button in the autofill panel) reports what ESPN actually returns — status,
+  top-level JSON keys, body snippet — for ~9 candidate transaction/activity URLs
+  including an auth sanity check. Waiver-history support could not be validated
+  from the build sandbox (no ESPN egress), so this replaces guess-per-deploy with
+  one round of real evidence. Read-only, stores nothing.
 - **The actual 400:** `kona_league_communication` is only valid on the league's
   **`/communication/` sub-resource** — on the base league URL ESPN 400s no matter
   what filter you send (which is exactly what the live diagnostics showed: all

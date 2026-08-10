@@ -43,6 +43,27 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
   const [added, setAdded] = useState(0);
   const [waivers, setWaivers] = useState<WaiverReport | undefined>(cached?.waivers);
   const [fetchedAt, setFetchedAt] = useState<string | undefined>(cached?.fetchedAt);
+  const [probe, setProbe] = useState<string | null>(null);
+  const [probing, setProbing] = useState(false);
+
+  // Ask the backend what ESPN actually returns for each candidate waiver URL.
+  const runProbe = async () => {
+    if (!leagueId.trim()) return;
+    setProbing(true); setProbe(null);
+    try {
+      const res = await api.espnProbeActivity({
+        ext_id: leagueId.trim(),
+        season,
+        espn_s2: priv ? s2.trim() || undefined : undefined,
+        swid: priv ? swid.trim() || undefined : undefined,
+      });
+      setProbe(JSON.stringify(res.probes, null, 1));
+    } catch (e) {
+      setProbe(`probe failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setProbing(false);
+    }
+  };
 
   // base per current rule basis; null => free agent / undrafted
   const baseOf = (c: KeeperCandidate) => (priceBasis ? c.bid : c.round);
@@ -244,7 +265,27 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
                 <button onClick={fetchCands} disabled={loading} className="ml-auto text-brand hover:underline disabled:opacity-50">
                   {loading ? "Refreshing…" : "Refresh from ESPN"}
                 </button>
+                {priceBasis && !waivers?.players && (
+                  <button onClick={runProbe} disabled={probing} className="text-muted hover:text-ink hover:underline disabled:opacity-50">
+                    {probing ? "Probing…" : "Diagnose"}
+                  </button>
+                )}
               </div>
+              {probe && (
+                <div className="rounded-md border border-line bg-sunken p-2">
+                  <div className="mb-1 flex items-center gap-2 text-2xs text-muted">
+                    <span>Waiver-endpoint probe — copy this and send it over.</span>
+                    <button
+                      onClick={() => navigator.clipboard?.writeText(probe)}
+                      className="ml-auto text-brand hover:underline"
+                    >
+                      Copy
+                    </button>
+                    <button onClick={() => setProbe(null)} className="text-faint hover:text-ink">Close</button>
+                  </div>
+                  <pre className="max-h-52 overflow-auto whitespace-pre-wrap break-all font-mono text-[10px] leading-snug text-muted">{probe}</pre>
+                </div>
+              )}
               <div className="max-h-60 overflow-y-auto rounded-md border border-line bg-surface">
                 {rows.length === 0 && <div className="px-3 py-4 text-center text-2xs italic text-faint">No rostered players found.</div>}
                 {rows.map(({ c, i, waiver, fa, alreadyKept, cost, selectable }) => {

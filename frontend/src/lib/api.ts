@@ -196,6 +196,14 @@ export const api = {
   }) => req<KeeperCandidatesResult>("/api/integrations/espn/keeper-candidates", {
     method: "POST", body: JSON.stringify(data),
   }),
+  espnProbeActivity: (data: {
+    ext_id: string;
+    season?: number;
+    espn_s2?: string;
+    swid?: string;
+  }) => req<{ season: number; probes: Record<string, unknown>[] }>(
+    "/api/integrations/espn/probe-activity", { method: "POST", body: JSON.stringify(data) }),
+
   yahooAuthUrl: () => req<{ url: string }>("/api/integrations/yahoo/auth-url"),
   yahooExchange: (code: string) =>
     req<{ access_token: string; refresh_token: string; guid: string; expires_in: number }>(
