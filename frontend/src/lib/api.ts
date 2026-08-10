@@ -226,6 +226,15 @@ export const api = {
   }) => req<KeeperCandidatesResult>("/api/integrations/espn/keeper-candidates", {
     method: "POST", body: JSON.stringify(data),
   }),
+  /** Create a league from pasted Yahoo pages (no OAuth/credential needed). */
+  importYahooPaste: (data: {
+    name: string;
+    draft_text: string;
+    rosters_text: string;
+    my_team?: string;
+  }) => req<{ league: ApiLeague; report: YahooPasteReport & { provider: string; seeded: boolean } }>(
+    "/api/leagues/import-yahoo-paste", { method: "POST", body: JSON.stringify(data) }),
+
   /** Yahoo keeper candidates with no API access — from pasted league pages. */
   yahooPasteCandidates: (data: {
     draft_text: string;

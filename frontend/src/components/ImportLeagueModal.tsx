@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { X, Loader2, Check, AlertTriangle, ChevronRight } from "lucide-react";
-import { api, ImportReport } from "@/lib/api";
+import { api, ImportReport, YahooPasteReport } from "@/lib/api";
 
 interface Props {
   onClose: () => void;
@@ -22,6 +22,11 @@ export default function ImportLeagueModal({ onClose }: Props) {
   const [espnId, setEspnId] = useState("");
   const [showPrivate, setShowPrivate] = useState(false);
   const [seedRosters, setSeedRosters] = useState(false);
+  // Yahoo's OAuth scope is routinely denied, so default to the paste path that
+  // needs no credentials; the API flow stays reachable for anyone who has it.
+  const [yahooMode, setYahooMode] = useState<"paste" | "oauth">("paste");
+  const [draftText, setDraftText] = useState("");
+  const [rostersText, setRostersText] = useState("");
   const [espnS2, setEspnS2] = useState("");
   const [swid, setSwid] = useState("");
   const [myTeam, setMyTeam] = useState("");
@@ -37,6 +42,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [report, setReport] = useState<ImportReport | null>(null);
+  const [pasteReport, setPasteReport] = useState<YahooPasteReport | null>(null);
   const [newId, setNewId] = useState<number | null>(null);
 
   const connectYahoo = async () => {
@@ -85,7 +91,42 @@ export default function ImportLeagueModal({ onClose }: Props) {
     }
   };
 
+  const submitPaste = async () => {
+    setError(""); setLoading(true); setReport(null);
+    try {
+      const res = await api.importYahooPaste({
+        name: name.trim() || "Yahoo League",
+        draft_text: draftText,
+        rosters_text: rostersText,
+        my_team: myTeam.trim() || undefined,
+      });
+      qc.invalidateQueries({ queryKey: ["leagues"] });
+      setNewId(res.league.id);
+      setPasteReport(res.report);
+      setReport({
+        provider: "yahoo-paste",
+        format: "snake",
+        teams: res.report.teams,
+        team_names: res.report.team_names,
+        players_matched: 0,
+        players_unmatched: 0,
+        unmatched_sample: [],
+        mine_found: !!myTeam.trim(),
+        seeded: false,
+        scoring_note:
+          "Yahoo's league pages don't show scoring or roster shape, so those stay at defaults — "
+          + "set them in League Settings. Then open Keepers and paste the same pages again to get "
+          + "keeper costs and recommendations.",
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const submit = async () => {
+    if (provider === "yahoo" && yahooMode === "paste") return submitPaste();
     setError(""); setLoading(true); setReport(null);
     try {
       const res = await api.importLeague(
@@ -113,7 +154,8 @@ export default function ImportLeagueModal({ onClose }: Props) {
 
   const canSubmit =
     provider === "espn" ? espnId.trim().length > 0
-                        : yahooKey.trim().length > 0 && accessToken.length > 0;
+      : yahooMode === "paste" ? rostersText.trim().length > 0
+        : yahooKey.trim().length > 0 && accessToken.length > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/30 p-4" onClick={onClose}>
@@ -153,6 +195,28 @@ export default function ImportLeagueModal({ onClose }: Props) {
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                 {report.scoring_note}
               </div>
+            )}
+            {pasteReport && Object.keys(pasteReport.draft_slots).length > 0 && (
+              <div className="rounded-lg border border-line bg-sunken p-3 text-2xs text-muted">
+                <div className="mb-1 font-semibold uppercase tracking-wide text-faint">
+                  Draft order (from round 1)
+                </div>
+                <div className="font-mono">
+                  {Object.entries(pasteReport.draft_slots)
+                    .sort((a, b) => a[1] - b[1])
+                    .map(([t, s]) => `${s}. ${t}`)
+                    .join(" · ")}
+                </div>
+              </div>
+            )}
+            {pasteReport && pasteReport.warnings.length > 0 && (
+              <ul className="space-y-1 rounded-lg border border-line bg-sunken p-3">
+                {pasteReport.warnings.map((w, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-2xs text-muted">
+                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" /> {w}
+                  </li>
+                ))}
+              </ul>
             )}
             {report.players_unmatched > 0 && (
               <div className="rounded-lg border border-line bg-sunken p-3">
@@ -205,8 +269,43 @@ export default function ImportLeagueModal({ onClose }: Props) {
                   </div>
                 )}
               </>
+            ) : yahooMode === "paste" ? (
+              <div className="space-y-3">
+                <p className="rounded-lg border border-line bg-sunken px-3 py-2 text-2xs leading-snug text-muted">
+                  Yahoo's API needs developer access they no longer reliably grant (it fails with
+                  <span className="font-mono"> 401 Unauthorized</span>). This path needs no credentials —
+                  open your league's pages, select all, copy, paste here.
+                  <button onClick={() => setYahooMode("oauth")} className="ml-1 text-brand hover:underline">
+                    Use the API instead
+                  </button>
+                </p>
+                <Field label="Starting Rosters page" hint="required — defines the teams">
+                  <textarea
+                    rows={4}
+                    className="field font-mono text-2xs"
+                    value={rostersText}
+                    onChange={(e) => setRostersText(e.target.value)}
+                    placeholder={"Team Name\n\nPos\tPlayer\nQB\t\nJosh Allen\n..."}
+                  />
+                </Field>
+                <Field label="Draft Results page" hint="gives each player's round (keeper cost)">
+                  <textarea
+                    rows={4}
+                    className="field font-mono text-2xs"
+                    value={draftText}
+                    onChange={(e) => setDraftText(e.target.value)}
+                    placeholder={"Round 1\n1.\tCeeDee Lamb\tTeam Name\n..."}
+                  />
+                </Field>
+                <Field label="Your team (optional)" hint="exactly as it appears — sets your draft slot">
+                  <input className="field" value={myTeam} onChange={(e) => setMyTeam(e.target.value)} placeholder="Becoming BEARable" />
+                </Field>
+              </div>
             ) : !accessToken ? (
               <div className="space-y-2 rounded-lg border border-line bg-sunken p-3">
+                <button onClick={() => setYahooMode("paste")} className="w-full text-left text-2xs text-brand hover:underline">
+                  ← No API access? Import by pasting your league pages instead
+                </button>
                 <button onClick={connectYahoo} className="btn-ghost w-full py-2 text-xs">1. Authorize with Yahoo (opens a tab)</button>
                 <Field label="2. Paste the code Yahoo gives you" hint="from the redirect URL">
                   <div className="flex gap-2">

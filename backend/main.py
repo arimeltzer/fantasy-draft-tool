@@ -555,6 +555,60 @@ async def import_league(
     }
 
 
+class YahooPasteLeagueRequest(BaseModel):
+    """Create a league from Yahoo pages pasted as text — the no-credential path
+    for leagues where Yahoo won't grant Fantasy Sports API access."""
+    name: str = "Yahoo League"
+    draft_text: str = ""
+    rosters_text: str = ""
+    my_team: Optional[str] = None
+
+
+@app.post("/api/leagues/import-yahoo-paste", response_model=dict, status_code=201)
+async def import_yahoo_paste(
+    data: YahooPasteLeagueRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(db_dep),
+):
+    """Create a league from the pasted Draft Results / Starting Rosters pages.
+
+    Yahoo's OAuth path 401s whenever the Fantasy Sports scope isn't granted, so
+    this is the equivalent entry point that needs no credential. It sets what
+    the pages actually prove — team count, real opponent names, and (from round
+    one) your draft slot — and leaves roster shape and scoring at defaults,
+    since neither page carries them. No picks are seeded: the keeper planner
+    drives that, same as a keeper-mode ESPN import."""
+    if not data.rosters_text.strip():
+        raise HTTPException(status_code=400,
+                            detail="Paste the Starting Rosters page — it defines the teams.")
+    try:
+        norm, report = yahoo_paste.build_league(
+            data.draft_text, data.rosters_text,
+            league_name=data.name, my_team=data.my_team)
+    except Exception as e:  # noqa: BLE001 — parsing is best-effort on pasted text
+        raise HTTPException(status_code=422, detail=f"Could not parse the pasted pages: {e}")
+    if not norm.teams:
+        raise HTTPException(status_code=422,
+                            detail="No teams found — check that the Starting Rosters paste "
+                                   "includes the 'Pos / Player' header for each team.")
+
+    opponent_names, _ = opponent_team_ids(norm.teams)
+    settings = {**norm.settings}
+    if opponent_names:
+        settings["opponents"] = opponent_names
+
+    league = League(user_id=user.id, name=data.name or norm.name,
+                    format=LeagueFormat(norm.fmt), settings=settings)
+    db.add(league)
+    await db.commit()
+    await db.refresh(league)
+
+    return {
+        "league": LeagueOut.model_validate(league).model_dump(mode="json"),
+        "report": {**report, "provider": "yahoo-paste", "seeded": False},
+    }
+
+
 class KeeperCandidatesRequest(BaseModel):
     ext_id: str                       # ESPN leagueId (must be a keeper league)
     season: int = 2025                # prior season whose draft holds the costs

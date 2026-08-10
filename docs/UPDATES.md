@@ -35,6 +35,13 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   **excludes** those players (recommending one would be an illegal keep) and
   also won't predict them as an opponent's keeper (which would wrongly deplete
   the draft pool your own valuation is measured against).
+- **League creation from paste**: `POST /api/leagues/import-yahoo-paste` creates
+  the league itself — real opponent names, team count, snake format, and your
+  draft slot from round one — so the Yahoo tab in the import modal is no longer
+  a dead end when OAuth 401s. Roster shape and scoring stay at defaults because
+  neither pasted page carries them; the success panel says so and points at
+  League Settings. Paste mode is the DEFAULT for Yahoo now, with the API flow
+  still reachable for anyone who has the scope.
 - **Endpoint + UI**: `POST /api/integrations/yahoo/paste-candidates` returns the
   same candidate shape as the ESPN endpoint, so the planner/recommender consume
   it unchanged. `YahooPasteImport.tsx` in the keeper planner shows the parse
