@@ -66,9 +66,22 @@ SITE_VIEWS = ("mDraftDetail", "mStatus", "mSettings", "mTeam", "mTransactions2",
 PLATFORM_VERSION = "780b95110927d72210293cc5dfe9d151165efd33"
 
 
-def site_transactions_url(league_id: str, season: int, platform: bool = True) -> str:
+# ESPN's site filters waiver history on WAIVER + WAIVER_ERROR (failed claims);
+# FREEAGENT adds carry no bid. Executed-only is enforced when parsing.
+WAIVER_TXN_FILTER = json.dumps(
+    {"transactions": {"filterType": {"value": ["WAIVER", "WAIVER_ERROR"]}}})
+
+# Transactions are scoped to a scoring period (week) — omit it and ESPN returns
+# nothing at all, which is why plain mTransactions2 always looked empty.
+MAX_SCORING_PERIOD = 18
+
+
+def site_transactions_url(league_id: str, season: int, scoring_period: int | None = None,
+                          platform: bool = True) -> str:
     """Mirror the request ESPN's site makes for the transactions report."""
     q = "&".join(f"view={v}" for v in SITE_VIEWS)
+    if scoring_period is not None:
+        q = f"scoringPeriodId={scoring_period}&{q}"
     if platform:
         q += f"&platformVersion={PLATFORM_VERSION}"
     return f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{league_id}?{q}"
@@ -340,9 +353,46 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
         if "transactions" in data:
             txn_diag["source"] = "league"
 
-        # Primary: the league ACTIVITY feed, which is where ESPN football keeps
-        # waiver claims (the mTransactions2 array is empty for FFL). Paged,
-        # since a season's claims easily exceed one response.
+        # PRIMARY: the transactions array, exactly as ESPN's own site fetches it.
+        # Two details matter and both were missing before — transactions are
+        # scoped to a scoringPeriodId (week), and the filter is WAIVER +
+        # WAIVER_ERROR. Without the week param ESPN returns nothing at all.
+        if not data.get("transactions"):
+            hdrs = {"x-fantasy-filter": WAIVER_TXN_FILTER}
+            collected: dict = {}          # id -> txn (dedupe across weeks)
+
+            async def _week(sp: int | None) -> int:
+                url = site_transactions_url(league_id, season, scoring_period=sp)
+                try:
+                    tr = await client.get(url, headers=hdrs)
+                except Exception as e:  # noqa: BLE001 — waiver data is optional
+                    txn_diag["attempts"].append(f"sp{sp}:{type(e).__name__}")
+                    return 0
+                if tr.status_code != 200:
+                    txn_diag["attempts"].append(f"sp{sp}:HTTP {tr.status_code}")
+                    return 0
+                tj = tr.json()
+                if isinstance(tj, list):
+                    tj = tj[0] if tj else {}
+                found = tj.get("transactions") or []
+                for t in found:
+                    collected[t.get("id") or id(t)] = t
+                return len(found)
+
+            # scoringPeriodId=0 sometimes returns the whole season in one call.
+            if await _week(0):
+                txn_diag["source"] = "transactions/sp0"
+            else:
+                for sp in range(1, MAX_SCORING_PERIOD + 1):
+                    await _week(sp)
+                if collected:
+                    txn_diag["source"] = "transactions/weekly"
+            if collected:
+                data["transactions"] = list(collected.values())
+                txn_diag["attempts"].append(f"transactions:{len(collected)} txns")
+
+        # FALLBACK: the league ACTIVITY feed (works for a live season; ESPN
+        # deletes the communication group once a season completes).
         if not _topics(data) and not data.get("transactions"):
             routes = [
                 # The /communication/ sub-resource (works for the live season).
@@ -399,35 +449,6 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
                     txn_diag["source"] = f"{label}/{shape}"
                     txn_diag["attempts"].append(f"{label}:{len(topics)} topics total")
                     break
-
-        # The transactions array. mTransactions2 only populates when requested
-        # with the same view set ESPN's own site uses, so try that replica first.
-        if not _topics(data) and not data.get("transactions"):
-            attempts = [
-                ("site-replica", site_transactions_url(league_id, season), {}),
-                ("site-replica+filter", site_transactions_url(league_id, season),
-                 {"x-fantasy-filter": TXN_FILTER}),
-                ("site-noplatform", site_transactions_url(league_id, season, platform=False), {}),
-                ("filtered", transactions_url(league_id, season), {"x-fantasy-filter": TXN_FILTER}),
-                ("history", history_transactions_url(league_id, season), {"x-fantasy-filter": TXN_FILTER}),
-            ]
-            for label, url, hdrs in attempts:
-                try:
-                    tr = await client.get(url, headers=hdrs)
-                    if tr.status_code != 200:
-                        txn_diag["attempts"].append(f"{label}:HTTP {tr.status_code}")
-                        continue
-                    tj = tr.json()
-                    if isinstance(tj, list):
-                        tj = tj[0] if tj else {}
-                    txns = tj.get("transactions") or []
-                    txn_diag["attempts"].append(f"{label}:{len(txns)} txns")
-                    if txns:
-                        data["transactions"] = txns
-                        txn_diag["source"] = label
-                        break
-                except Exception as e:  # noqa: BLE001 — transactions are optional
-                    txn_diag["attempts"].append(f"{label}:{type(e).__name__}")
 
     lg = parse_league(data, season, my_team)
     waivers = all_waivers(data)

@@ -142,6 +142,13 @@ def test_keeper_candidates():
         assert espn.ACTIVITY_VIEW in url, url
     # ESPN 400s this feed above 25 per page.
     assert espn.ACTIVITY_PAGE <= 25, "activity feed limit must stay <= 25"
+    # Waiver history is scoped to a scoringPeriodId (week) and filtered on
+    # WAIVER + WAIVER_ERROR — omit either and ESPN returns no transactions.
+    u = espn.site_transactions_url("1", 2025, scoring_period=15)
+    assert "scoringPeriodId=15" in u, u
+    assert "view=mTransactions2" in u, u
+    assert json.loads(espn.WAIVER_TXN_FILTER)["transactions"]["filterType"]["value"] == \
+        ["WAIVER", "WAIVER_ERROR"], espn.WAIVER_TXN_FILTER
     # ESPN rejects `limit` without a sort (FILTER_LIMIT_MISSING_SORT), so every
     # filter variant must carry one — both on /communication/ and the base URL.
     for name, filt in espn.activity_filters(25, 0) + espn.base_activity_filters(25, 0):
@@ -232,8 +239,65 @@ def main():
     test_keeper_candidates(); print("✓ keeper candidates")
     test_yahoo(); print("✓ yahoo parse")
     test_yahoo_leagues(); print("✓ yahoo leagues list")
+    test_waiver_weekly_fetch()
     print("\nALL INTEGRATION SELFTESTS PASS")
 
+
+
+
+def test_waiver_weekly_fetch():
+    """fetch_league must sweep scoring periods and take the highest EXECUTED
+    FAAB bid per player (ESPN returns transactions only per-week)."""
+    import asyncio
+    import types
+    import urllib.parse as up
+
+    league = {"id": 1, "settings": {"name": "L", "size": 12,
+              "scoringSettings": {"scoringItems": []},
+              "draftSettings": {"type": "AUCTION", "auctionBudget": 200},
+              "rosterSettings": {"lineupSlotCounts": {"0": 1, "20": 6}}},
+              "teams": [{"id": 1, "name": "T", "roster": {"entries": [
+                  {"playerPoolEntry": {"player": {"id": 11, "fullName": "P M",
+                                                  "defaultPositionId": 1, "proTeamId": 12}}}]}}],
+              "draftDetail": {"picks": [{"teamId": 1, "playerId": 11, "bidAmount": 15, "roundId": 3}]}}
+
+    class Resp:
+        def __init__(self, code, payload): self.status_code, self._p = code, payload
+        def json(self): return self._p
+        def raise_for_status(self): pass
+
+    class Fake:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def get(self, url, headers=None):
+            q = up.parse_qs(up.urlparse(url).query)
+            if "mTransactions2" not in q.get("view", []):
+                return Resp(200, dict(league))
+            sp = q.get("scoringPeriodId", [None])[0]
+            if sp is None:
+                return Resp(200, dict(league))
+            if int(sp) == 5:
+                return Resp(200, {**league, "transactions": [
+                    {"id": "a", "status": "EXECUTED", "bidAmount": 30,
+                     "items": [{"type": "ADD", "playerId": 11}]}]})
+            if int(sp) == 9:
+                return Resp(200, {**league, "transactions": [
+                    {"id": "b", "status": "EXECUTED", "bidAmount": 44,
+                     "items": [{"type": "ADD", "playerId": 11}]},
+                    {"id": "c", "status": "CANCELED", "bidAmount": 99,
+                     "items": [{"type": "ADD", "playerId": 11}]}]})
+            return Resp(200, {**league, "transactions": []})
+
+    real = espn.httpx
+    try:
+        espn.httpx = types.SimpleNamespace(AsyncClient=lambda **kw: Fake())
+        lg = asyncio.run(espn.fetch_league("1", 2025, my_team="T"))
+    finally:
+        espn.httpx = real
+    p = lg.teams[0].players[0]
+    assert p.bid == 15 and p.waiver == 44, (p.bid, p.waiver)   # highest executed bid
+    assert lg.meta["transactions"]["waiver_players"] == 1
+    print("✓ waiver weekly fetch")
 
 if __name__ == "__main__":
     main()

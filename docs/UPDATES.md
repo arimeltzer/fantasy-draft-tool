@@ -18,6 +18,16 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   **180**, `targetId`=player, `from`=winning FAAB bid). That feed is now the
   primary source (paged, with a leagueHistory fallback); the transactions array
   is kept as a fallback and both merge to the highest bid per player.
+- **SOLVED — waiver history needs a scoringPeriodId.** A captured browser request
+  for the report showed the two missing ingredients: transactions are scoped to a
+  **week** (`scoringPeriodId=15`), and the filter is
+  `{"transactions":{"filterType":{"value":["WAIVER","WAIVER_ERROR"]}}}`. Omit the
+  week and ESPN returns no `transactions` key at all — which is why every
+  variant looked "empty" and sent this chasing the activity feed for days.
+  `fetch_league` now sweeps `scoringPeriodId` 0 then 1..18 with that filter,
+  dedupes by transaction id, and keeps the highest EXECUTED bid per player.
+  Regression-tested end to end (`test_waiver_weekly_fetch`, mocked client).
+  The activity/communication routes stay as a fallback.
 - **Resolved by probing (what ESPN actually requires).** Three rounds of live
   probes settled the waiver feed:
   1. `limit` is rejected without a sort (`FILTER_LIMIT_MISSING_SORT`) — every
