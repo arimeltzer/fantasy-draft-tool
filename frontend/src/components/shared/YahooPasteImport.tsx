@@ -1,0 +1,184 @@
+import { useState } from "react";
+import { ClipboardPaste, Loader2, AlertTriangle, Check, ChevronDown } from "lucide-react";
+import { api, KeeperCandidate, YahooPasteReport } from "@/lib/api";
+
+interface Props {
+  /** Same contract as KeeperAutofill: hand the parsed candidates upward so the
+   *  recommender/planner consume them exactly like an ESPN pull. */
+  onCandidates: (c: KeeperCandidate[]) => void;
+  matchSeason?: number;
+}
+
+const CURRENT_SEASON = 2026;
+
+/**
+ * Yahoo import that needs no API access.
+ *
+ * Yahoo's developer program no longer reliably grants the Fantasy Sports scope,
+ * so OAuth can be blocked indefinitely. Every league member can still open
+ * their league's Draft Results and Starting Rosters pages — pasting those in
+ * gives the keeper tools everything they need (who's on each roster, and what
+ * round each player cost).
+ */
+export default function YahooPasteImport({ onCandidates, matchSeason = CURRENT_SEASON }: Props) {
+  const [open, setOpen] = useState(false);
+  const [draftText, setDraftText] = useState("");
+  const [rostersText, setRostersText] = useState("");
+  const [myTeam, setMyTeam] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [report, setReport] = useState<YahooPasteReport | null>(null);
+  const [count, setCount] = useState<{ matched: number; total: number } | null>(null);
+
+  const parse = async () => {
+    setLoading(true); setError(null); setReport(null); setCount(null);
+    try {
+      const res = await api.yahooPasteCandidates({
+        draft_text: draftText,
+        rosters_text: rostersText,
+        match_season: matchSeason,
+        my_team: myTeam.trim() || undefined,
+      });
+      setReport(res.paste ?? null);
+      setCount({ matched: res.matched, total: res.candidates.length });
+      onCandidates(res.candidates);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded-lg border border-line bg-raised/40">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-muted hover:text-ink"
+      >
+        <ClipboardPaste className="h-3.5 w-3.5" />
+        Yahoo — paste from league pages (no API needed)
+        <ChevronDown className={`ml-auto h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="space-y-3 border-t border-hair px-3 py-3">
+          <p className="text-2xs leading-snug text-faint">
+            Yahoo's API needs developer access that's no longer reliably granted, so import by copying
+            two pages from your league instead. On each page select all (Ctrl/Cmd+A), copy, and paste below.
+            Nothing is committed until you review the result.
+          </p>
+
+          <label className="block text-xs">
+            <span className="mb-1 block text-muted">
+              1. <span className="font-medium text-ink">Starting Rosters</span> page — required
+              <span className="text-faint"> (defines who can be kept)</span>
+            </span>
+            <textarea
+              rows={4}
+              value={rostersText}
+              onChange={(e) => setRostersText(e.target.value)}
+              placeholder={"Team Name\n\nPos\tPlayer\nQB\t\nJosh Allen\n..."}
+              className="w-full rounded-md border border-line bg-sunken px-2 py-1 font-mono text-2xs text-ink focus:border-brand focus:outline-none"
+            />
+          </label>
+
+          <label className="block text-xs">
+            <span className="mb-1 block text-muted">
+              2. <span className="font-medium text-ink">Draft Results</span> page
+              <span className="text-faint"> (gives each player's round = keeper cost)</span>
+            </span>
+            <textarea
+              rows={4}
+              value={draftText}
+              onChange={(e) => setDraftText(e.target.value)}
+              placeholder={"Round 1\n1.\tCeeDee Lamb\tTeam Name\n..."}
+              className="w-full rounded-md border border-line bg-sunken px-2 py-1 font-mono text-2xs text-ink focus:border-brand focus:outline-none"
+            />
+          </label>
+
+          <label className="block text-xs">
+            <span className="mb-1 block text-muted">
+              Your team name <span className="text-faint">(optional — exactly as it appears)</span>
+            </span>
+            <input
+              value={myTeam}
+              onChange={(e) => setMyTeam(e.target.value)}
+              placeholder="Becoming BEARable"
+              className="w-full rounded-md border border-line bg-sunken px-2 py-1 text-sm text-ink focus:border-brand focus:outline-none"
+            />
+          </label>
+
+          <button
+            onClick={parse}
+            disabled={loading || !rostersText.trim()}
+            className="btn-brand w-full justify-center px-3 py-1.5 text-xs disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Parse pasted pages
+          </button>
+
+          {error && (
+            <p className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-2xs text-rose-700">
+              {error}
+            </p>
+          )}
+
+          {report && (
+            <div className="space-y-2">
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-2xs text-emerald-800">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <Check className="h-3.5 w-3.5" />
+                  {report.teams} teams · {report.picks} picks over {report.rounds} rounds
+                  {count ? ` · ${count.matched}/${count.total} players matched` : ""}
+                </div>
+                {Object.keys(report.draft_slots).length > 0 && (
+                  <div className="mt-1 font-mono text-2xs text-emerald-700">
+                    Draft order:{" "}
+                    {Object.entries(report.draft_slots)
+                      .sort((a, b) => a[1] - b[1])
+                      .map(([t, s]) => `${s}. ${t}`)
+                      .join(" · ")}
+                  </div>
+                )}
+              </div>
+
+              {report.kept_detected.length > 0 && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-2xs text-amber-900">
+                  <div className="mb-1 font-medium">
+                    Detected as kept last year — can't be kept again ({report.kept_detected.length})
+                  </div>
+                  <div className="leading-relaxed">{report.kept_detected.join(", ")}</div>
+                  <div className="mt-1 text-amber-700">
+                    These are excluded from keeper recommendations. Verify the list — it comes from a
+                    badge that copy-paste reduces to whitespace.
+                  </div>
+                </div>
+              )}
+
+              {report.warnings.length > 0 && (
+                <ul className="space-y-1 rounded-md border border-line bg-sunken px-2.5 py-2">
+                  {report.warnings.map((w, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-2xs text-muted">
+                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
+                      {w}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {report.undrafted_on_roster.length > 0 && (
+                <div className="rounded-md border border-line bg-sunken px-2.5 py-2 text-2xs text-muted">
+                  <span className="font-medium text-ink">
+                    Added mid-season ({report.undrafted_on_roster.length})
+                  </span>{" "}
+                  — no draft round, so your league's undrafted-round rule applies:{" "}
+                  {report.undrafted_on_roster.join(", ")}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

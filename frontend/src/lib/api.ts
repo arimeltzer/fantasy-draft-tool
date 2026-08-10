@@ -58,7 +58,22 @@ export interface KeeperCandidate {
   bid: number | null;
   round: number | null;
   waiver: number | null;   // top FAAB/waiver claim last year (price basis only)
+  keeper_ineligible?: boolean;  // platform says this player can't be kept again
   matched: boolean;
+}
+
+/** What the pasted-Yahoo parse found, incl. anything to eyeball rather than
+ *  trust (the keeper badge is derived from whitespace the copy leaves behind). */
+export interface YahooPasteReport {
+  teams: number;
+  team_names: string[];
+  picks: number;
+  rounds: number;
+  draft_slots: Record<string, number>;
+  kept_detected: string[];
+  undrafted_on_roster: string[];
+  unresolved_draft_teams: string[];
+  warnings: string[];
 }
 
 export interface WaiverReport {
@@ -77,6 +92,7 @@ export interface KeeperCandidatesResult {
   matched: number;
   unmatched: number;
   waivers?: WaiverReport;
+  paste?: YahooPasteReport;   // present when sourced from a Yahoo paste import
 }
 
 /** Cached ESPN keeper import, persisted in league settings (no migration). */
@@ -210,6 +226,16 @@ export const api = {
   }) => req<KeeperCandidatesResult>("/api/integrations/espn/keeper-candidates", {
     method: "POST", body: JSON.stringify(data),
   }),
+  /** Yahoo keeper candidates with no API access — from pasted league pages. */
+  yahooPasteCandidates: (data: {
+    draft_text: string;
+    rosters_text: string;
+    match_season?: number;
+    my_team?: string;
+  }) => req<KeeperCandidatesResult>("/api/integrations/yahoo/paste-candidates", {
+    method: "POST", body: JSON.stringify(data),
+  }),
+
   espnProbeActivity: (data: {
     ext_id: string;
     season?: number;

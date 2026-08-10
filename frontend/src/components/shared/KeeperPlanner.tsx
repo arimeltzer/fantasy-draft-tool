@@ -8,6 +8,7 @@ import { DraftEntry } from "@/store/draftStore";
 import { decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
 import { posStyle } from "@/lib/posStyles";
 import KeeperAutofill from "./KeeperAutofill";
+import YahooPasteImport from "./YahooPasteImport";
 import KeeperRecommendations from "./KeeperRecommendations";
 
 interface Props {
@@ -368,6 +369,8 @@ export default function KeeperPlanner({
               cached={settings.keeperImport}
               onCache={cacheImport}
             />
+
+            <YahooPasteImport onCandidates={setImportedCandidates} />
           </div>
 
           {/* ── Current keepers ───────────────────────────────────── */}

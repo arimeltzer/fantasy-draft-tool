@@ -18,7 +18,7 @@ from models import (
     DraftPick, League, LeagueFormat, Player, PlayerLog,
     Schedule, SosMult, User,
 )
-from integrations import espn as espn_provider, yahoo as yahoo_provider
+from integrations import espn as espn_provider, yahoo as yahoo_provider, yahoo_paste
 from integrations.base import opponent_team_ids
 from integrations.matching import build_index, match_player, keeper_candidates
 
@@ -604,6 +604,55 @@ async def espn_keeper_candidates(
             "players": sum(1 for c in cands if c.get("waiver")),
             **(norm.meta.get("transactions") or {}),
         },
+    }
+
+
+class YahooPasteRequest(BaseModel):
+    draft_text: str = ""              # copied Yahoo "Draft Results" page
+    rosters_text: str = ""            # copied Yahoo "Starting Rosters" page
+    match_season: int = 2026          # current player pool to map candidates onto
+    my_team: Optional[str] = None     # exact team name to flag as "mine"
+
+
+@app.post("/api/integrations/yahoo/paste-candidates")
+async def yahoo_paste_candidates(
+    data: YahooPasteRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(db_dep),
+) -> dict:
+    """Yahoo keeper candidates with NO API access — parsed from the Draft
+    Results / Starting Rosters pages the user copied out of Yahoo's web UI.
+
+    Returns the same candidate shape as the ESPN endpoint so the keeper planner
+    and recommender consume it unchanged, plus a report of everything that
+    should be eyeballed rather than trusted (keeper badges are derived from
+    whitespace the copy leaves behind; team names are truncated in the draft
+    view; traded picks break serpentine order)."""
+    if not data.rosters_text.strip():
+        raise HTTPException(status_code=400,
+                            detail="Paste the Starting Rosters page — it defines who can be kept.")
+    try:
+        norm, report = yahoo_paste.build_league(
+            data.draft_text, data.rosters_text, my_team=data.my_team)
+    except Exception as e:  # noqa: BLE001 — parsing is best-effort on pasted text
+        raise HTTPException(status_code=422, detail=f"Could not parse the pasted pages: {e}")
+
+    rows = (await db.execute(
+        select(Player.id, Player.name, Player.pos, Player.team).where(Player.season == data.match_season)
+    )).all()
+    if not rows:
+        raise HTTPException(status_code=409, detail=f"No players loaded for season {data.match_season}.")
+    index = build_index([{"id": r.id, "name": r.name, "pos": r.pos, "team": r.team} for r in rows])
+
+    cands = keeper_candidates(norm, index)
+    matched = sum(1 for c in cands if c["matched"])
+    return {
+        "fmt": norm.fmt,
+        "season": 0,
+        "candidates": cands,
+        "matched": matched,
+        "unmatched": len(cands) - matched,
+        "paste": report,
     }
 
 

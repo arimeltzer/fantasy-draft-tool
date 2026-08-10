@@ -74,9 +74,14 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
   const prediction = useMemo(() => {
     if (!predictOn || importedCandidates.length === 0) return null;
     return predictOpponentKeepers(
-      importedCandidates.map((c) => ({
-        player_id: c.player_id, is_mine: c.is_mine, owner: c.owner, bid: c.bid, round: c.round, waiver: c.waiver,
-      })),
+      importedCandidates
+        // A player the platform marks as un-keepable can't be an opponent's
+        // keeper either — predicting one would wrongly remove him from the
+        // draft pool your own recommendation is valued against.
+        .filter((c) => !c.keeper_ineligible)
+        .map((c) => ({
+          player_id: c.player_id, is_mine: c.is_mine, owner: c.owner, bid: c.bid, round: c.round, waiver: c.waiver,
+        })),
       {
         format, board: pricedBoard, marketBoard, settings: { teams: settings.teams }, rule, floor: 0,
         baseKept: committedKeeperIds, committedIds: committedKeeperIds, committedByOwner,
@@ -123,6 +128,10 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
     // imported roster players (hypothetical, not committed)
     for (const c of importedCandidates) {
       if (!c.is_mine || c.player_id == null || out.has(c.player_id)) continue;
+      // The platform says this player was already kept and can't be kept again
+      // (Yahoo's no-consecutive-years badge). Recommending him would be an
+      // illegal keep — exclude rather than surface a suggestion you can't use.
+      if (c.keeper_ineligible) continue;
       const player = playerById.get(c.player_id);
       if (!player) continue;
       const base = priceBasis ? c.bid : c.round;

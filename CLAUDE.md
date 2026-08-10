@@ -99,7 +99,14 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   (`python -m integrations.selftest`).
   - **ESPN**: unofficial read API; public leagues need nothing, private need
     `espn_s2`/`SWID` cookies. Works (no app registration). See `backend/INTEGRATIONS.md`.
-  - **Yahoo**: official OAuth2 + league picker built and working EXCEPT Yahoo's
+  - **Yahoo (no API)**: `integrations/yahoo_paste.py` imports from the Draft
+    Results + Starting Rosters pages pasted as text — no credentials at all.
+    Rosters define who's keepable, draft results give the round cost; the
+    "was kept" badge survives copy-paste as whitespace (surfaced for
+    confirmation, not trusted silently) and sets `keeper_ineligible`. Draft
+    slots come from round 1 only (trades break serpentine).
+    `POST /api/integrations/yahoo/paste-candidates`, UI in `YahooPasteImport.tsx`.
+  - **Yahoo (OAuth)**: official OAuth2 + league picker built and working EXCEPT Yahoo's
     self-service dev console won't grant the **Fantasy Sports** scope on new
     apps (token gets `additional_authorization_required`). Pursuing access via
     https://sports.yahoo.com/developer/access/ — once a Fantasy-scoped credential
@@ -166,8 +173,9 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
 
 ## Open threads / next up
 
-- **Yahoo Fantasy access** pending via the sports developer program (the import
-  path is built and blocked only on the credential — see Integrations).
+- **Yahoo Fantasy access** pending via the sports developer program (the OAuth
+  import path is built and blocked only on the credential — see Integrations).
+  Workaround shipped: paste-based import needs no credential at all.
 - **Keeper refinements** (optional): true serpentine slot forfeiture in snake
   (v1 removes the player + shows the round cost but doesn't reorder the exact
   picks); Yahoo keeper auto-fill (blocked on the same Fantasy-scope credential

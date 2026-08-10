@@ -134,6 +134,9 @@ def keeper_candidates(norm, index) -> list[dict]:
                 "bid": np.bid,       # auction price paid last year (or None)
                 "round": np.round,   # draft round last year (or None => FA)
                 "waiver": np.waiver, # top FAAB/waiver claim last year (or None)
+                # Platform says this player can't be kept again (already kept).
+                # Not a rule we infer — ground truth, so the UI can exclude them.
+                "keeper_ineligible": np.keeper_ineligible,
                 "matched": pid is not None,
             })
     return out

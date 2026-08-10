@@ -6,6 +6,41 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Yahoo import with NO API access (paste-based)
+- **Why**: Yahoo's developer program no longer reliably grants the Fantasy
+  Sports scope, so the OAuth path in `yahoo.py` can stay blocked indefinitely.
+  Rather than wait on a credential, import from the two pages any league member
+  can already see: **Draft Results** and **Starting Rosters**, pasted as text.
+- **Parser** (`backend/integrations/yahoo_paste.py`, pure + fixture-tested
+  against a real 10-team snake export):
+  - Rosters decide **who** can be kept; draft results decide **what** they'd
+    cost (the round they went in). Rostered-but-undrafted ⇒ waiver/FA pickup,
+    no round, so the league's undrafted-round rule applies.
+  - **Keeper badge**: Yahoo renders "was kept" as an icon; copying strips the
+    icon but leaves its whitespace, so kept players carry a trailing space
+    (draft) / blank line (rosters). In the reference league this flagged
+    exactly one player per team across all ten — strong corroboration. Because
+    it IS whitespace-derived, it's surfaced for confirmation, never silently
+    committed.
+  - **Truncated team names**: draft results abbreviate ("Becoming BEA...")
+    while rosters carry them in full — prefix-matched, curly apostrophes
+    normalized; ambiguous stems are reported rather than mis-attributed.
+  - **Draft slots come from ROUND 1 ONLY.** Traded picks make later rounds
+    non-serpentine (the reference league has a team holding two picks in one
+    round and none in another), so inferring order from them would be wrong.
+    Duplicate-team rounds are reported as a warning.
+- **Keeper ineligibility is now first-class**: `NormPlayer.keeper_ineligible`
+  carries platform ground truth that a player can't be kept again — stronger
+  than inferring it from our own `noConsecutive` rule. The recommender
+  **excludes** those players (recommending one would be an illegal keep) and
+  also won't predict them as an opponent's keeper (which would wrongly deplete
+  the draft pool your own valuation is measured against).
+- **Endpoint + UI**: `POST /api/integrations/yahoo/paste-candidates` returns the
+  same candidate shape as the ESPN endpoint, so the planner/recommender consume
+  it unchanged. `YahooPasteImport.tsx` in the keeper planner shows the parse
+  result: team count, detected draft order, the kept-player list to verify, and
+  every warning.
+
 ## 2026-08 — Full per-stat scoring (not just PPR) + real team names on import
 - **The gap:** valuations only ever configured points-per-reception. Every
   other scoring category (pass/rush/rec yards+TDs, INTs, fumbles) was
