@@ -433,19 +433,25 @@ async def probe_activity(league_id: str, season: int, espn_s2: str | None = None
         "limit": 100, "offset": 0,
         "sortDate": {"sortPriority": 1, "sortAsc": False},
     }})
+    comm_nested = json.dumps({"communication": {"topics": activity_body}})
+    comm_by_type = json.dumps({"communication": {"topicsByType": activity_body}})
     candidates = [
         ("league+mTeam (auth sanity)", f"{base}?view=mTeam", None),
-        # ESPN requires a sort alongside limit; `sorted` is the corrected filter.
-        ("comm/ sorted filter", f"{base}/communication/?view={ACTIVITY_VIEW}", sorted_topics),
-        (f"comm/ CURRENT {season + 1} sorted", f"{cur}/communication/?view={ACTIVITY_VIEW}", sorted_topics),
-        # ESPN enumerated the base league filter roots: players / transactions /
-        # communication / schedule. Try the two that could carry waiver history —
-        # this route isn't tied to the (missing) prior-season communication group.
-        ("base + comm-root filter", f"{base}?view={ACTIVITY_VIEW}", comm_root),
-        ("base mTransactions2 + txn-root sorted", f"{base}?view=mTransactions2", txn_root),
-        ("base mTransactions2 + txn-root (no sort)", f"{base}?view=mTransactions2", txn_filter),
-        (f"CURRENT {season + 1} mTransactions2 + txn-root", f"{cur}?view=mTransactions2", txn_root),
-        ("hist comm/ sorted", f"{hist}/communication/?seasonId={season}&view={ACTIVITY_VIEW}", sorted_topics),
+        # ESPN's own site shows the 2025 free-agent offers report, so the data
+        # exists — find the endpoint serving it. /communication/ is a sub-resource,
+        # so /transactions/ plausibly is too.
+        ("SUB /transactions/ + txn filter", f"{base}/transactions/?view=mTransactions2", txn_root),
+        ("SUB /transactions/ no view", f"{base}/transactions/", txn_root),
+        ("SUB /transactions/ bare", f"{base}/transactions/", None),
+        # Nested communication shapes ESPN named (topics / topicsByType).
+        ("base + communication.topics", f"{base}?view={ACTIVITY_VIEW}", comm_nested),
+        ("base + communication.topicsByType", f"{base}?view={ACTIVITY_VIEW}", comm_by_type),
+        # Other plausible transaction views on the base league endpoint.
+        ("base mPendingTransactions", f"{base}?view=mPendingTransactions", txn_root),
+        ("base mTransactions2 + txn-root", f"{base}?view=mTransactions2", txn_root),
+        # Controls: prior-season comm group (known 404) and the live season.
+        ("comm/ 2025 sorted (control)", f"{base}/communication/?view={ACTIVITY_VIEW}", sorted_topics),
+        (f"comm/ CURRENT {season + 1} (control)", f"{cur}/communication/?view={ACTIVITY_VIEW}", sorted_topics),
     ]
     out: list[dict] = []
     verify = ca_bundle if ca_bundle else True
