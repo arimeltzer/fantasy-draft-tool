@@ -32,6 +32,11 @@ class NormPlayer:
     bid: int | None = None        # auction price paid, if known
     round: int | None = None      # draft round, if known (snake keeper cost)
     waiver: int | None = None     # top FAAB/waiver claim spent to acquire, if any
+    # Platform says this player CANNOT be kept again (e.g. Yahoo badges players
+    # already kept, under a no-consecutive-years rule). Ground truth from the
+    # source — stronger than inferring it from our own keeper rule — so the
+    # recommender must exclude these rather than recommend an illegal keep.
+    keeper_ineligible: bool = False
 
 
 @dataclass

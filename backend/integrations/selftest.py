@@ -14,7 +14,7 @@ import json
 
 from .base import NormPlayer, NormTeam, opponent_team_ids
 from .matching import build_index, match_player, keeper_candidates
-from . import espn, yahoo
+from . import espn, yahoo, yahoo_paste
 
 
 def test_matching():
@@ -296,6 +296,7 @@ def main():
     test_yahoo(); print("✓ yahoo parse")
     test_yahoo_leagues(); print("✓ yahoo leagues list")
     test_waiver_weekly_fetch(); print("✓ waiver weekly fetch")
+    test_yahoo_paste(); print("✓ yahoo paste import")
     print("\nALL INTEGRATION SELFTESTS PASS")
 
 
@@ -353,6 +354,102 @@ def test_waiver_weekly_fetch():
     p = lg.teams[0].players[0]
     assert p.bid == 15 and p.waiver == 44, (p.bid, p.waiver)   # highest executed bid
     assert lg.meta["transactions"]["waiver_players"] == 1
+
+
+
+def test_yahoo_paste():
+    """Yahoo import with NO API access: parse the Draft Results + Starting
+    Rosters pages a league member can copy out of the web UI.
+
+    Fixture mirrors the structure of a real 10-team snake league export,
+    including the details that actually broke first drafts of the parser.
+    """
+    # Keeper badges survive copy-paste as a trailing space (draft) / blank line
+    # (rosters). Built with explicit \t and trailing spaces so the fixture can't
+    # be silently "cleaned" by an editor.
+    draft = "\n".join([
+        "Round 1",
+        "1.\tCeeDee Lamb\tMcLaurin Order",
+        "2.\tJahmyr Gibbs\tBecoming BEA...",          # truncated team name
+        "3.\tJustin Jefferson\tLet’s Play...",   # truncated + curly apostrophe
+        "Round 2",
+        "1.\tJustin Fields\tLet’s Play...",
+        "2.\tTrey McBride \tBecoming BEA...",         # trailing space = keeper badge
+        "3.\tJosh Jacobs\tMcLaurin Order",
+        "Round 3",
+        "1.\tSaquon Barkley \tMcLaurin Order",        # keeper badge
+        "2.\tBo Nix\tBecoming BEA...",
+        "3.\tBo Nix Jr.\tBecoming BEA...",            # same round twice => traded pick
+    ])
+    rosters = "\n".join([
+        "Starting Rosters", "Team", " ", "Week 17", " ",
+        "Becoming BEARable ", "", "Pos\tPlayer",
+        "QB\t", "Jahmyr Gibbs", "Jahmyr GibbsVideo Forecast", "Final W 20-17 vs TB",
+        "TE\t", "Trey McBride", "Trey McBrideVideo Forecast", "", "Final L 14-37 @ Cin",
+        "DEF\t", "Saints", "Saints", "- DEF", "Final W 34-26 @ Ten",
+        # last player on this team: must NOT inherit the blank line that
+        # precedes the next team's header (regression guard)
+        "IR\t", "Bo Nix", "Bo NixVideo Forecast", "Final W 20-13 @ KC",
+        "McLaurin Order ", "", "Pos\tPlayer",
+        "RB\t", "Saquon Barkley", "Saquon BarkleyVideo Forecast", "", "Final W 13-12 @ Buf",
+        "WR\t", "CeeDee Lamb", "CeeDee LambVideo Forecast", "Final W 30-23 @ Was",
+        "Let’s Play Golf! ", "", "Pos\tPlayer",
+        "QB\t", "Justin Jefferson", "Justin JeffersonVideo Forecast", "Final W 23-10 vs Det",
+        "BN\t", "Rhamondre Stevenson", "Rhamondre StevensonVideo Forecast", "Final W 42-10 @ NYJ",
+    ])
+
+    # ── draft results ────────────────────────────────────────────────
+    picks = yahoo_paste.parse_draft_results(draft)
+    assert len(picks) == 9, len(picks)
+    kept = {p.name for p in picks if p.kept}
+    assert kept == {"Trey McBride", "Saquon Barkley"}, kept
+    # the badge must not leak into the stored name
+    assert all(p.name == p.name.strip() for p in picks)
+
+    # ── rosters ──────────────────────────────────────────────────────
+    teams = yahoo_paste.parse_rosters(rosters)
+    assert [t.name for t in teams] == ["Becoming BEARable", "McLaurin Order", "Let's Play Golf!"], \
+        [t.name for t in teams]
+    bear = teams[0]
+    assert [s.name for s in bear.players] == ["Jahmyr Gibbs", "Trey McBride", "Saints", "Bo Nix"]
+    assert bear.players[1].kept is True                    # blank-line badge
+    # Regression: the LAST player of a team sits right before the next team's
+    # header; an earlier version flagged every one of them as kept.
+    assert bear.players[3].kept is False, "last player of a team must not be flagged kept"
+    assert teams[1].players[0].kept is True                # Saquon, badge
+    assert teams[1].players[1].kept is False
+    # slot -> position mapping (DEF -> DST; BN/IR carry no position)
+    assert bear.players[2].pos == "DST"
+    assert bear.players[3].pos == ""
+
+    # ── truncated team-name resolution ───────────────────────────────
+    full = [t.name for t in teams]
+    assert yahoo_paste.resolve_team_name("Becoming BEA...", full) == "Becoming BEARable"
+    assert yahoo_paste.resolve_team_name("Let’s Play...", full) == "Let's Play Golf!"
+    assert yahoo_paste.resolve_team_name("McLaurin Order", full) == "McLaurin Order"
+    # ambiguous stem returns the input unchanged so the caller can report it
+    assert yahoo_paste.resolve_team_name("X...", full) == "X..."
+
+    # ── draft slots come from ROUND 1 ONLY (trades break serpentine) ──
+    slots = yahoo_paste.draft_slots(picks, full)
+    assert slots == {"McLaurin Order": 1, "Becoming BEARable": 2, "Let's Play Golf!": 3}, slots
+
+    # ── combined league ──────────────────────────────────────────────
+    lg, rep = yahoo_paste.build_league(draft, rosters, my_team="Becoming BEARable")
+    assert lg.provider == "yahoo-paste" and lg.fmt == "snake"
+    assert [t.is_mine for t in lg.teams] == [True, False, False]
+    assert lg.settings["draftSlot"] == 2
+    by_name = {p.name: p for t in lg.teams for p in t.players}
+    # draft round carries the keeper cost basis; badge marks ineligibility
+    assert by_name["Trey McBride"].round == 2 and by_name["Trey McBride"].keeper_ineligible
+    assert by_name["Saquon Barkley"].round == 3 and by_name["Saquon Barkley"].keeper_ineligible
+    assert by_name["Jahmyr Gibbs"].round == 1 and not by_name["Jahmyr Gibbs"].keeper_ineligible
+    # rostered but never drafted => waiver/FA pickup, no round
+    assert by_name["Saints"].round is None
+    assert "Rhamondre Stevenson" in rep["undrafted_on_roster"]
+    # traded picks are reported, not silently trusted for ordering
+    assert any("traded picks" in w for w in rep["warnings"]), rep["warnings"]
+    assert any("confirm this list" in w for w in rep["warnings"]), rep["warnings"]
 
 if __name__ == "__main__":
     main()
