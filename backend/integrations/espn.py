@@ -45,6 +45,22 @@ def league_url(league_id: str, season: int) -> str:
     return f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{league_id}?{q}"
 
 
+# The exact view set ESPN's own web app requests when it renders the league's
+# free-agent offers / transactions report. mTransactions2 returns nothing when
+# asked for on its own — it only populates alongside these.
+SITE_VIEWS = ("mDraftDetail", "mStatus", "mSettings", "mTeam", "mTransactions2",
+              "modular", "mNav")
+PLATFORM_VERSION = "780b95110927d72210293cc5dfe9d151165efd33"
+
+
+def site_transactions_url(league_id: str, season: int, platform: bool = True) -> str:
+    """Mirror the request ESPN's site makes for the transactions report."""
+    q = "&".join(f"view={v}" for v in SITE_VIEWS)
+    if platform:
+        q += f"&platformVersion={PLATFORM_VERSION}"
+    return f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{league_id}?{q}"
+
+
 def transactions_url(league_id: str, season: int) -> str:
     return (f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/"
             f"{league_id}?view=mTransactions2")
@@ -371,9 +387,14 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
                     txn_diag["attempts"].append(f"{label}:{len(topics)} topics total")
                     break
 
-        # Fallback: the transactions array (works on some league configurations).
+        # The transactions array. mTransactions2 only populates when requested
+        # with the same view set ESPN's own site uses, so try that replica first.
         if not _topics(data) and not data.get("transactions"):
             attempts = [
+                ("site-replica", site_transactions_url(league_id, season), {}),
+                ("site-replica+filter", site_transactions_url(league_id, season),
+                 {"x-fantasy-filter": TXN_FILTER}),
+                ("site-noplatform", site_transactions_url(league_id, season, platform=False), {}),
                 ("filtered", transactions_url(league_id, season), {"x-fantasy-filter": TXN_FILTER}),
                 ("history", history_transactions_url(league_id, season), {"x-fantasy-filter": TXN_FILTER}),
             ]
@@ -436,21 +457,17 @@ async def probe_activity(league_id: str, season: int, espn_s2: str | None = None
     comm_nested = json.dumps({"communication": {"topics": activity_body}})
     comm_by_type = json.dumps({"communication": {"topicsByType": activity_body}})
     candidates = [
+        # EXACT replica of the request ESPN's site makes for the transactions
+        # report (mTransactions2 only populates alongside these views).
+        ("SITE replica (exact)", site_transactions_url(league_id, season), None),
+        ("SITE replica + txn filter", site_transactions_url(league_id, season), txn_filter),
+        ("SITE replica no platformVersion", site_transactions_url(league_id, season, platform=False), None),
         ("league+mTeam (auth sanity)", f"{base}?view=mTeam", None),
-        # ESPN's own site shows the 2025 free-agent offers report, so the data
-        # exists — find the endpoint serving it. /communication/ is a sub-resource,
-        # so /transactions/ plausibly is too.
+        # Sub-resource + nested-filter alternatives.
         ("SUB /transactions/ + txn filter", f"{base}/transactions/?view=mTransactions2", txn_root),
-        ("SUB /transactions/ no view", f"{base}/transactions/", txn_root),
-        ("SUB /transactions/ bare", f"{base}/transactions/", None),
-        # Nested communication shapes ESPN named (topics / topicsByType).
         ("base + communication.topics", f"{base}?view={ACTIVITY_VIEW}", comm_nested),
         ("base + communication.topicsByType", f"{base}?view={ACTIVITY_VIEW}", comm_by_type),
-        # Other plausible transaction views on the base league endpoint.
-        ("base mPendingTransactions", f"{base}?view=mPendingTransactions", txn_root),
-        ("base mTransactions2 + txn-root", f"{base}?view=mTransactions2", txn_root),
-        # Controls: prior-season comm group (known 404) and the live season.
-        ("comm/ 2025 sorted (control)", f"{base}/communication/?view={ACTIVITY_VIEW}", sorted_topics),
+        ("base mTransactions2 alone (known empty)", f"{base}?view=mTransactions2", txn_root),
         (f"comm/ CURRENT {season + 1} (control)", f"{cur}/communication/?view={ACTIVITY_VIEW}", sorted_topics),
     ]
     out: list[dict] = []
@@ -470,12 +487,20 @@ async def probe_activity(league_id: str, season: int, espn_s2: str | None = None
                         if isinstance(j, list):
                             j = j[0] if j else {}
                         row["keys"] = sorted(j.keys())[:25] if isinstance(j, dict) else type(j).__name__
-                        for k in ("topics", "transactions", "communication"):
+                        for k in ("topics", "transactions", "communication", "pendingTransactions"):
                             v = j.get(k) if isinstance(j, dict) else None
                             if isinstance(v, list):
                                 row[f"{k}_len"] = len(v)
                                 if v:
-                                    row[f"{k}_sample"] = str(v[0])[:300]
+                                    # Full first record: we need the exact field
+                                    # carrying the FAAB amount to map it.
+                                    row[f"{k}_sample"] = str(v[0])[:900]
+                                    bids = [t for t in v if isinstance(t, dict) and t.get("bidAmount")]
+                                    row[f"{k}_with_bid"] = len(bids)
+                                    if bids:
+                                        row[f"{k}_bid_sample"] = str(bids[0])[:900]
+                            elif isinstance(v, dict):
+                                row[f"{k}_keys"] = sorted(v.keys())[:15]
                     except Exception:  # noqa: BLE001
                         row["body"] = r.text[:700]
                 else:
