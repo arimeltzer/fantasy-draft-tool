@@ -1,7 +1,8 @@
 import { useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, X, Lock } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, X, Lock, ListOrdered } from "lucide-react";
 import { myPickNumbers, rankByAdp } from "@/engine/snake-engine.js";
+import { roundsFor } from "@/engine/draft-order.js";
 import type { BoardPlayer, SnakeLiveState } from "@/engine/snake-engine.js";
 import { LeagueSettings, ApiLeague } from "@/lib/api";
 import { useDraftStore } from "@/store/draftStore";
@@ -15,6 +16,7 @@ import CommonOpponentsPopover from "@/components/shared/CommonOpponentsPopover";
 import KeeperPlanner from "@/components/shared/KeeperPlanner";
 import DraftOverview from "@/components/shared/DraftOverview";
 import DraftLogModal from "@/components/shared/DraftLogModal";
+import DraftOrderBoard from "@/components/shared/DraftOrderBoard";
 import Tip from "@/components/shared/Tip";
 import PickClock from "./PickClock";
 import NeedsPanel, { computeNeeds } from "./NeedsPanel";
@@ -39,6 +41,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   const [showSettings, setShowSettings] = useState(false);
   const [showKeepers, setShowKeepers] = useState(false);
   const [showLog, setShowLog] = useState(false);
+  const [showOrder, setShowOrder] = useState(false);
 
   const draftedIds = useMemo(() => new Set(picks.map((p) => p.playerId).filter(Boolean) as number[]), [picks]);
   // Keepers occupy specific rounds, not the front of the draft, so they don't
@@ -47,8 +50,10 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   const overallPick = livePickCount + 1;
 
   const myPickNums = useMemo(
-    () => myPickNumbers(settings),
-    [settings.draftSlot, settings.teams, settings.myPicks]
+    // Rounds come from the roster (or the draft-order board), so the clock
+    // counts real picks instead of a fixed 18-round guess.
+    () => myPickNumbers(settings, roundsFor(settings)),
+    [settings.draftSlot, settings.teams, settings.myPicks, settings.rounds, settings.roster]
   );
   const nextMine = myPickNums.find((p) => p >= overallPick);
   const untilMine = nextMine != null ? nextMine - overallPick : null;
@@ -151,6 +156,13 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
               myPicks={myPickNums}
             />
             <button
+              onClick={() => { setShowOrder(true); setShowSettings(false); setShowKeepers(false); }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300"
+              title="The full draft order, with traded picks"
+            >
+              <ListOrdered className="w-3.5 h-3.5" /> Order
+            </button>
+            <button
               onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300"
             >
@@ -172,6 +184,15 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
           onSave={(s) => patchLeague.mutate({ settings: s })}
           onClose={() => setShowSettings(false)}
           format="snake"
+          onOpenDraftOrder={() => { setShowSettings(false); setShowOrder(true); }}
+        />
+      )}
+
+      {showOrder && (
+        <DraftOrderBoard
+          settings={settings}
+          onSave={(s) => patchLeague.mutate({ settings: s })}
+          onClose={() => setShowOrder(false)}
         />
       )}
 

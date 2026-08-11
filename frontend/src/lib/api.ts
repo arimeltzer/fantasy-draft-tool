@@ -154,6 +154,13 @@ export interface LeagueSettings {
   teamSlots?: Record<string, number>;
   /** Per-team traded-pick overrides, keyed by team name. Wins over teamSlots. */
   teamPicks?: Record<string, number[]>;
+  /** Traded picks as authored on the draft-order board: overall pick number ->
+   *  owning team ("__me__" for yours). Only picks that CHANGED hands are
+   *  stored. `myPicks` / `teamPicks` above are derived from this, never
+   *  hand-edited — see `engine/draft-order.js`. */
+  pickOwners?: Record<string, string>;
+  /** Rounds in the draft. Defaults to one per roster spot. */
+  rounds?: number;
 }
 
 function getToken(): string | null {

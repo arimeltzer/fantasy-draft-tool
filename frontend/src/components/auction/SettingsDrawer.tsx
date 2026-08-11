@@ -1,64 +1,23 @@
-import { useEffect, useState } from "react";
-import { X, RotateCcw } from "lucide-react";
+import { useState } from "react";
+import { X, RotateCcw, ListOrdered } from "lucide-react";
 import { KEEPER_PRESETS, normalizeKeeperRule } from "@/engine/keeper.js";
-import { DEFAULT_SCORING, resolveScoring, snakePicks } from "@/engine/valuation-engine.js";
+import { DEFAULT_SCORING, resolveScoring } from "@/engine/valuation-engine.js";
 import { LeagueSettings, KeeperRule, ScoringRules } from "@/lib/api";
 
 /** One team per line; blanks and stray whitespace are ignored, not stored. */
 const parseOpponents = (text: string) =>
   text.split("\n").map((s) => s.trim()).filter(Boolean);
 
-/** Comma/space separated overall pick numbers -> a sorted, deduped list. */
-const parsePicks = (text: string) =>
-  Array.from(new Set(
-    text.split(/[,\s]+/).map((s) => parseInt(s, 10))
-      .filter((n) => Number.isFinite(n) && n > 0),
-  )).sort((a, b) => a - b);
-
-/**
- * Pick-number input that holds its own raw text.
- *
- * Rendering from the parsed array would re-join on every keystroke, so the
- * comma or space you just typed is parsed away and deleted before you can type
- * the next number — the same trap the opponents textarea had. Raw text in,
- * parsed list out.
- */
-function PickListInput({ value, placeholder, onChange, className }: {
-  value: number[] | undefined;
-  placeholder?: string;
-  onChange: (v: number[] | undefined) => void;
-  className?: string;
-}) {
-  const [text, setText] = useState(() => (value ?? []).join(", "));
-  // Your picks are editable from two places (the field above and the per-team
-  // grid), so accept an outside change — but never while this input's own text
-  // already parses to that value, which would fight the caret mid-typing.
-  useEffect(() => {
-    const canonical = (value ?? []).join(", ");
-    setText((t) => (parsePicks(t).join(", ") === canonical ? t : canonical));
-  }, [value]);
-  return (
-    <input
-      value={text}
-      placeholder={placeholder}
-      onChange={(e) => {
-        setText(e.target.value);
-        const nums = parsePicks(e.target.value);
-        onChange(nums.length ? nums : undefined);
-      }}
-      className={className}
-    />
-  );
-}
-
 interface Props {
   settings: LeagueSettings;
   onSave: (s: LeagueSettings) => void;
   onClose: () => void;
   format?: "auction" | "snake";
+  /** Opens the draft-order board, which owns seating and traded picks. */
+  onOpenDraftOrder?: () => void;
 }
 
-export default function SettingsDrawer({ settings, onSave, onClose, format = "auction" }: Props) {
+export default function SettingsDrawer({ settings, onSave, onClose, format = "auction", onOpenDraftOrder }: Props) {
   const [local, setLocal] = useState<LeagueSettings>(settings);
   // The opponents textarea keeps its own raw text. Rendering it from the parsed
   // array instead round-trips through a lossy transform (trim + drop blanks),
@@ -68,13 +27,8 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
   const [oppText, setOppText] = useState(() => (settings.opponents ?? []).join("\n"));
   const keeper: KeeperRule = normalizeKeeperRule(local.keeper, format);
   const isAuction = format === "auction";
-  // Standard serpentine picks for this slot — shown as the placeholder so the
-  // "Your picks" override is edited against the real default, not from scratch.
-  const serpentine = snakePicks(local.draftSlot ?? 1, local.teams || 12, 16);
-  // "Me" is a real team in the draft order too, so it gets a slot row — but it
-  // is never an opponent, so it stays out of the opponents list.
-  const opponentNames = local.opponents ?? [];
-  const myTeamLabel = "Me";
+  // How many picks changed hands, for the badge next to the board link.
+  const tradedPicks = Object.keys(local.pickOwners ?? {}).length;
 
   const set = (patch: Partial<LeagueSettings>) => setLocal((s) => ({ ...s, ...patch }));
   const setRoster = (k: string, v: number) =>
@@ -141,22 +95,29 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
               <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Your draft slot</h3>
               {numField("Draft slot", local.draftSlot ?? 1, (v) => set({ draftSlot: v }))}
 
-              <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold pt-2">Your picks</h3>
-              <p className="text-xs text-gray-400 leading-snug">
-                Overall pick numbers you own. Leave blank for standard serpentine order — edit only if
-                you've <span className="text-gray-500">traded picks</span> (added, lost, or two in one round).
-              </p>
-              <PickListInput
-                value={local.myPicks}
-                placeholder={serpentine.join(", ")}
-                onChange={(v) => set({ myPicks: v })}
-                className="w-full px-2 py-1 rounded bg-gray-50 border border-gray-300 font-mono text-xs text-gray-700 focus:outline-none focus:border-gray-400"
-              />
-              {(local.myPicks?.length ?? 0) > 0 && (
-                <p className="text-2xs text-amber-600">
-                  Overriding serpentine with {local.myPicks!.length} pick{local.myPicks!.length === 1 ? "" : "s"} —
-                  keeper costs and the pick clock use these.
-                </p>
+              {/* Traded picks are authored on the draft-order board, where the
+                  serpentine order is drawn for you — not typed as raw overall
+                  pick numbers, which meant doing the arithmetic by hand. */}
+              {onOpenDraftOrder && (
+                <>
+                  <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold pt-2">Draft order</h3>
+                  <p className="text-xs text-gray-400 leading-snug">
+                    Everyone's seat and every pick in the draft, including any that were traded.
+                  </p>
+                  <button
+                    onClick={onOpenDraftOrder}
+                    className="flex w-full items-center justify-center gap-1.5 rounded border border-gray-300 bg-gray-50 px-2 py-1.5 text-xs text-gray-600 hover:border-gray-400 hover:text-gray-800"
+                  >
+                    <ListOrdered className="h-3.5 w-3.5" />
+                    Open draft order
+                  </button>
+                  {tradedPicks > 0 && (
+                    <p className="text-2xs text-amber-600">
+                      {tradedPicks} pick{tradedPicks === 1 ? "" : "s"} traded — keeper costs and the
+                      pick clock follow the board, not serpentine order.
+                    </p>
+                  )}
+                </>
               )}
             </>
           )}
@@ -177,67 +138,6 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
           />
         </div>
       </div>
-
-      {/* Per-team draft position — snake only. Opponent keeper predictions
-          price a rival's forfeited pick from THEIR slot, so a team drafting
-          1st and one drafting last value the same round-5 keeper differently. */}
-      {!isAuction && opponentNames.length > 0 && (
-        <div className="mx-auto max-w-6xl border-t border-hair px-4 py-4">
-          <div className="mb-1 flex flex-wrap items-center gap-2">
-            <h3 className="eyebrow">Draft position by team</h3>
-            <span className="chip border-line bg-raised text-muted">
-              improves opponent keeper predictions
-            </span>
-          </div>
-          <p className="mb-2.5 text-2xs text-faint leading-snug">
-            Slot is each team's round-1 pick (a Yahoo paste import fills these in). Leave
-            <span className="text-muted"> picks</span> blank unless that team <span className="text-muted">traded picks</span> —
-            it overrides their serpentine order. Teams left blank fall back to a mid-round estimate.
-          </p>
-          <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
-            {[myTeamLabel, ...opponentNames].map((team) => {
-              // Your own row edits `draftSlot` / `myPicks` — the fields the
-              // engines actually read. A parallel teamSlots["Me"] would look
-              // authoritative here and be silently ignored everywhere else.
-              const mine = team === myTeamLabel;
-              const slot = mine ? local.draftSlot : local.teamSlots?.[team];
-              return (
-                <div key={team} className="flex items-center gap-2 text-xs">
-                  <span className="min-w-0 flex-1 truncate text-muted" title={team}>
-                    {team}
-                  </span>
-                  <input
-                    type="number"
-                    min={1}
-                    placeholder="slot"
-                    value={slot ?? ""}
-                    onChange={(e) => {
-                      const v = parseInt(e.target.value, 10);
-                      const ok = Number.isFinite(v) && v > 0;
-                      if (mine) return set({ draftSlot: ok ? v : 1 });
-                      const next = { ...(local.teamSlots ?? {}) };
-                      if (ok) next[team] = v; else delete next[team];
-                      set({ teamSlots: Object.keys(next).length ? next : undefined });
-                    }}
-                    className="w-14 rounded border border-gray-300 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-gray-700 focus:border-gray-400 focus:outline-none"
-                  />
-                  <PickListInput
-                    placeholder="traded picks"
-                    value={mine ? local.myPicks : local.teamPicks?.[team]}
-                    onChange={(v) => {
-                      if (mine) return set({ myPicks: v });
-                      const next = { ...(local.teamPicks ?? {}) };
-                      if (v) next[team] = v; else delete next[team];
-                      set({ teamPicks: Object.keys(next).length ? next : undefined });
-                    }}
-                    className="w-32 rounded border border-gray-300 bg-gray-50 px-1.5 py-0.5 font-mono text-2xs text-gray-700 focus:border-gray-400 focus:outline-none"
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       <div className="mx-auto max-w-6xl border-t border-hair px-4 py-4">
         <div className="mb-2.5 flex flex-wrap items-center gap-2">

@@ -6,6 +6,38 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Draft-order board replaces typing raw pick numbers
+- **Why**: traded picks were entered as overall pick numbers — "you own 1, 24,
+  25, 48…", per team, in two text fields. That asks the user to do serpentine
+  arithmetic in their head, type the answer, and then have no way to check it.
+  Confusing by construction, and the fields fought back while typing (see the
+  entry below).
+- **`engine/draft-order.js`** (pure, node-tested) models the draft as what it
+  actually is: every overall pick owned by exactly one team. Base ownership is
+  serpentine from each team's slot; a trade is one override on one pick, stored
+  in `settings.pickOwners` (overall pick → team, `"__me__"` = you).
+  - `slotByTeam()` is a strict bijection over 1..teams: imported slots that are
+    duplicated, missing, or out of range get claimed-then-filled rather than
+    crashing, so a conflict shows up as a team seated oddly instead of a blank
+    board.
+  - `derivePickSettings()` recomputes `myPicks` / `teamPicks` from the board on
+    save. Those are what the engines read, so the board and the pick math can't
+    drift apart; with no trades all three are cleared and the league is back on
+    the plain serpentine path.
+  - 66 assertions. The load-bearing one: an untouched board is byte-identical to
+    `snakePicks()` for every team at 8, 10 and 12 teams — the new authoring
+    surface cannot disagree with the pick clock and keeper costs.
+- **`DraftOrderBoard.tsx`** — full-screen, opened by the new **Order** button in
+  the snake room. Round-1 seating (changing a seat *swaps* with the occupant, so
+  the order stays a permutation), the full round × slot grid where clicking any
+  pick reassigns it to another team, and a picks-by-team summary marking
+  acquired picks. Traded cells are ringed and flagged; each has "back to
+  ⟨original owner⟩". Edits are local until Save, so a misclick costs nothing.
+- **League Settings** now only links to the board — the "Your picks" text field
+  and the "Draft position by team" grid are gone.
+- **`settings.rounds`** (default: one per roster spot) replaces the hardcoded
+  18-round assumption in the pick clock.
+
 ## 2026-08 — Settings inputs that swallowed what you typed; paste imports the draft order
 - **Three inputs in `SettingsDrawer` deleted your keystrokes.** Each was
   controlled by a lossy round-trip: the value was rebuilt from the parsed data

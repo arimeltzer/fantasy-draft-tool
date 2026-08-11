@@ -32,7 +32,9 @@ frontend/           React + TS + Vite + Tailwind (light design system)
                       valuation-engine.js (back-compat re-export shim) ·
                       strength-of-schedule.js ·
                       keeper.js (keeper-cost rule engine, node fixture-tested) ·
-                      keeperReco.js (keeper selection recommender, node-tested)
+                      keeperReco.js (keeper selection recommender, node-tested) ·
+                      draft-order.js (full pick-by-pick board + traded picks,
+                      node-tested; myPicks/teamPicks are DERIVED from it)
   src/components/, pages/, hooks/, lib/api.ts, lib/posStyles.ts
 data-pipeline/      offline data prep -> JSON -> Postgres
   ingest_nflverse.py  pull players/schedule/logs from nflverse
@@ -69,6 +71,7 @@ cd frontend && npm install && npm run build      # tsc -b && vite build
 node frontend/src/engine/engine-core.selftest.mjs # scoring/VBD engine tests
 node frontend/src/engine/keeper.selftest.mjs      # keeper-rule engine tests
 node frontend/src/engine/keeperReco.selftest.mjs  # keeper recommender tests
+node frontend/src/engine/draft-order.selftest.mjs # draft board / traded picks
 # backend (needs DATABASE_URL etc.)
 cd backend && uvicorn main:app --reload
 # integration parsers (no net/db) — regression guard
@@ -176,12 +179,32 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   `KeeperAutofill` "Load my roster" seeds your whole roster as candidates.
   Rivals' forfeited picks are priced from `settings.teamSlots` (team → draft
   slot) / `settings.teamPicks` (team → owned picks, traded), falling back to
-  mid-round only for teams with neither — edited in League Settings → Draft
-  position by team, and auto-filled by the Yahoo paste import.
+  mid-round only for teams with neither — auto-filled by the Yahoo paste import
+  and editable on the draft-order board (below).
 - **Import persistence**: both keeper importers cache into
   `settings.keeperImport` (`KeeperImportCache.source` = `espn` | `yahoo-paste`),
   so the analysis is restored — and re-fed to the recommender — when the planner
   reopens. Committed keepers are separate: they're `DraftPick` rows.
+
+## Draft order & traded picks (snake)
+
+- **Board**: `engine/draft-order.js` models the whole draft — every overall pick
+  owned by exactly one team. Base ownership is serpentine from each team's slot
+  (`slotByTeam` is a strict bijection, so bad/duplicate imported slots still
+  draw); `settings.pickOwners` (overall pick → team, `"__me__"` = you) stores
+  ONLY the picks that changed hands.
+- **Derived, never hand-edited**: `derivePickSettings()` recomputes
+  `settings.myPicks` / `settings.teamPicks` from the board on save, so the
+  engines (`myPickNumbers`, `keeperReco.picksForOwner`) and the board can't
+  disagree. No trades → all three cleared, i.e. plain serpentine.
+- **UI**: `components/shared/DraftOrderBoard.tsx` (full-screen, "Order" button
+  in `SnakeRoom`) — round-1 seating (changing a seat swaps, keeping the order a
+  permutation), the full pick grid where clicking a pick reassigns it, and a
+  picks-by-team summary. League Settings only links to it.
+- **Rounds**: `settings.rounds`, defaulting to one per roster spot (`roundsFor`).
+- Node-tested (`draft-order.selftest.mjs`, 66 assertions) — the load-bearing one
+  is that an untouched board equals `snakePicks()` for every team at 8/10/12
+  teams, so the new authoring surface can't drift from the existing pick math.
 
 ## Open threads / next up
 
