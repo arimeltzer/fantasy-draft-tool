@@ -106,6 +106,9 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     confirmation, not trusted silently) and sets `keeper_ineligible`. Draft
     slots come from round 1 only (trades break serpentine).
     `POST /api/integrations/yahoo/paste-candidates`, UI in `YahooPasteImport.tsx`.
+    `POST /api/leagues/import-yahoo-paste` creates the league and persists what
+    the pages prove: `opponents` (real names) + `teamSlots` (every team's round-1
+    slot) + your `draftSlot`. Scoring/roster shape aren't on these pages.
   - **Yahoo (OAuth)**: official OAuth2 + league picker built and working EXCEPT Yahoo's
     self-service dev console won't grant the **Fantasy Sports** scope on new
     apps (token gets `additional_authorization_required`). Pursuing access via

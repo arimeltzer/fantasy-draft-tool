@@ -6,6 +6,31 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Settings inputs that swallowed what you typed; paste imports the draft order
+- **Three inputs in `SettingsDrawer` deleted your keystrokes.** Each was
+  controlled by a lossy round-trip: the value was rebuilt from the parsed data
+  on every change, so the separator you had just typed was parsed away and
+  removed before the next character could land.
+  - *Opponent teams*: `split("\n") → trim → filter(Boolean) → join("\n")` meant
+    pressing Enter made an empty line that was immediately filtered out. The
+    field could only ever hold one line — which also made clicking and the
+    arrow keys look broken, since there was no second line to reach.
+  - *Your picks* and the per-team *traded picks*: `parse → sort → join(", ")`
+    ate the comma, so only one number could ever be entered.
+  - Fix: raw text lives in the input, the parsed value is derived for storage.
+    New `PickListInput` holds its own draft text and re-syncs only when an
+    outside change disagrees with what its text parses to, so the two places
+    that edit `myPicks` stay consistent without fighting the caret.
+- **Your row in "Draft position by team" now edits `draftSlot` / `myPicks`.** It
+  was writing `teamSlots["Me"]` / `teamPicks["Me"]` — keys no engine reads, so
+  the value looked authoritative and was silently ignored.
+- **Creating a league from a Yahoo paste now saves the whole draft order.** The
+  route persisted `settings.opponents` but dropped `draft_slots`, even though
+  round one of the paste proves every team's slot. Opponent keeper predictions
+  therefore fell back to a mid-round guess the paste had already disproved.
+  `settings.teamSlots` is now written at creation, so the prediction math is
+  right without reopening the planner and re-pasting.
+
 ## 2026-08 — Per-team draft position, and Yahoo pastes that persist
 - **Opponent keeper predictions now use each team's real draft position.**
   `predictOpponentKeepers` priced every rival's forfeited pick at the middle of

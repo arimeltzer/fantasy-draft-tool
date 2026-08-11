@@ -596,6 +596,12 @@ async def import_yahoo_paste(
     settings = {**norm.settings}
     if opponent_names:
         settings["opponents"] = opponent_names
+    # Round one of the pasted draft gives every team's slot, not just yours.
+    # Persist the whole map: opponent keeper predictions price a rival's
+    # forfeited pick from THEIR slot, so importing the names without the order
+    # would leave that math on a mid-round guess the paste already disproves.
+    if report.get("draft_slots"):
+        settings["teamSlots"] = dict(report["draft_slots"])
 
     league = League(user_id=user.id, name=data.name or norm.name,
                     format=LeagueFormat(norm.fmt), settings=settings)

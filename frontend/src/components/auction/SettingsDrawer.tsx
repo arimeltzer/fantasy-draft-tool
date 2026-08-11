@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X, RotateCcw } from "lucide-react";
 import { KEEPER_PRESETS, normalizeKeeperRule } from "@/engine/keeper.js";
 import { DEFAULT_SCORING, resolveScoring, snakePicks } from "@/engine/valuation-engine.js";
@@ -7,6 +7,49 @@ import { LeagueSettings, KeeperRule, ScoringRules } from "@/lib/api";
 /** One team per line; blanks and stray whitespace are ignored, not stored. */
 const parseOpponents = (text: string) =>
   text.split("\n").map((s) => s.trim()).filter(Boolean);
+
+/** Comma/space separated overall pick numbers -> a sorted, deduped list. */
+const parsePicks = (text: string) =>
+  Array.from(new Set(
+    text.split(/[,\s]+/).map((s) => parseInt(s, 10))
+      .filter((n) => Number.isFinite(n) && n > 0),
+  )).sort((a, b) => a - b);
+
+/**
+ * Pick-number input that holds its own raw text.
+ *
+ * Rendering from the parsed array would re-join on every keystroke, so the
+ * comma or space you just typed is parsed away and deleted before you can type
+ * the next number — the same trap the opponents textarea had. Raw text in,
+ * parsed list out.
+ */
+function PickListInput({ value, placeholder, onChange, className }: {
+  value: number[] | undefined;
+  placeholder?: string;
+  onChange: (v: number[] | undefined) => void;
+  className?: string;
+}) {
+  const [text, setText] = useState(() => (value ?? []).join(", "));
+  // Your picks are editable from two places (the field above and the per-team
+  // grid), so accept an outside change — but never while this input's own text
+  // already parses to that value, which would fight the caret mid-typing.
+  useEffect(() => {
+    const canonical = (value ?? []).join(", ");
+    setText((t) => (parsePicks(t).join(", ") === canonical ? t : canonical));
+  }, [value]);
+  return (
+    <input
+      value={text}
+      placeholder={placeholder}
+      onChange={(e) => {
+        setText(e.target.value);
+        const nums = parsePicks(e.target.value);
+        onChange(nums.length ? nums : undefined);
+      }}
+      className={className}
+    />
+  );
+}
 
 interface Props {
   settings: LeagueSettings;
@@ -103,15 +146,10 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
                 Overall pick numbers you own. Leave blank for standard serpentine order — edit only if
                 you've <span className="text-gray-500">traded picks</span> (added, lost, or two in one round).
               </p>
-              <input
-                value={(local.myPicks ?? []).join(", ")}
+              <PickListInput
+                value={local.myPicks}
                 placeholder={serpentine.join(", ")}
-                onChange={(e) => {
-                  const nums = e.target.value
-                    .split(/[,\s]+/).map((s) => parseInt(s, 10))
-                    .filter((n) => Number.isFinite(n) && n > 0);
-                  set({ myPicks: nums.length ? Array.from(new Set(nums)).sort((a, b) => a - b) : undefined });
-                }}
+                onChange={(v) => set({ myPicks: v })}
                 className="w-full px-2 py-1 rounded bg-gray-50 border border-gray-300 font-mono text-xs text-gray-700 focus:outline-none focus:border-gray-400"
               />
               {(local.myPicks?.length ?? 0) > 0 && (
@@ -157,38 +195,46 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
             it overrides their serpentine order. Teams left blank fall back to a mid-round estimate.
           </p>
           <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2">
-            {[myTeamLabel, ...opponentNames].map((team) => (
-              <div key={team} className="flex items-center gap-2 text-xs">
-                <span className="min-w-0 flex-1 truncate text-muted" title={team}>{team}</span>
-                <input
-                  type="number"
-                  min={1}
-                  placeholder="slot"
-                  value={local.teamSlots?.[team] ?? ""}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value, 10);
-                    const next = { ...(local.teamSlots ?? {}) };
-                    if (Number.isFinite(v) && v > 0) next[team] = v; else delete next[team];
-                    set({ teamSlots: Object.keys(next).length ? next : undefined });
-                  }}
-                  className="w-14 rounded border border-gray-300 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-gray-700 focus:border-gray-400 focus:outline-none"
-                />
-                <input
-                  placeholder="traded picks"
-                  value={(local.teamPicks?.[team] ?? []).join(", ")}
-                  onChange={(e) => {
-                    const nums = e.target.value.split(/[,\s]+/)
-                      .map((x) => parseInt(x, 10))
-                      .filter((n) => Number.isFinite(n) && n > 0);
-                    const next = { ...(local.teamPicks ?? {}) };
-                    if (nums.length) next[team] = Array.from(new Set(nums)).sort((a, b) => a - b);
-                    else delete next[team];
-                    set({ teamPicks: Object.keys(next).length ? next : undefined });
-                  }}
-                  className="w-32 rounded border border-gray-300 bg-gray-50 px-1.5 py-0.5 font-mono text-2xs text-gray-700 focus:border-gray-400 focus:outline-none"
-                />
-              </div>
-            ))}
+            {[myTeamLabel, ...opponentNames].map((team) => {
+              // Your own row edits `draftSlot` / `myPicks` — the fields the
+              // engines actually read. A parallel teamSlots["Me"] would look
+              // authoritative here and be silently ignored everywhere else.
+              const mine = team === myTeamLabel;
+              const slot = mine ? local.draftSlot : local.teamSlots?.[team];
+              return (
+                <div key={team} className="flex items-center gap-2 text-xs">
+                  <span className="min-w-0 flex-1 truncate text-muted" title={team}>
+                    {team}
+                  </span>
+                  <input
+                    type="number"
+                    min={1}
+                    placeholder="slot"
+                    value={slot ?? ""}
+                    onChange={(e) => {
+                      const v = parseInt(e.target.value, 10);
+                      const ok = Number.isFinite(v) && v > 0;
+                      if (mine) return set({ draftSlot: ok ? v : 1 });
+                      const next = { ...(local.teamSlots ?? {}) };
+                      if (ok) next[team] = v; else delete next[team];
+                      set({ teamSlots: Object.keys(next).length ? next : undefined });
+                    }}
+                    className="w-14 rounded border border-gray-300 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-gray-700 focus:border-gray-400 focus:outline-none"
+                  />
+                  <PickListInput
+                    placeholder="traded picks"
+                    value={mine ? local.myPicks : local.teamPicks?.[team]}
+                    onChange={(v) => {
+                      if (mine) return set({ myPicks: v });
+                      const next = { ...(local.teamPicks ?? {}) };
+                      if (v) next[team] = v; else delete next[team];
+                      set({ teamPicks: Object.keys(next).length ? next : undefined });
+                    }}
+                    className="w-32 rounded border border-gray-300 bg-gray-50 px-1.5 py-0.5 font-mono text-2xs text-gray-700 focus:border-gray-400 focus:outline-none"
+                  />
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

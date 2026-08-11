@@ -451,5 +451,19 @@ def test_yahoo_paste():
     assert any("traded picks" in w for w in rep["warnings"]), rep["warnings"]
     assert any("confirm this list" in w for w in rep["warnings"]), rep["warnings"]
 
+    # ── what /api/leagues/import-yahoo-paste persists ────────────────
+    # The paste knows every team's identity AND slot; the route writes both
+    # (settings.opponents + settings.teamSlots), so opponent keeper predictions
+    # start from the real draft order instead of a mid-round guess.
+    names, by_name = opponent_team_ids(lg.teams)
+    assert names == ["McLaurin Order", "Let's Play Golf!"], names   # mine excluded
+    assert by_name["McLaurin Order"] == 0
+    assert set(rep["draft_slots"]) == set(rep["team_names"]), "every team needs a slot"
+    # Without my_team every team is an opponent — the paste can't tell which is
+    # yours, so nothing is silently guessed.
+    lg2, _ = yahoo_paste.build_league(draft, rosters)
+    assert opponent_team_ids(lg2.teams)[0] == rep["team_names"]
+    assert lg2.settings["draftSlot"] == 1
+
 if __name__ == "__main__":
     main()
