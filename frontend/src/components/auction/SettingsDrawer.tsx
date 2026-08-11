@@ -4,6 +4,10 @@ import { KEEPER_PRESETS, normalizeKeeperRule } from "@/engine/keeper.js";
 import { DEFAULT_SCORING, resolveScoring, snakePicks } from "@/engine/valuation-engine.js";
 import { LeagueSettings, KeeperRule, ScoringRules } from "@/lib/api";
 
+/** One team per line; blanks and stray whitespace are ignored, not stored. */
+const parseOpponents = (text: string) =>
+  text.split("\n").map((s) => s.trim()).filter(Boolean);
+
 interface Props {
   settings: LeagueSettings;
   onSave: (s: LeagueSettings) => void;
@@ -13,6 +17,12 @@ interface Props {
 
 export default function SettingsDrawer({ settings, onSave, onClose, format = "auction" }: Props) {
   const [local, setLocal] = useState<LeagueSettings>(settings);
+  // The opponents textarea keeps its own raw text. Rendering it from the parsed
+  // array instead round-trips through a lossy transform (trim + drop blanks),
+  // so pressing Enter created an empty line that was immediately filtered away
+  // — the newline vanished and the caret jumped to the end, making it
+  // impossible to start a second name. Raw text in, parsed array derived out.
+  const [oppText, setOppText] = useState(() => (settings.opponents ?? []).join("\n"));
   const keeper: KeeperRule = normalizeKeeperRule(local.keeper, format);
   const isAuction = format === "auction";
   // Standard serpentine picks for this slot — shown as the placeholder so the
@@ -119,9 +129,12 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
           </p>
           <textarea
             rows={4}
-            value={(local.opponents ?? []).join("\n")}
+            value={oppText}
             placeholder={Array.from({ length: Math.max(0, local.teams - 1) }, (_, i) => `Team ${i + 2}`).join("\n")}
-            onChange={(e) => set({ opponents: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean) })}
+            onChange={(e) => {
+              setOppText(e.target.value);
+              set({ opponents: parseOpponents(e.target.value) });
+            }}
             className="w-full px-2 py-1 rounded bg-gray-50 border border-gray-300 font-mono text-xs text-gray-700 focus:outline-none focus:border-gray-400"
           />
         </div>
