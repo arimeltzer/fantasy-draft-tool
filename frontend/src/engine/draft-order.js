@@ -152,6 +152,85 @@ export function derivePickSettings(settings, owners, rounds = roundsFor(settings
   return { pickOwners, myPicks: held[MY_TEAM] ?? [], teamPicks };
 }
 
+/**
+ * Rename a team everywhere its name is used as a key.
+ *
+ * Team names are identifiers, not labels: `teamSlots`, `teamPicks` and the
+ * cached keeper import are keyed by them, and `pickOwners` stores them as
+ * values. Editing the name in one place alone silently orphans the rest — the
+ * team's draft slot falls back to a mid-round guess and its traded picks are
+ * dropped as "unknown team". So renaming carries every reference at once.
+ *
+ * The position in `opponents` is preserved because that index IS
+ * `DraftPick.team_id` — reordering it would reassign drafted players.
+ *
+ * Returns the settings unchanged when the rename is a no-op or would collide
+ * with another team; callers should treat an unchanged return as "rejected".
+ */
+/** Labels that identify YOUR team elsewhere — `MY_TEAM` on the board, the
+ *  literal "Me" inside committed keeper picks. An opponent taking either one
+ *  would be indistinguishable from you. */
+const RESERVED_NAMES = new Set([MY_TEAM, "Me"]);
+
+export function renameTeam(settings, from, to) {
+  const next = (to ?? "").trim();
+  if (!from || !next || from === next || from === MY_TEAM) return settings;
+  if (RESERVED_NAMES.has(next)) return settings;
+  const opponents = settings.opponents ?? [];
+  if (!opponents.includes(from)) return settings;
+  if (opponents.some((o, i) => o === next && opponents[i] !== from)) return settings;
+
+  const out = { ...settings, opponents: opponents.map((o) => (o === from ? next : o)) };
+
+  const rekey = (obj) => {
+    if (!obj) return obj;
+    const copy = {};
+    for (const [k, v] of Object.entries(obj)) copy[k === from ? next : k] = v;
+    return copy;
+  };
+  if (settings.teamSlots) out.teamSlots = rekey(settings.teamSlots);
+  if (settings.teamPicks) out.teamPicks = rekey(settings.teamPicks);
+  if (settings.pickOwners) {
+    out.pickOwners = Object.fromEntries(
+      Object.entries(settings.pickOwners).map(([p, owner]) => [p, owner === from ? next : owner]));
+  }
+  // The cached keeper import groups candidates by owner name; without this the
+  // renamed team's roster stops being attributed to them.
+  const cache = settings.keeperImport;
+  if (cache?.candidates?.length) {
+    out.keeperImport = {
+      ...cache,
+      candidates: cache.candidates.map((c) => (c.owner === from ? { ...c, owner: next } : c)),
+    };
+  }
+  return out;
+}
+
+/**
+ * Apply a whole edited opponents list, treating position as identity.
+ *
+ * `opponents[i]` is team_id `i`, so a changed entry at position i is a RENAME
+ * of that team, not a different team appearing — which is what makes carrying
+ * the keyed data correct rather than a guess. Returns the new settings plus the
+ * renames applied, so callers can also fix data living outside settings.
+ */
+export function applyOpponentNames(settings, nextNames) {
+  const before = settings.opponents ?? [];
+  const after = (nextNames ?? []).map((n) => n.trim()).filter(Boolean);
+  const renames = [];
+  let out = settings;
+  for (let i = 0; i < Math.min(before.length, after.length); i++) {
+    if (before[i] === after[i]) continue;
+    const renamed = renameTeam(out, before[i], after[i]);
+    if (renamed !== out) { out = renamed; renames.push({ from: before[i], to: after[i] }); }
+  }
+  // Adds/removals at the tail are not renames — take the list as given.
+  if ((out.opponents ?? []).length !== after.length || after.some((n, i) => (out.opponents ?? [])[i] !== n)) {
+    out = { ...out, opponents: after };
+  }
+  return { settings: out, renames };
+}
+
 /** Things worth showing the user rather than silently absorbing. */
 export function orderWarnings(settings, owners) {
   const labels = teamLabels(settings);

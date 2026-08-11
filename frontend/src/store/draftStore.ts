@@ -18,7 +18,7 @@ interface DraftState {
 
   hydrate: (leagueId: number) => Promise<void>;
   addPick: (data: { playerId?: number; mine: boolean; teamId?: number; price?: number; slot?: string }) => Promise<void>;
-  updatePick: (pickId: number, data: Partial<{ playerId: number | null; mine: boolean; teamId: number | null; price: number | null }>) => Promise<void>;
+  updatePick: (pickId: number, data: Partial<{ playerId: number | null; mine: boolean; teamId: number | null; price: number | null; slot: string | null }>) => Promise<void>;
   removePick: (pickId: number) => Promise<void>;
   clear: () => void;
 }
@@ -71,6 +71,8 @@ export const useDraftStore = create<DraftState>((set, get) => ({
     if ("mine" in data) body.mine = data.mine;
     if ("teamId" in data) body.team_id = data.teamId;
     if ("price" in data) body.price = data.price;
+    // Keepers carry their owner label inside `slot`, so a team rename edits it.
+    if ("slot" in data) body.slot = data.slot;
     const serverPick = await api.updatePick(leagueId, pickId, body);
     set((s) => ({ picks: s.picks.map((p) => (p.pickId === pickId ? mapPick(serverPick) : p)) }));
   },

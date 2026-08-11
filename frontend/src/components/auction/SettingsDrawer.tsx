@@ -2,6 +2,8 @@ import { useState } from "react";
 import { X, RotateCcw, ListOrdered } from "lucide-react";
 import { KEEPER_PRESETS, normalizeKeeperRule } from "@/engine/keeper.js";
 import { DEFAULT_SCORING, resolveScoring } from "@/engine/valuation-engine.js";
+import { applyOpponentNames } from "@/engine/draft-order.js";
+import type { TeamRename } from "@/engine/draft-order.js";
 import { LeagueSettings, KeeperRule, ScoringRules } from "@/lib/api";
 
 /** One team per line; blanks and stray whitespace are ignored, not stored. */
@@ -15,9 +17,11 @@ interface Props {
   format?: "auction" | "snake";
   /** Opens the draft-order board, which owns seating and traded picks. */
   onOpenDraftOrder?: () => void;
+  /** Team renames made here, for data outside league settings (keeper picks). */
+  onRenames?: (renames: TeamRename[]) => void;
 }
 
-export default function SettingsDrawer({ settings, onSave, onClose, format = "auction", onOpenDraftOrder }: Props) {
+export default function SettingsDrawer({ settings, onSave, onClose, format = "auction", onOpenDraftOrder, onRenames }: Props) {
   const [local, setLocal] = useState<LeagueSettings>(settings);
   // The opponents textarea keeps its own raw text. Rendering it from the parsed
   // array instead round-trips through a lossy transform (trim + drop blanks),
@@ -29,6 +33,20 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
   const isAuction = format === "auction";
   // How many picks changed hands, for the badge next to the board link.
   const tradedPicks = Object.keys(local.pickOwners ?? {}).length;
+
+  /**
+   * Editing a name in the opponents list is a RENAME of that team, because the
+   * list position is its `DraftPick.team_id`. Names are also keys (draft seat,
+   * traded picks, keeper import), so the diff is applied through
+   * applyOpponentNames rather than just storing the new strings — otherwise a
+   * mid-season name change silently drops that team's slot and trades.
+   */
+  const save = () => {
+    const { settings: next, renames } = applyOpponentNames(
+      { ...local, opponents: settings.opponents }, local.opponents ?? []);
+    if (renames.length) onRenames?.(renames);
+    onSave(next);
+  };
 
   const set = (patch: Partial<LeagueSettings>) => setLocal((s) => ({ ...s, ...patch }));
   const setRoster = (k: string, v: number) =>
@@ -251,7 +269,7 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
           <X className="w-3.5 h-3.5" /> Cancel
         </button>
         <button
-          onClick={() => { onSave(local); onClose(); }}
+          onClick={() => { save(); onClose(); }}
           className="text-xs px-3 py-1.5 rounded bg-amber-50 border border-amber-300 text-amber-700 hover:bg-amber-100"
         >
           Save settings

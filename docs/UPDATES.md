@@ -6,6 +6,31 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Renaming a team (names change mid-season)
+- **Team names are identifiers, not labels.** `teamSlots`, `teamPicks` and the
+  cached keeper import are keyed by them, `pickOwners` stores them as values,
+  and committed keeper `DraftPick` rows tag their owner by name inside `slot`.
+  Editing a name in the opponents list therefore *silently orphaned* the rest:
+  that team's draft slot fell back to a mid-round guess, its traded picks were
+  dropped as "unknown team", and its keepers stopped being attributed to it.
+- **`renameTeam(settings, from, to)`** carries every reference at once, keeping
+  the team's position in `opponents` because that index IS `DraftPick.team_id` —
+  reordering would reassign drafted players. Rejected renames (empty, colliding
+  with another team, or the reserved `"Me"` / `"__me__"` that identify YOUR team
+  in keeper picks and on the board) return the settings object unchanged, so a
+  caller detects refusal by identity rather than by guessing.
+- **`applyOpponentNames()`** treats list position as identity, so an edited line
+  in League Settings is a rename of that team rather than a different team
+  appearing — which is what makes carrying the keyed data correct instead of a
+  guess. Appends and removals at the tail are *not* renames.
+- **Where you rename**: click any team name on the draft-order board (pencil on
+  hover; Enter commits, Escape cancels). A banner previews the renames before
+  they apply, and everything stays local until Save. Editing the opponents list
+  in League Settings works too, and now goes through the same path.
+- **Outside settings**: both rooms rewrite committed keeper picks' owner via
+  `updatePick`, which now carries `slot` (the backend PATCH already accepted it).
+- draft-order selftest 66 → 88.
+
 ## 2026-08 — Draft-order board replaces typing raw pick numbers
 - **Why**: traded picks were entered as overall pick numbers — "you own 1, 24,
   25, 48…", per team, in two text fields. That asks the user to do serpentine

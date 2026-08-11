@@ -12,6 +12,7 @@
 import {
   MY_TEAM, teamLabels, roundsFor, slotByTeam, baseOwners, currentOwners,
   picksByTeam, pickLabel, derivePickSettings, orderWarnings,
+  renameTeam, applyOpponentNames,
 } from "./draft-order.js";
 import { snakePicks } from "./snake-engine.js";
 
@@ -121,6 +122,54 @@ const stripped = currentOwners({ ...league, pickOwners: { 3: MY_TEAM, 4: MY_TEAM
 ok(orderWarnings(league, stripped).some((w) => w.includes("no picks")), "warn: a team left with nothing");
 ok(orderWarnings({ ...league, opponents: ["A", "B", "C"] }, baseOwners(league, R))
      .some((w) => w.includes("opponent names")), "warn: more opponents than teams");
+
+/* ── renaming a team carries every reference ──────────────────────── */
+const named = {
+  teams: 3, opponents: ["A", "B"], draftSlot: 2, roster: { BENCH: 4 },
+  teamSlots: { A: 1, B: 3 },
+  teamPicks: { A: [1, 6], B: [3, 4] },
+  pickOwners: { 1: MY_TEAM, 8: "A" },
+  keeperImport: { season: 2025, fetchedAt: "x", candidates: [
+    { name: "Player One", owner: "A" }, { name: "Player Two", owner: "B" },
+  ] },
+};
+const renamed = renameTeam(named, "A", "Team Chaos");
+eq(renamed.opponents, ["Team Chaos", "B"], "rename: opponents keeps its position (team_id)");
+eq(renamed.teamSlots, { "Team Chaos": 1, B: 3 }, "rename: teamSlots re-keyed");
+eq(renamed.teamPicks, { "Team Chaos": [1, 6], B: [3, 4] }, "rename: teamPicks re-keyed");
+eq(renamed.pickOwners, { 1: MY_TEAM, 8: "Team Chaos" }, "rename: pickOwners values follow");
+eq(renamed.keeperImport.candidates.map((c) => c.owner), ["Team Chaos", "B"],
+   "rename: keeper import owners follow");
+eq(named.opponents, ["A", "B"], "rename: original settings untouched (pure)");
+// The renamed team must still own exactly the picks it owned before.
+eq(picksByTeam(currentOwners(renamed, R))["Team Chaos"],
+   picksByTeam(currentOwners(named, R))["A"], "rename: keeps the same picks");
+
+// Rejections leave settings alone, so a caller can detect them by identity.
+ok(renameTeam(named, "A", "B") === named, "rename: refuses to collide with another team");
+ok(renameTeam(named, "A", "   ") === named, "rename: refuses an empty name");
+ok(renameTeam(named, "A", "A") === named, "rename: no-op returns the same object");
+ok(renameTeam(named, "Nobody", "X") === named, "rename: unknown team is a no-op");
+ok(renameTeam(named, MY_TEAM, "X") === named, "rename: your own team is not an opponent");
+// "Me" and MY_TEAM identify YOU in keeper picks and on the board; an opponent
+// taking either would be indistinguishable from your own team.
+ok(renameTeam(named, "A", "Me") === named, "rename: refuses the reserved name 'Me'");
+ok(renameTeam(named, "A", MY_TEAM) === named, "rename: refuses the reserved board id");
+
+/* ── bulk edit: position is identity ──────────────────────────────── */
+const bulk = applyOpponentNames(named, ["A2", "B"]);
+eq(bulk.renames, [{ from: "A", to: "A2" }], "bulk: one changed line is one rename");
+eq(bulk.settings.teamSlots, { A2: 1, B: 3 }, "bulk: keyed data follows the rename");
+eq(applyOpponentNames(named, ["A", "B"]).renames, [], "bulk: unchanged list renames nothing");
+// Growing the list adds a team; it is not a rename of anything.
+const grown = applyOpponentNames(named, ["A", "B", "C"]);
+eq(grown.renames, [], "bulk: an appended team is not a rename");
+eq(grown.settings.opponents, ["A", "B", "C"], "bulk: appended team kept");
+eq(grown.settings.teamSlots, named.teamSlots, "bulk: appending leaves existing keys alone");
+// Shrinking drops the tail without disturbing the survivors' keys.
+const shrunk = applyOpponentNames(named, ["A"]);
+eq(shrunk.settings.opponents, ["A"], "bulk: removed team dropped");
+eq(shrunk.settings.teamSlots, named.teamSlots, "bulk: survivors keep their slots");
 
 console.log(`\ndraft-order.selftest: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

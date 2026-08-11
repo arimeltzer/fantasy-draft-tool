@@ -10,7 +10,7 @@ import { LeagueSettings, ApiLeague } from "@/lib/api";
 import { useDraftStore } from "@/store/draftStore";
 import { usePatchLeague } from "@/hooks/useLeague";
 import { posStyle } from "@/lib/posStyles";
-import { isKeeper } from "@/lib/keeperPick";
+import { isKeeper, decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
 import BoardControls from "@/components/board/BoardControls";
 import ValueBar from "@/components/board/ValueBar";
 import BudgetTracker from "@/components/auction/BudgetTracker";
@@ -35,7 +35,7 @@ interface Props {
 export default function AuctionRoom({ league, settings, board, leagueId }: Props) {
   const nav = useNavigate();
   const patchLeague = usePatchLeague(leagueId);
-  const { picks, addPick, removePick } = useDraftStore();
+  const { picks, addPick, removePick, updatePick } = useDraftStore();
 
   const [query, setQuery] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
@@ -119,6 +119,20 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   }, [prices, addPick]);
 
   const undo = useCallback((pickId: number) => removePick(pickId), [removePick]);
+
+  /** Keepers tag their owner by name inside the pick's `slot` marker, which
+   *  lives in the DB rather than league settings, so a rename rewrites them
+   *  too — otherwise those keepers stop being attributed to their team. */
+  const renameTeamOnPicks = useCallback(async (renames: { from: string; to: string }[]) => {
+    if (!renames.length) return;
+    const byOld = new Map(renames.map((r) => [r.from, r.to]));
+    for (const pick of picks) {
+      const meta = decodeKeeper(pick.slot);
+      const next = meta && byOld.get(meta.owner);
+      if (!next) continue;
+      await updatePick(pick.pickId, { slot: encodeKeeper({ ...meta!, owner: next }) });
+    }
+  }, [picks, updatePick]);
 
   const resetDraft = () => {
     if (confirm("Clear the auction log? Keepers and settings stay.")) {
@@ -206,6 +220,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           onSave={(s) => patchLeague.mutate({ settings: s })}
           onClose={() => setShowSettings(false)}
           format="auction"
+          onRenames={renameTeamOnPicks}
         />
       )}
 

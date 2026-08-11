@@ -8,7 +8,7 @@ import { LeagueSettings, ApiLeague } from "@/lib/api";
 import { useDraftStore } from "@/store/draftStore";
 import { usePatchLeague } from "@/hooks/useLeague";
 import { posStyle } from "@/lib/posStyles";
-import { isKeeper } from "@/lib/keeperPick";
+import { isKeeper, decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
 import BoardControls from "@/components/board/BoardControls";
 import ValueBar from "@/components/board/ValueBar";
 import RosterPanel from "@/components/shared/RosterPanel";
@@ -33,7 +33,7 @@ interface Props {
 export default function SnakeRoom({ league, settings, board, leagueId }: Props) {
   const nav = useNavigate();
   const patchLeague = usePatchLeague(leagueId);
-  const { picks, addPick, removePick } = useDraftStore();
+  const { picks, addPick, removePick, updatePick } = useDraftStore();
 
   const [query, setQuery] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
@@ -107,6 +107,21 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
       poolSize: avail.length,
     };
   }, [board, draftedIds, minePlayers, needs, settings]);
+
+  /** Committed keepers store their owner's name inside the pick's `slot`
+   *  marker, which lives in the DB rather than league settings — so a rename
+   *  has to rewrite them too, or those keepers stop being attributed to the
+   *  team that holds them. */
+  const renameTeamOnPicks = useCallback(async (renames: { from: string; to: string }[]) => {
+    if (!renames.length) return;
+    const byOld = new Map(renames.map((r) => [r.from, r.to]));
+    for (const pick of picks) {
+      const meta = decodeKeeper(pick.slot);
+      const next = meta && byOld.get(meta.owner);
+      if (!next) continue;
+      await updatePick(pick.pickId, { slot: encodeKeeper({ ...meta!, owner: next }) });
+    }
+  }, [picks, updatePick]);
 
   const draft = useCallback((p: BoardPlayer, mine: boolean) => {
     addPick({ playerId: p.id as number, mine });
@@ -185,6 +200,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
           onClose={() => setShowSettings(false)}
           format="snake"
           onOpenDraftOrder={() => { setShowSettings(false); setShowOrder(true); }}
+          onRenames={renameTeamOnPicks}
         />
       )}
 
@@ -192,6 +208,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
         <DraftOrderBoard
           settings={settings}
           onSave={(s) => patchLeague.mutate({ settings: s })}
+          onRenames={renameTeamOnPicks}
           onClose={() => setShowOrder(false)}
         />
       )}

@@ -1,16 +1,19 @@
 import { useMemo, useState } from "react";
-import { X, ArrowLeftRight, RotateCcw, Check, AlertTriangle, ListOrdered } from "lucide-react";
+import { X, ArrowLeftRight, RotateCcw, Check, AlertTriangle, ListOrdered, Pencil } from "lucide-react";
 import {
   MY_TEAM, teamLabels, roundsFor, slotByTeam, baseOwners, currentOwners,
-  picksByTeam, pickLabel, derivePickSettings, orderWarnings,
+  picksByTeam, pickLabel, derivePickSettings, orderWarnings, renameTeam,
 } from "@/engine/draft-order.js";
-import type { PickOwners } from "@/engine/draft-order.js";
+import type { PickOwners, TeamRename } from "@/engine/draft-order.js";
 import { LeagueSettings } from "@/lib/api";
 
 interface Props {
   settings: LeagueSettings;
   onSave: (s: LeagueSettings) => void;
   onClose: () => void;
+  /** Renames applied on save, so data that lives outside league settings
+   *  (committed keeper picks tag their owner by name) can follow. */
+  onRenames?: (renames: TeamRename[]) => void;
 }
 
 /** Stable per-team tint so a traded pick is recognisable at a glance. */
@@ -37,25 +40,57 @@ const MINE_TINT = "bg-emerald-200 text-emerald-950 border-emerald-500 font-semib
  * way to check the result. Here the serpentine order is drawn for you and a
  * trade is one click: pick the cell, pick the new owner.
  */
-export default function DraftOrderBoard({ settings, onSave, onClose }: Props) {
-  const labels: string[] = useMemo(() => teamLabels(settings), [settings]);
+export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }: Props) {
+  // Working copy of everything. Edits stay local until Save, so a misclick — or
+  // a half-typed team name — is undone by closing without saving.
+  const [work, setWork] = useState<LeagueSettings>(settings);
+  const [renames, setRenames] = useState<TeamRename[]>([]);
+  const labels: string[] = useMemo(() => teamLabels(work), [work]);
   const teams = labels.length;
   const [rounds, setRounds] = useState<number>(() => roundsFor(settings));
   const slots: Record<string, number> = useMemo(() => slotByTeam(settings), [settings]);
 
-  // Working copy of the board. Edits stay local until Save, so a misclick is
-  // undoable by closing without saving.
   const [owners, setOwners] = useState<PickOwners>(() => currentOwners(settings, roundsFor(settings)));
   const [order, setOrder] = useState<Record<string, number>>(slots);
   const [selected, setSelected] = useState<number | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+
+  /** Commit an in-place team rename across the working board. Team names are
+   *  keys (seating, trades, keeper import), so every reference moves at once. */
+  const commitRename = (from: string) => {
+    const to = draftName.trim();
+    setEditing(null);
+    if (!to || to === from) return;
+    const next = renameTeam(work, from, to);
+    if (next === work) return;               // empty, colliding, or unknown — rejected
+    setWork(next);
+    setOrder((cur) => {
+      const out: Record<string, number> = {};
+      for (const [team, slot] of Object.entries(cur)) out[team === from ? to : team] = slot;
+      return out;
+    });
+    setOwners((cur) => {
+      const out: PickOwners = {};
+      for (const [pick, owner] of Object.entries(cur)) out[+pick] = owner === from ? to : owner;
+      return out;
+    });
+    // Chain renames so A->B->C reports as A->C, and re-renaming is not two hops.
+    setRenames((cur) => {
+      const prior = cur.find((r) => r.to === from);
+      return prior
+        ? cur.map((r) => (r.to === from ? { ...r, to } : r))
+        : [...cur, { from, to }];
+    });
+  };
 
   // Base ownership under the CURRENT slot assignment — recomputed as the base
   // order is edited, so "traded" always means "differs from the serpentine you
   // are looking at", not from some stale earlier order.
   const draft = useMemo(
-    () => ({ ...settings, teams, draftSlot: order[MY_TEAM],
+    () => ({ ...work, teams, draftSlot: order[MY_TEAM],
              teamSlots: Object.fromEntries(Object.entries(order).filter(([t]) => t !== MY_TEAM)) }),
-    [settings, teams, order],
+    [work, teams, order],
   );
   const base: PickOwners = useMemo(() => baseOwners(draft, rounds), [draft, rounds]);
 
@@ -79,7 +114,7 @@ export default function DraftOrderBoard({ settings, onSave, onClose }: Props) {
     setOrder(next);
     // Keep explicit trades, re-derive everything else from the new seating.
     const nextBase = baseOwners(
-      { ...settings, teams, draftSlot: next[MY_TEAM],
+      { ...work, teams, draftSlot: next[MY_TEAM],
         teamSlots: Object.fromEntries(Object.entries(next).filter(([t]) => t !== MY_TEAM)) },
       rounds);
     setOwners((cur) => {
@@ -118,8 +153,9 @@ export default function DraftOrderBoard({ settings, onSave, onClose }: Props) {
 
   const save = () => {
     const derived = derivePickSettings(draft, owners, rounds);
+    onRenames?.(renames);
     onSave({
-      ...settings,
+      ...work,
       draftSlot: order[MY_TEAM],
       teamSlots: Object.fromEntries(Object.entries(order).filter(([t]) => t !== MY_TEAM)),
       rounds,
@@ -183,20 +219,53 @@ export default function DraftOrderBoard({ settings, onSave, onClose }: Props) {
           </ul>
         )}
 
+        {renames.length > 0 && (
+          <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+            <span className="font-medium">Renaming on save:</span>{" "}
+            {renames.map((r) => `${r.from} → ${r.to}`).join(" · ")}
+            <span className="text-sky-700"> — seats, trades, keepers and the import all follow.</span>
+          </div>
+        )}
+
         {/* ── Base order: who drafts where in round 1 ─────────────── */}
         <section className="rounded-lg border border-gray-200 bg-gray-100 p-3">
           <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Round 1 order</h2>
           <p className="mt-0.5 mb-2 text-xs text-gray-500">
             Each team's seat. Changing one swaps it with whoever sits there; the board below
             re-flows serpentine around it, and any trades you've made stay put.
+            Click a name to rename that team — the new name follows its seat, trades and keepers.
           </p>
           <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
             {labels.slice().sort((a, b) => order[a] - order[b]).map((team) => (
               <div key={team} className="flex items-center gap-2 text-xs">
                 <span className="w-5 shrink-0 text-right font-mono text-gray-400">{order[team]}.</span>
-                <span className={`min-w-0 flex-1 truncate rounded border px-1.5 py-0.5 ${tintOf(team)}`} title={nameOf(team)}>
-                  {nameOf(team)}
-                </span>
+                {editing === team ? (
+                  <input
+                    autoFocus
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    onBlur={() => commitRename(team)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitRename(team);
+                      if (e.key === "Escape") setEditing(null);
+                    }}
+                    className="min-w-0 flex-1 rounded border border-gray-400 bg-gray-50 px-1.5 py-0.5 text-gray-800 focus:border-gray-500 focus:outline-none"
+                  />
+                ) : team === MY_TEAM ? (
+                  // Your own team has no name to edit — it's always "You".
+                  <span className={`min-w-0 flex-1 truncate rounded border px-1.5 py-0.5 ${tintOf(team)}`}>
+                    You
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => { setEditing(team); setDraftName(team); }}
+                    title={`Rename "${team}"`}
+                    className={`group flex min-w-0 flex-1 items-center gap-1 truncate rounded border px-1.5 py-0.5 text-left ${tintOf(team)} hover:brightness-95`}
+                  >
+                    <span className="truncate">{team}</span>
+                    <Pencil className="ml-auto h-2.5 w-2.5 shrink-0 opacity-0 transition group-hover:opacity-60" />
+                  </button>
+                )}
                 <select
                   value={order[team]}
                   onChange={(e) => setSlot(team, parseInt(e.target.value, 10))}

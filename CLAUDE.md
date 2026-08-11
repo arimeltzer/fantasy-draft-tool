@@ -202,6 +202,14 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   permutation), the full pick grid where clicking a pick reassigns it, and a
   picks-by-team summary. League Settings only links to it.
 - **Rounds**: `settings.rounds`, defaulting to one per roster spot (`roundsFor`).
+- **Renaming a team**: names are KEYS (`teamSlots`, `teamPicks`, `keeperImport`
+  candidates) and values (`pickOwners`), and committed keeper `DraftPick` rows
+  tag their owner by name in `slot`. `renameTeam()` carries all of it and keeps
+  the team's index in `opponents` (that index is `DraftPick.team_id`);
+  `applyOpponentNames()` does the same for a bulk edit, treating list position
+  as identity. Rejected renames return the same object (empty / colliding /
+  reserved `"Me"`). UI: click a name on the board, or edit League Settings —
+  both rooms then rewrite keeper picks through `updatePick({ slot })`.
 - Node-tested (`draft-order.selftest.mjs`, 66 assertions) — the load-bearing one
   is that an untouched board equals `snakePicks()` for every team at 8/10/12
   teams, so the new authoring surface can't drift from the existing pick math.

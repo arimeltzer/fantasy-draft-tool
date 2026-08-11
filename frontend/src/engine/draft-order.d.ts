@@ -31,3 +31,17 @@ export declare function derivePickSettings(
   teamPicks: Record<string, number[]> | undefined;
 };
 export declare function orderWarnings(settings: OrderSettings, owners: PickOwners): string[];
+
+/** A team rename, as applied to everything keyed by the old name. */
+export interface TeamRename { from: string; to: string }
+
+/** Rename a team everywhere (opponents, teamSlots, teamPicks, pickOwners,
+ *  keeperImport). Returns the SAME object when rejected (empty, colliding,
+ *  unknown, or a no-op), so callers can detect that by identity. */
+export declare function renameTeam<T extends OrderSettings>(settings: T, from: string, to: string): T;
+
+/** Apply an edited opponents list, treating list position as team identity
+ *  (position = DraftPick.team_id), so a changed entry is a rename. */
+export declare function applyOpponentNames<T extends OrderSettings>(
+  settings: T, nextNames: string[],
+): { settings: T; renames: TeamRename[] };
