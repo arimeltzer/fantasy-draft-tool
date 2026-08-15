@@ -14,6 +14,8 @@
 import { api } from "@/lib/api";
 
 const KEY = "fantasy_yahoo";
+/** Same-tab counterpart to the `storage` event, which only fires elsewhere. */
+const SESSION_EVENT = "fantasy-yahoo-session";
 /** Refresh this long before expiry so a call in flight can't age out. */
 const SKEW_MS = 120_000;
 
@@ -46,11 +48,30 @@ export function saveYahooSession(t: {
     expiresAt: Date.now() + (Number(t.expires_in) || 3600) * 1000,
   };
   localStorage.setItem(KEY, JSON.stringify(session));
+  window.dispatchEvent(new Event(SESSION_EVENT));
   return session;
 }
 
 export function clearYahooSession() {
   localStorage.removeItem(KEY);
+  window.dispatchEvent(new Event(SESSION_EVENT));
+}
+
+/**
+ * Watch for the session appearing or being cleared, including from ANOTHER
+ * tab — the OAuth redirect completes in the tab Yahoo opened, while the import
+ * dialog is still sitting in the original one. `storage` only fires in other
+ * tabs, so same-tab writes dispatch a matching custom event.
+ */
+export function onYahooSession(cb: (s: YahooSession | null) => void): () => void {
+  const fire = () => cb(loadYahooSession());
+  const onStorage = (e: StorageEvent) => { if (e.key === KEY || e.key === null) fire(); };
+  window.addEventListener("storage", onStorage);
+  window.addEventListener(SESSION_EVENT, fire);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener(SESSION_EVENT, fire);
+  };
 }
 
 export function yahooConnected(): boolean {

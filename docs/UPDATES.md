@@ -6,6 +6,25 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Fix: "Authorize with Yahoo" appeared to do nothing
+- **Symptom**: clicking Authorize opened a tab, you approved, and landed back on
+  the create-a-league screen as if nothing had happened.
+- **Cause**: Yahoo's redirect URI is the app itself, so consent returns to a
+  normal app screen with `?code=…` on the URL. Nothing read it. The only
+  instruction to copy that code by hand was in a modal in the *other* tab, and
+  the returned-to tab just looked like a fresh app.
+- **Fix**: `YahooCallback` at the app root finishes the handshake — exchanges
+  the code, stores the session, strips the query (a spent code must not replay
+  on refresh), and reports the outcome. `started` guards against exchanging a
+  single-use code twice under StrictMode's double-invoke.
+- The import dialog is usually still open in the ORIGINAL tab, so
+  `onYahooSession()` notifies it: `storage` fires cross-tab, and a custom event
+  covers same-tab writes. The dialog fills in its league list on its own.
+- Manual code entry stays as the fallback, relabelled as such, and both panels
+  now seed from an existing session instead of demanding a fresh consent.
+- A declined authorization (`?error=`) surfaces Yahoo's own reason instead of
+  failing silently.
+
 ## 2026-08 — Live draft sync (ESPN + Yahoo)
 - **What it is**: follow a draft that's happening right now and log picks
   automatically, instead of typing every one. "Live" button in both rooms.

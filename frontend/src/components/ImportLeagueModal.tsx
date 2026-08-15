@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { X, Loader2, Check, AlertTriangle, ChevronRight } from "lucide-react";
-import { saveYahooSession } from "@/lib/yahooAuth";
+import { saveYahooSession, loadYahooSession, onYahooSession } from "@/lib/yahooAuth";
 import { api, ImportReport, YahooPasteReport } from "@/lib/api";
 
 interface Props {
@@ -35,8 +35,8 @@ export default function ImportLeagueModal({ onClose }: Props) {
   // Yahoo
   const [yahooKey, setYahooKey] = useState("");
   const [yahooCode, setYahooCode] = useState("");
-  const [accessToken, setAccessToken] = useState("");
-  const [guid, setGuid] = useState("");
+  const [accessToken, setAccessToken] = useState(() => loadYahooSession()?.accessToken ?? "");
+  const [guid, setGuid] = useState(() => loadYahooSession()?.guid ?? "");
   const [connecting, setConnecting] = useState(false);
   const [yahooList, setYahooList] = useState<{ key: string; name: string; season: number; num_teams: number }[]>([]);
 
@@ -55,6 +55,20 @@ export default function ImportLeagueModal({ onClose }: Props) {
       setError(e instanceof Error ? e.message : "Could not start Yahoo connect");
     }
   };
+
+  // The consent tab completes the handshake and stores the session; pick it up
+  // here so this dialog — left open in the original tab — moves on by itself.
+  useEffect(() => onYahooSession((sess) => {
+    if (!sess?.accessToken) { setAccessToken(""); setGuid(""); return; }
+    setAccessToken(sess.accessToken);
+    setGuid(sess.guid ?? "");
+    api.yahooLeagues(sess.accessToken)
+      .then(({ leagues }) => {
+        setYahooList(leagues);
+        if (leagues.length === 1) setYahooKey(leagues[0].key);
+      })
+      .catch(() => { /* the manual "Reload my leagues" button covers this */ });
+  }), []);
 
   const exchangeYahoo = async () => {
     setError(""); setConnecting(true);
@@ -311,8 +325,13 @@ export default function ImportLeagueModal({ onClose }: Props) {
                 <button onClick={() => setYahooMode("paste")} className="w-full text-left text-2xs text-brand hover:underline">
                   ← No API access? Import by pasting your league pages instead
                 </button>
-                <button onClick={connectYahoo} className="btn-ghost w-full py-2 text-xs">1. Authorize with Yahoo (opens a tab)</button>
-                <Field label="2. Paste the code Yahoo gives you" hint="from the redirect URL">
+                <button onClick={connectYahoo} className="btn-ghost w-full py-2 text-xs">Authorize with Yahoo (opens a tab)</button>
+                <p className="text-2xs leading-snug text-faint">
+                  Approve access in the new tab. It returns to this app and connects itself —
+                  come back here and your leagues will be listed. Only paste a code below if
+                  that tab shows an error.
+                </p>
+                <Field label="Paste the code manually (fallback)" hint="the code=… value in the redirect URL">
                   <div className="flex gap-2">
                     <input className="field font-mono text-xs" value={yahooCode} onChange={(e) => setYahooCode(e.target.value)} placeholder="auth code" />
                     <button onClick={exchangeYahoo} disabled={!yahooCode.trim() || connecting} className="btn-ghost px-3 text-xs">

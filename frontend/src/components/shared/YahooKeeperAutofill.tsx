@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link2, Loader2, AlertTriangle, Check, ChevronDown, LogOut } from "lucide-react";
 import { api, KeeperCandidate, KeeperImportCache } from "@/lib/api";
 import {
-  loadYahooSession, saveYahooSession, clearYahooSession, yahooAccessToken,
+  loadYahooSession, saveYahooSession, clearYahooSession, yahooAccessToken, onYahooSession,
 } from "@/lib/yahooAuth";
 
 interface Props {
@@ -48,6 +48,10 @@ export default function YahooKeeperAutofill({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restored]);
+
+  // The consent tab finishes the handshake itself, so reflect that here rather
+  // than waiting for a code to be pasted into this panel.
+  useEffect(() => onYahooSession(setSession), []);
 
   const connect = async () => {
     setError(null);
@@ -151,11 +155,15 @@ export default function YahooKeeperAutofill({
                 season's draft results and waiver claims — no copying pages.
               </p>
               <button onClick={connect} className="btn-brand w-full justify-center px-3 py-1.5 text-xs">
-                1. Open Yahoo consent
+                Open Yahoo consent
               </button>
+              <p className="text-2xs leading-snug text-faint">
+                Approve in the new tab; it connects itself and this panel updates. The box below
+                is only needed if that tab reports an error.
+              </p>
               <label className="block text-xs">
                 <span className="mb-1 block text-muted">
-                  2. Paste the code Yahoo shows you <span className="text-faint">(from the redirect URL)</span>
+                  Paste the code manually <span className="text-faint">(fallback)</span>
                 </span>
                 <div className="flex gap-2">
                   <input

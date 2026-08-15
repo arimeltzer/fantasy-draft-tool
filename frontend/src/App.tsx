@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { getToken } from "@/lib/api";
+import YahooCallback from "@/components/YahooCallback";
 import Login from "@/pages/Login";
 import LeagueList from "@/pages/LeagueList";
 import LeagueRoom from "@/pages/LeagueRoom";
@@ -12,6 +13,9 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
+      {/* Yahoo's redirect lands on a normal app screen with ?code= — finish
+          the handshake there instead of making the user copy it out. */}
+      <YahooCallback />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route
