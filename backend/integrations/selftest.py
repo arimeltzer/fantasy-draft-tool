@@ -14,7 +14,7 @@ import json
 
 from .base import NormLeague, NormPlayer, NormTeam, opponent_team_ids
 from .matching import build_index, match_player, keeper_candidates
-from . import espn, yahoo, yahoo_paste
+from . import espn, live, yahoo, yahoo_paste
 
 
 def test_matching():
@@ -380,6 +380,108 @@ def test_yahoo_keeper():
     assert yahoo.parse_keeper_flags({}) == {}
 
 
+def test_live_draft():
+    """Live sync joins the DRAFT endpoint (order/owner/price) to the ROSTER
+    endpoint (names) on both platforms, because neither alone identifies who
+    was taken. Mid-draft the two views disagree briefly — a pick whose player
+    hasn't hit a roster yet must be skipped, not logged as an unknown."""
+
+    # ── ESPN ─────────────────────────────────────────────────────────
+    espn_data = {
+        "id": 42,
+        "settings": {"name": "L", "size": 2,
+                     "scoringSettings": {"scoringItems": []},
+                     "draftSettings": {"type": "SNAKE"},
+                     "rosterSettings": {"lineupSlotCounts": {"0": 1, "20": 2}}},
+        "teams": [
+            {"id": 1, "name": "Team Ari", "roster": {"entries": [
+                {"playerPoolEntry": {"player": {"id": 11, "fullName": "Patrick Mahomes",
+                                                "defaultPositionId": 1, "proTeamId": 12}}},
+            ]}},
+            {"id": 2, "name": "Rivals", "roster": {"entries": [
+                {"playerPoolEntry": {"player": {"id": 22, "fullName": "A.J. Brown",
+                                                "defaultPositionId": 3, "proTeamId": 21}}},
+            ]}},
+        ],
+        "draftDetail": {"inProgress": True, "picks": [
+            {"playerId": 22, "teamId": 2, "roundId": 1, "roundPickNumber": 1, "overallPickNumber": 1},
+            {"playerId": 11, "teamId": 1, "roundId": 1, "roundPickNumber": 2, "overallPickNumber": 2},
+            # just taken — not on a roster in this payload yet
+            {"playerId": 99, "teamId": 2, "roundId": 2, "roundPickNumber": 1, "overallPickNumber": 3},
+        ]},
+    }
+    st = espn.parse_live_draft(espn_data, my_team="Team Ari")
+    assert [p.overall for p in st.picks] == [1, 2], "ordered, and the unresolved pick is skipped"
+    assert st.picks[0].name == "A.J. Brown" and st.picks[0].owner == "Rivals"
+    assert st.picks[0].is_mine is False
+    assert st.picks[1].name == "Patrick Mahomes" and st.picks[1].is_mine is True
+    assert st.fmt == "snake" and st.meta["in_progress"] is True
+    assert st.meta["drafted"] == 3 and st.meta["resolved"] == 2
+    # Two contiguous picks are in, so pick 3 is on the clock.
+    assert st.complete_through == 2
+
+    # overallPickNumber missing -> derived from round + pick and league size
+    derived = espn.parse_live_draft({**espn_data, "draftDetail": {"picks": [
+        {"playerId": 11, "teamId": 1, "roundId": 2, "roundPickNumber": 2},
+    ]}})
+    assert derived.picks[0].overall == 4, derived.picks[0].overall   # (2-1)*2 + 2
+
+    # An auction draft carries the price through.
+    auc = espn.parse_live_draft({**espn_data, "draftDetail": {"picks": [
+        {"playerId": 11, "teamId": 1, "overallPickNumber": 1, "bidAmount": 55},
+    ]}})
+    assert auc.fmt == "auction" and auc.picks[0].bid == 55
+
+    # ── Yahoo ────────────────────────────────────────────────────────
+    def yplayer(pid, name, pos="WR"):
+        return {"player": [[{"player_key": f"449.p.{pid}"}, {"player_id": pid},
+                            {"name": {"full": name}}, {"editorial_team_abbr": "phi"},
+                            {"display_position": pos}]]}
+    teams_json = {"fantasy_content": {"league": [
+        {"league_key": "449.l.1"},
+        {"teams": {"count": 2,
+            "0": {"team": [
+                [{"team_key": "449.l.1.t.1"}, {"name": "Team Ari"},
+                 {"managers": {"0": {"manager": {"guid": "MEGUID"}}}}],
+                {"roster": {"0": {"players": {"count": 1, "0": yplayer("11", "Bijan Robinson", "RB")}}}},
+            ]},
+            "1": {"team": [
+                [{"team_key": "449.l.1.t.2"}, {"name": "Rivals"}],
+                {"roster": {"0": {"players": {"count": 1, "0": yplayer("22", "A.J. Brown")}}}},
+            ]},
+        }},
+    ]}}
+    draft_json = {"fantasy_content": {"league": [
+        {"league_key": "449.l.1"},
+        {"draft_results": {"count": 3,
+            "0": {"draft_result": {"pick": 1, "round": 1, "team_key": "449.l.1.t.2",
+                                   "player_key": "449.p.22"}},
+            "1": {"draft_result": {"pick": 2, "round": 1, "team_key": "449.l.1.t.1",
+                                   "player_key": "449.p.11"}},
+            # drafted but not yet on a roster in this snapshot
+            "2": {"draft_result": {"pick": 3, "round": 2, "team_key": "449.l.1.t.1",
+                                   "player_key": "449.p.99"}},
+        }},
+    ]}}
+    ys = yahoo.parse_live_draft(draft_json, teams_json, my_guid="MEGUID")
+    assert [p.overall for p in ys.picks] == [1, 2], [p.overall for p in ys.picks]
+    assert ys.picks[0].name == "A.J. Brown" and ys.picks[0].owner == "Rivals"
+    assert ys.picks[1].name == "Bijan Robinson" and ys.picks[1].pos == "RB"
+    assert ys.picks[1].owner == "Team Ari" and ys.picks[1].is_mine is True
+    assert ys.meta == {"drafted": 3, "resolved": 2}, ys.meta
+    assert ys.complete_through == 2
+
+    # Empty board before the draft starts: valid, just nothing to log.
+    empty = yahoo.parse_live_draft({}, teams_json, my_guid="MEGUID")
+    assert empty.picks == [] and empty.complete_through == 0
+    assert espn.parse_live_draft({}).picks == []
+
+    # A gap (platform published 1 and 3 but not 2) must not claim 3 is done.
+    gapped = live.LiveDraftState(picks=[live.LivePick(overall=1, name="A"),
+                                        live.LivePick(overall=3, name="C")])
+    assert gapped.complete_through == 1
+
+
 def test_yahoo_leagues():
     data = {"fantasy_content": {"users": {"count": 1, "0": {"user": [
         {"guid": "MEGUID"},
@@ -406,6 +508,7 @@ def main():
     test_keeper_candidates(); print("✓ keeper candidates")
     test_yahoo(); print("✓ yahoo parse")
     test_yahoo_keeper(); print("✓ yahoo keeper inputs")
+    test_live_draft(); print("✓ live draft sync")
     test_yahoo_leagues(); print("✓ yahoo leagues list")
     test_waiver_weekly_fetch(); print("✓ waiver weekly fetch")
     test_yahoo_paste(); print("✓ yahoo paste import")

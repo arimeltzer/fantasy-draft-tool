@@ -19,7 +19,7 @@ from models import (
     Schedule, SosMult, User,
 )
 from integrations import espn as espn_provider, yahoo as yahoo_provider, yahoo_paste
-from integrations.base import opponent_team_ids
+from integrations.base import NormPlayer, opponent_team_ids
 from integrations.matching import build_index, match_player, keeper_candidates
 
 load_dotenv()
@@ -847,6 +847,113 @@ async def yahoo_leagues(body: YahooToken, _: User = Depends(get_current_user)) -
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Yahoo leagues fetch failed: {e}")
     return {"leagues": leagues}
+
+
+# ── Live draft sync ───────────────────────────────────────────────────────────
+
+class LiveDraftRequest(BaseModel):
+    """Poll a draft that is happening right now and log any new picks.
+
+    Neither platform exposes its draft-room socket, so this is polling: the
+    client calls it on an interval while the draft runs."""
+    provider: Literal["espn", "yahoo"]
+    ext_id: str                       # ESPN leagueId, or Yahoo league_key
+    season: int = 2026
+    match_season: int = 2026          # player pool the picks map onto
+    access_token: Optional[str] = None    # yahoo
+    my_guid: Optional[str] = None         # yahoo
+    espn_s2: Optional[str] = None
+    swid: Optional[str] = None
+    my_team: Optional[str] = None         # espn team id/name to flag as yours
+    apply: bool = True                # False = preview only, log nothing
+
+
+@app.post("/api/leagues/{league_id}/sync-draft")
+async def sync_draft(
+    league_id: int,
+    data: LiveDraftRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(db_dep),
+) -> dict:
+    """Fetch the live draft board and add picks we don't already have.
+
+    Idempotent by PLAYER, not by pick number: a player is drafted exactly once,
+    so re-polling can never duplicate a pick, and keepers already logged are
+    left alone instead of being re-added when the platform lists them among the
+    draft results. The platform's own overall pick number is preserved, so the
+    draft log reads in true draft order.
+    """
+    league = await _get_league_owned(league_id, user.id, db)
+
+    try:
+        if data.provider == "yahoo":
+            if not data.access_token:
+                raise HTTPException(status_code=400, detail="Yahoo access token required.")
+            state = await yahoo_provider.fetch_live_draft(
+                data.ext_id, data.access_token, my_guid=data.my_guid)
+        else:
+            norm_data = await espn_provider.fetch_raw_league(
+                data.ext_id, data.season, espn_s2=data.espn_s2, swid=data.swid)
+            state = espn_provider.parse_live_draft(norm_data, my_team=data.my_team)
+    except PermissionError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001 — surface provider errors cleanly
+        raise HTTPException(status_code=502, detail=f"{data.provider} draft fetch failed: {e}")
+
+    rows = (await db.execute(
+        select(Player.id, Player.name, Player.pos, Player.team).where(Player.season == data.match_season)
+    )).all()
+    if not rows:
+        raise HTTPException(status_code=409, detail=f"No players loaded for season {data.match_season}.")
+    index = build_index([{"id": r.id, "name": r.name, "pos": r.pos, "team": r.team} for r in rows])
+
+    existing = (await db.execute(
+        select(DraftPick.player_id).where(DraftPick.league_id == league_id)
+    )).scalars().all()
+    have = {pid for pid in existing if pid is not None}
+
+    settings = league.settings or {}
+    opponents = settings.get("opponents") or []
+    team_id_by_name = {name: i for i, name in enumerate(opponents)}
+
+    added, unmatched, skipped = [], [], 0
+    for lp in state.picks:
+        pid = match_player(index, NormPlayer(name=lp.name, pos=lp.pos, team=lp.team))
+        if pid is None:
+            unmatched.append(f"{lp.name} ({lp.pos or '?'})")
+            continue
+        if pid in have:
+            skipped += 1
+            continue
+        if data.apply:
+            db.add(DraftPick(
+                league_id=league_id, player_id=pid, overall_pick=lp.overall,
+                mine=lp.is_mine,
+                team_id=None if lp.is_mine else team_id_by_name.get(lp.owner or ""),
+                price=lp.bid, slot=None,
+            ))
+        have.add(pid)
+        added.append({"overall": lp.overall, "name": lp.name, "pos": lp.pos,
+                      "owner": "Me" if lp.is_mine else lp.owner, "price": lp.bid})
+    if data.apply and added:
+        await db.commit()
+
+    return {
+        "provider": data.provider,
+        "fmt": state.fmt,
+        "on_the_clock": state.complete_through + 1,
+        "added": added,
+        "added_count": len(added),
+        "already_had": skipped,
+        # Names the pool doesn't contain (rookies not yet loaded, DST naming, …).
+        # Reported, never silently dropped — an unlogged pick would corrupt the
+        # board's idea of who is still available.
+        "unmatched": unmatched,
+        "meta": state.meta,
+        "applied": data.apply,
+    }
 
 
 # ── Draft picks ───────────────────────────────────────────────────────────────

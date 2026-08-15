@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, X, Lock, ListOrdered } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, X, Lock, ListOrdered, Radio } from "lucide-react";
 import { myPickNumbers, rankByAdp } from "@/engine/snake-engine.js";
 import { roundsFor } from "@/engine/draft-order.js";
 import type { BoardPlayer, SnakeLiveState } from "@/engine/snake-engine.js";
@@ -16,6 +16,7 @@ import CommonOpponentsPopover from "@/components/shared/CommonOpponentsPopover";
 import KeeperPlanner from "@/components/shared/KeeperPlanner";
 import DraftOverview from "@/components/shared/DraftOverview";
 import DraftLogModal from "@/components/shared/DraftLogModal";
+import LiveDraftPanel from "@/components/shared/LiveDraftPanel";
 import DraftOrderBoard from "@/components/shared/DraftOrderBoard";
 import Tip from "@/components/shared/Tip";
 import PickClock from "./PickClock";
@@ -33,7 +34,7 @@ interface Props {
 export default function SnakeRoom({ league, settings, board, leagueId }: Props) {
   const nav = useNavigate();
   const patchLeague = usePatchLeague(leagueId);
-  const { picks, addPick, removePick, updatePick } = useDraftStore();
+  const { picks, addPick, removePick, updatePick, hydrate } = useDraftStore();
 
   const [query, setQuery] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
@@ -41,6 +42,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   const [showSettings, setShowSettings] = useState(false);
   const [showKeepers, setShowKeepers] = useState(false);
   const [showLog, setShowLog] = useState(false);
+  const [showLive, setShowLive] = useState(false);
   const [showOrder, setShowOrder] = useState(false);
 
   const draftedIds = useMemo(() => new Set(picks.map((p) => p.playerId).filter(Boolean) as number[]), [picks]);
@@ -171,6 +173,13 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
               myPicks={myPickNums}
             />
             <button
+              onClick={() => setShowLive(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300"
+              title="Follow the draft on ESPN/Yahoo and log picks automatically"
+            >
+              <Radio className="w-3.5 h-3.5" /> Live
+            </button>
+            <button
               onClick={() => { setShowOrder(true); setShowSettings(false); setShowKeepers(false); }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300"
               title="The full draft order, with traded picks"
@@ -201,6 +210,15 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
           format="snake"
           onOpenDraftOrder={() => { setShowSettings(false); setShowOrder(true); }}
           onRenames={renameTeamOnPicks}
+        />
+      )}
+
+      {showLive && (
+        <LiveDraftPanel
+          leagueId={leagueId}
+          settings={settings}
+          onPicks={() => void hydrate(leagueId)}
+          onClose={() => setShowLive(false)}
         />
       )}
 

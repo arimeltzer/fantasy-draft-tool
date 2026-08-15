@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
-import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock, RotateCcw } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock, RotateCcw, Radio } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   auctionValues, applyInflation, maxBid,
@@ -22,6 +22,7 @@ import CommonOpponentsPopover from "@/components/shared/CommonOpponentsPopover";
 import KeeperPlanner from "@/components/shared/KeeperPlanner";
 import DraftOverview from "@/components/shared/DraftOverview";
 import DraftLogModal from "@/components/shared/DraftLogModal";
+import LiveDraftPanel from "@/components/shared/LiveDraftPanel";
 import Tip from "@/components/shared/Tip";
 import SettingsDrawer from "./SettingsDrawer";
 
@@ -35,7 +36,7 @@ interface Props {
 export default function AuctionRoom({ league, settings, board, leagueId }: Props) {
   const nav = useNavigate();
   const patchLeague = usePatchLeague(leagueId);
-  const { picks, addPick, removePick, updatePick } = useDraftStore();
+  const { picks, addPick, removePick, updatePick, hydrate } = useDraftStore();
 
   const [query, setQuery] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
@@ -44,6 +45,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   const [showSettings, setShowSettings] = useState(false);
   const [showKeepers, setShowKeepers] = useState(false);
   const [showLog, setShowLog] = useState(false);
+  const [showLive, setShowLive] = useState(false);
 
   const rosterSize = useMemo(() => {
     const r = settings.roster;
@@ -204,6 +206,13 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           </div>
           <div className="ml-auto flex items-center gap-2 text-xs">
             <InflationBadge factor={inflation.factor} />
+            <button
+              onClick={() => setShowLive(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300"
+              title="Follow the draft on ESPN/Yahoo and log picks automatically"
+            >
+              <Radio className="w-3.5 h-3.5" /> Live
+            </button>
             <button onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); }} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300">
               <Lock className="w-3.5 h-3.5" /> Keepers
             </button>
@@ -213,6 +222,15 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           </div>
         </div>
       </header>
+
+      {showLive && (
+        <LiveDraftPanel
+          leagueId={leagueId}
+          settings={settings}
+          onPicks={() => void hydrate(leagueId)}
+          onClose={() => setShowLive(false)}
+        />
+      )}
 
       {showSettings && (
         <SettingsDrawer

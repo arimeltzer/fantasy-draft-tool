@@ -18,6 +18,7 @@ import json
 import httpx
 
 from .base import DEFAULT_ROSTER, NormLeague, NormPlayer, NormTeam, make_settings
+from .live import LiveDraftState, LivePick, order_picks
 
 READ_HOST = "https://lm-api-reads.fantasy.espn.com"
 VIEWS = ("mSettings", "mTeam", "mRoster", "mDraftDetail")
@@ -340,12 +341,89 @@ def parse_teams(data: dict, my_team: str | None) -> list[NormTeam]:
     return out
 
 
+def parse_live_draft(data: dict, my_team: str | None = None) -> LiveDraftState:
+    """Join `draftDetail.picks` (order/owner/price) to the rosters (names).
+
+    `mDraftDetail` fills in as the draft runs, but identifies players only by
+    ESPN's numeric id, so names come from the roster entries — a drafted player
+    is on a roster. A pick whose player hasn't appeared on a roster yet (the
+    two views briefly disagreeing mid-draft) is skipped; the next poll gets it.
+    """
+    teams_by_id = {t.get("id"): _team_name(t) for t in data.get("teams", []) or []}
+    mine_key = (my_team or "").strip().lower()
+    mine_ids = {
+        t.get("id") for t in data.get("teams", []) or []
+        if mine_key and mine_key in (str(t.get("id")).lower(), _team_name(t).lower())
+    }
+
+    players: dict[int, dict] = {}
+    for t in data.get("teams", []) or []:
+        for entry in (t.get("roster", {}) or {}).get("entries", []) or []:
+            pl = (entry.get("playerPoolEntry", {}) or {}).get("player", {}) or {}
+            if pl.get("id") is not None:
+                players[pl["id"]] = {
+                    "name": pl.get("fullName", "") or "",
+                    "pos": POS.get(pl.get("defaultPositionId"), ""),
+                    "team": PRO_TEAM.get(pl.get("proTeamId"), ""),
+                }
+
+    size = int((data.get("settings", {}) or {}).get("size") or 0)
+    picks: list[LivePick] = []
+    for p in (data.get("draftDetail", {}) or {}).get("picks", []) or []:
+        pl = players.get(p.get("playerId"))
+        if not pl or not pl["name"]:
+            continue
+        overall = p.get("overallPickNumber")
+        if not overall and size and p.get("roundId") and p.get("roundPickNumber"):
+            overall = (int(p["roundId"]) - 1) * size + int(p["roundPickNumber"])
+        if not overall:
+            continue
+        tid = p.get("teamId")
+        picks.append(LivePick(
+            overall=int(overall),
+            name=pl["name"], pos=pl["pos"], team=pl["team"],
+            round=int(p["roundId"]) if p.get("roundId") else None,
+            owner=teams_by_id.get(tid),
+            is_mine=tid in mine_ids,
+            bid=int(p["bidAmount"]) if p.get("bidAmount") is not None else None,
+        ))
+
+    state = LiveDraftState(picks=order_picks(picks),
+                           fmt="auction" if any(p.bid for p in picks) else "snake")
+    state.meta = {"drafted": len((data.get("draftDetail", {}) or {}).get("picks", []) or []),
+                  "resolved": len(picks),
+                  "in_progress": bool((data.get("draftDetail", {}) or {}).get("inProgress"))}
+    return state
+
+
 def parse_league(data: dict, season: int, my_team: str | None = None) -> NormLeague:
     settings, fmt = parse_settings(data)
     teams = parse_teams(data, my_team)
     name = (data.get("settings", {}) or {}).get("name") or f"ESPN League {data.get('id', '')}"
     return NormLeague(provider="espn", ext_id=str(data.get("id", "")), name=name,
                       season=season, fmt=fmt, settings=settings, teams=teams)
+
+
+async def fetch_raw_league(league_id: str, season: int, espn_s2: str | None = None,
+                          swid: str | None = None, ca_bundle: str | None = None) -> dict:
+    """One request for the league payload — settings, teams, rosters, draft.
+
+    Deliberately NOT `fetch_league`: that also sweeps 18 weeks of transactions
+    for keeper waiver costs, which is right once and abusive on a poll loop.
+    Live sync needs only the draft board, so it pays for exactly one call.
+    """
+    cookies = {}
+    if espn_s2 and swid:
+        cookies = {"espn_s2": espn_s2, "SWID": swid if swid.startswith("{") else "{" + swid + "}"}
+    verify = ca_bundle if ca_bundle else True
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True, trust_env=True,
+                                 verify=verify, cookies=cookies, headers=SITE_HEADERS) as client:
+        resp = await client.get(league_url(league_id, season))
+        if resp.status_code in (401, 403):
+            raise PermissionError("ESPN league is private — espn_s2 and SWID cookies required.")
+        resp.raise_for_status()
+        data = resp.json()
+    return data[0] if isinstance(data, list) and data else data
 
 
 async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,

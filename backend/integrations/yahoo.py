@@ -20,6 +20,7 @@ import os
 import httpx
 
 from .base import NormLeague, NormPlayer, NormTeam, make_settings
+from .live import LiveDraftState, LivePick, order_picks
 
 AUTH_URL = "https://api.login.yahoo.com/oauth2/request_auth"
 TOKEN_URL = "https://api.login.yahoo.com/oauth2/get_token"
@@ -484,6 +485,89 @@ async def fetch_league(league_key: str, access_token: str, my_guid: str | None =
         "raw": raw_stats,
     }
     return lg
+
+
+def parse_live_draft(draft_json, teams_json, my_guid: str | None = None) -> LiveDraftState:
+    """Join Yahoo's draft results (order/owner/price) to the rosters (names).
+
+    `draftresults` identifies players only by `player_key`, so on its own it
+    can't say WHO was taken. Rosters carry the names, and a drafted player
+    lands on a roster, so the two together give a complete pick list. A pick
+    whose player isn't on any roster yet (the platform lagging between the two
+    endpoints) is skipped rather than logged as an unknown player — the next
+    poll picks it up.
+    """
+    draft = parse_draft_results(draft_json)
+
+    teams_node = None
+    tn = (teams_json.get("fantasy_content") or {}).get("league")
+    if isinstance(tn, list) and len(tn) > 1:
+        teams_node = flatten(tn[1]).get("teams")
+    teams = parse_teams(teams_node, my_guid) if teams_node else []
+    names_by_key = team_names_by_key(teams_node) if teams_node else {}
+
+    # player_id -> the NormPlayer already parsed off the roster.
+    by_id: dict[str, tuple] = {}
+    for tk, tv in flatten(teams_node or {}).items():
+        if tk == "count" or not isinstance(tv, dict):
+            continue
+        tnode = tv.get("team")
+        meta = flatten(tnode[0]) if isinstance(tnode, list) else flatten(tnode)
+        tkey = meta.get("team_key")
+        roster = None
+        if isinstance(tnode, list):
+            for seg in tnode:
+                if isinstance(seg, dict) and "roster" in seg:
+                    roster = seg["roster"]
+        if not roster:
+            continue
+        pmap = flatten(flatten(roster).get("0", {}).get("players", {})) or flatten(
+            flatten(roster).get("players", {}))
+        for pk, pv in pmap.items():
+            if pk == "count" or not isinstance(pv, dict):
+                continue
+            pnode = pv.get("player")
+            fields = flatten(pnode[0]) if isinstance(pnode, list) and pnode else flatten(pnode)
+            pid = player_num(fields.get("player_key") or fields.get("player_id"))
+            by_id[pid] = (_player_from_node(pnode), tkey)
+
+    mine_keys = {
+        meta_key for meta_key, team in zip(names_by_key.keys(), teams) if team.is_mine
+    } if len(teams) == len(names_by_key) else set()
+
+    picks: list[LivePick] = []
+    for pid, d in draft.items():
+        entry = by_id.get(pid)
+        if not entry:
+            continue
+        np, roster_team_key = entry
+        owner_key = d.get("team_key") or roster_team_key
+        picks.append(LivePick(
+            overall=d.get("pick") or 0,
+            name=np.name, pos=np.pos, team=np.team,
+            round=d.get("round"),
+            owner=names_by_key.get(owner_key),
+            is_mine=owner_key in mine_keys,
+            bid=d.get("cost"),
+        ))
+    picks = [p for p in picks if p.overall > 0]
+    state = LiveDraftState(picks=order_picks(picks),
+                           fmt="auction" if any(p.bid is not None for p in picks) else "snake")
+    state.meta = {"drafted": len(draft), "resolved": len(picks)}
+    return state
+
+
+async def fetch_live_draft(league_key: str, access_token: str, my_guid: str | None = None,
+                           ca_bundle: str | None = None) -> LiveDraftState:
+    """Poll a Yahoo draft in progress. Two calls: results (order) + rosters (names)."""
+    verify = ca_bundle if ca_bundle else True
+    headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+    async with httpx.AsyncClient(timeout=20, trust_env=True, verify=verify, headers=headers) as client:
+        rd = await client.get(f"{API}/league/{league_key}/draftresults?format=json")
+        rd.raise_for_status()
+        rt = await client.get(f"{API}/league/{league_key}/teams/roster?format=json")
+        rt.raise_for_status()
+    return parse_live_draft(rd.json(), rt.json(), my_guid)
 
 
 async def fetch_keeper_league(league_key: str, access_token: str, my_guid: str | None = None,

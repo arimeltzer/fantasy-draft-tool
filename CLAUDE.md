@@ -134,6 +134,18 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     a *silent* valuation bug, so it's left to the League Settings → Scoring
     editor instead (raw rules are still pulled + counted in the import report,
     just not category-mapped). See `docs/METHODOLOGY.md` §2.
+- **Live draft sync** (`integrations/live.py` + `parse_live_draft` on both
+  adapters, `POST /api/leagues/{id}/sync-draft`): follows a draft in progress and
+  logs picks. **Polling, not push** — neither platform exposes its draft-room
+  socket. Both adapters join the DRAFT endpoint (order/owner/price; ESPN
+  `mDraftDetail`, Yahoo `draftresults`) to the ROSTER endpoint (names), since
+  neither alone identifies who was taken; a pick whose player hasn't hit a
+  roster yet is skipped and picked up next poll. The route is **idempotent by
+  player**, so re-polling can't duplicate and keepers already logged are left
+  alone. ESPN uses `fetch_raw_league` (ONE request) — never `fetch_league`,
+  which sweeps 18 weeks of transactions. UI: `LiveDraftPanel.tsx` +
+  `hooks/useLiveDraft.ts` ("Live" button in both rooms); unmatched names are
+  reported, never silently dropped.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

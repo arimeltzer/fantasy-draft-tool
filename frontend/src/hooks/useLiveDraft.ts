@@ -1,0 +1,107 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, LiveSyncResult } from "@/lib/api";
+import { yahooAccessToken, loadYahooSession } from "@/lib/yahooAuth";
+
+export interface LiveDraftConfig {
+  provider: "espn" | "yahoo";
+  extId: string;
+  season?: number;
+  matchSeason?: number;
+  espnS2?: string;
+  swid?: string;
+  myTeam?: string;
+}
+
+export interface LiveDraftStatus {
+  running: boolean;
+  lastSyncAt: string | null;
+  lastResult: LiveSyncResult | null;
+  error: string | null;
+  totalAdded: number;
+  busy: boolean;
+}
+
+/**
+ * Poll a live draft and log new picks.
+ *
+ * Neither ESPN nor Yahoo exposes its draft-room push channel, so this is a
+ * poll loop — the interval, not the code, is the latency floor. The sync
+ * endpoint is idempotent by player, so a slow or duplicated round is harmless.
+ *
+ * A tick is skipped while the previous one is still in flight: a draft server
+ * having a slow moment shouldn't queue up a pile of overlapping requests.
+ */
+export function useLiveDraft(
+  leagueId: number,
+  config: LiveDraftConfig | null,
+  intervalMs = 10_000,
+  onPicks?: () => void,
+) {
+  const [running, setRunning] = useState(false);
+  const [status, setStatus] = useState<Omit<LiveDraftStatus, "running">>({
+    lastSyncAt: null, lastResult: null, error: null, totalAdded: 0, busy: false,
+  });
+  const inFlight = useRef(false);
+  const onPicksRef = useRef(onPicks);
+  onPicksRef.current = onPicks;
+
+  const syncOnce = useCallback(async (apply = true) => {
+    if (!config || inFlight.current) return;
+    inFlight.current = true;
+    setStatus((s) => ({ ...s, busy: true }));
+    try {
+      let accessToken: string | undefined;
+      let myGuid: string | undefined;
+      if (config.provider === "yahoo") {
+        const t = await yahooAccessToken();
+        if (!t) throw new Error("Yahoo session expired — reconnect in the Keepers panel.");
+        accessToken = t;
+        myGuid = loadYahooSession()?.guid;
+      }
+      const res = await api.syncDraft(leagueId, {
+        provider: config.provider,
+        ext_id: config.extId,
+        season: config.season ?? 2026,
+        match_season: config.matchSeason ?? 2026,
+        access_token: accessToken,
+        my_guid: myGuid,
+        espn_s2: config.espnS2 || undefined,
+        swid: config.swid || undefined,
+        my_team: config.myTeam || undefined,
+        apply,
+      });
+      setStatus((s) => ({
+        ...s,
+        lastSyncAt: new Date().toISOString(),
+        lastResult: res,
+        error: null,
+        totalAdded: s.totalAdded + (res.applied ? res.added_count : 0),
+        busy: false,
+      }));
+      if (res.applied && res.added_count > 0) onPicksRef.current?.();
+    } catch (e) {
+      setStatus((s) => ({
+        ...s, busy: false,
+        error: e instanceof Error ? e.message : String(e),
+      }));
+    } finally {
+      inFlight.current = false;
+    }
+  }, [leagueId, config]);
+
+  useEffect(() => {
+    if (!running || !config) return;
+    void syncOnce(true);                       // don't wait a full interval to start
+    const id = setInterval(() => void syncOnce(true), intervalMs);
+    return () => clearInterval(id);
+  }, [running, config, intervalMs, syncOnce]);
+
+  return {
+    ...status,
+    running,
+    start: () => setRunning(true),
+    stop: () => setRunning(false),
+    toggle: () => setRunning((v) => !v),
+    syncOnce,
+  };
+}

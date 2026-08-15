@@ -97,6 +97,20 @@ export interface KeeperCandidatesResult {
   kept_detected?: string[];   // players the platform says were kept (confirm, don't trust)
 }
 
+export interface LiveSyncResult {
+  provider: string;
+  fmt: "auction" | "snake";
+  /** Next overall pick, from the highest CONTIGUOUS pick the platform published. */
+  on_the_clock: number;
+  added: { overall: number; name: string; pos: string; owner: string | null; price: number | null }[];
+  added_count: number;
+  already_had: number;
+  /** Drafted names the player pool doesn't contain — reported, never dropped. */
+  unmatched: string[];
+  meta: { drafted?: number; resolved?: number; in_progress?: boolean };
+  applied: boolean;
+}
+
 /** Cached ESPN keeper import, persisted in league settings (no migration). */
 export interface KeeperImportCache {
   season: number;
@@ -291,6 +305,14 @@ export const api = {
   yahooKeeperCandidates: (data: {
     league_key: string; access_token: string; match_season?: number; my_guid?: string;
   }) => req<KeeperCandidatesResult>("/api/integrations/yahoo/keeper-candidates", {
+    method: "POST", body: JSON.stringify(data),
+  }),
+
+  syncDraft: (leagueId: number, data: {
+    provider: "espn" | "yahoo"; ext_id: string; season?: number; match_season?: number;
+    access_token?: string; my_guid?: string; espn_s2?: string; swid?: string;
+    my_team?: string; apply?: boolean;
+  }) => req<LiveSyncResult>(`/api/leagues/${leagueId}/sync-draft`, {
     method: "POST", body: JSON.stringify(data),
   }),
 

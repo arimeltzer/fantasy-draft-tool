@@ -6,6 +6,36 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Live draft sync (ESPN + Yahoo)
+- **What it is**: follow a draft that's happening right now and log picks
+  automatically, instead of typing every one. "Live" button in both rooms.
+- **What it is NOT**: a push feed. Neither ESPN nor Yahoo exposes its draft-room
+  socket to outside apps, so this polls (5/10/30s, selectable). The interval is
+  the latency floor, and the panel says so rather than implying instant picks.
+- **The join both platforms need**: the draft endpoint (ESPN `mDraftDetail`,
+  Yahoo `draftresults`) gives ORDER — overall pick, round, owning team, auction
+  price — but identifies players by the platform's own numeric id. The roster
+  endpoint gives NAMES. Neither alone says who was taken, so each adapter
+  fetches both and joins them. Mid-draft the two views briefly disagree; a pick
+  whose player isn't on a roster yet is **skipped, not logged as unknown**, and
+  the next poll catches it.
+- **Idempotent by player, not by pick number.** A player is drafted exactly
+  once, so re-polling can't duplicate a pick, and keepers already logged aren't
+  re-added when the platform lists them among the draft results. The platform's
+  own overall pick number is preserved, so the log reads in true draft order.
+- **One request per poll on ESPN**: new `fetch_raw_league`, deliberately not
+  `fetch_league` — that one also sweeps 18 weeks of transactions for keeper
+  waiver costs, which is right once and abusive on a loop.
+- **Unmatched names are surfaced**, never silently dropped: a drafted player
+  the pool doesn't contain would otherwise still look available on your board.
+- `complete_through` uses the highest **contiguous** pick, so a gap in what the
+  platform has published can't advance "on the clock" past a pick it hasn't
+  actually reported.
+- Fixture-tested (`test_live_draft`) on both platforms: ordering, unresolved
+  picks, derived overall from round+pick, auction prices, empty boards, gaps.
+  **Not yet run against a real draft** — the shapes come from the documented
+  payloads, so expect to verify on the first live one.
+
 ## 2026-08 — Yahoo Fantasy API is live (credential granted)
 - The OAuth **import** path was already built and only ever blocked on the
   Fantasy Sports scope, so it needed no code — set the Railway vars and it runs.
