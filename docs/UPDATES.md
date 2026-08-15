@@ -6,6 +6,45 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Yahoo Fantasy API is live (credential granted)
+- The OAuth **import** path was already built and only ever blocked on the
+  Fantasy Sports scope, so it needed no code — set the Railway vars and it runs.
+  What was genuinely missing was everything keeper-related plus token lifetime.
+- **Keeper auto-fill over the API** (`/api/integrations/yahoo/keeper-candidates`):
+  reads the prior season's `draftresults` and folds it onto the rosters, so
+  costs come from the platform instead of a copied page.
+  - `parse_draft_results()` — auction `cost` and/or snake `round` per player.
+    Which one applies is the keeper RULE's call, same as ESPN and the paste path.
+  - `parse_transactions()` — top **winning** FAAB bid per player from
+    `transactions;types=add`. Failed claims and the drop side of an add/drop are
+    excluded, and a player added twice keeps the higher bid, because the keeper
+    price is the higher of draft and waiver. The whole call is optional: a
+    league with no FAAB (or no transaction access) degrades to draft-only rather
+    than failing the pull.
+  - `parse_keeper_flags()` — Yahoo's own `is_keeper` block. Surfaced for
+    confirmation rather than silently trusted, the same treatment the pasted
+    keeper badge gets: the field is undocumented, and a wrong read would quietly
+    delete real keeper options.
+  - Yahoo identifies players by `player_key` ("449.p.31883") in draft results
+    and transactions but by `player_id` on rosters, so everything joins on the
+    numeric id via `player_num()`.
+  - Response shape matches the ESPN keeper route exactly, so `KeeperPlanner`
+    consumes either without special-casing.
+- **Tokens now survive** (`/api/integrations/yahoo/refresh` + `lib/yahooAuth.ts`).
+  Yahoo access tokens last about an hour and the token previously lived only in
+  the import modal's React state — it died on reload and was invisible to the
+  keeper planner, which runs long after the import. The session is now persisted
+  and refreshed ahead of expiry, so one consent covers both screens; the panel
+  has a Disconnect that clears it.
+- **`YahooKeeperAutofill.tsx`** in the keeper planner: connect, pick last
+  season's league (defaulted to `match_season - 1`), pull. Caches into
+  `settings.keeperImport` with `source: "yahoo"` and rehydrates on reopen, like
+  the other two importers.
+- Fixture-tested (`test_yahoo_keeper`), covering the mixed key/id forms, blank
+  draft slots, failed claims, drop-side rows, repeat adds, and absent
+  transactions. **Not yet validated against a real Yahoo payload** — check the
+  parsed fields on the first live pull.
+
 ## 2026-08 — Renaming a team (names change mid-season)
 - **Team names are identifiers, not labels.** `teamSlots`, `teamPicks` and the
   cached keeper import are keyed by them, `pickOwners` stores them as values,

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { X, Loader2, Check, AlertTriangle, ChevronRight } from "lucide-react";
+import { saveYahooSession } from "@/lib/yahooAuth";
 import { api, ImportReport, YahooPasteReport } from "@/lib/api";
 
 interface Props {
@@ -61,6 +62,10 @@ export default function ImportLeagueModal({ onClose }: Props) {
       const tok = await api.yahooExchange(yahooCode.trim());
       setAccessToken(tok.access_token);
       setGuid(tok.guid);
+      // Share the session app-wide so the keeper planner (a different screen,
+      // opened long after the import) doesn't ask for consent a second time,
+      // and so the token can be refreshed instead of expiring in an hour.
+      saveYahooSession(tok);
       // Pull the account's leagues (all seasons) so the user can pick one.
       try {
         const { leagues } = await api.yahooLeagues(tok.access_token);

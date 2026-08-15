@@ -112,11 +112,18 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     `POST /api/leagues/import-yahoo-paste` creates the league and persists what
     the pages prove: `opponents` (real names) + `teamSlots` (every team's round-1
     slot) + your `draftSlot`. Scoring/roster shape aren't on these pages.
-  - **Yahoo (OAuth)**: official OAuth2 + league picker built and working EXCEPT Yahoo's
-    self-service dev console won't grant the **Fantasy Sports** scope on new
-    apps (token gets `additional_authorization_required`). Pursuing access via
-    https://sports.yahoo.com/developer/access/ — once a Fantasy-scoped credential
-    exists, swap the Railway `YAHOO_*` vars (+ `YAHOO_SCOPE` if needed) and it works.
+  - **Yahoo (OAuth)**: official OAuth2, LIVE. Needs `YAHOO_CLIENT_ID`,
+    `YAHOO_CLIENT_SECRET`, `YAHOO_REDIRECT_URI` (+ `YAHOO_SCOPE=fspt-r`) on
+    Railway. Import: auth-url → exchange → `/api/integrations/yahoo/leagues`
+    → `/api/leagues/import`. Keepers: `/api/integrations/yahoo/keeper-candidates`
+    reads the prior season's `draftresults` (round or auction `cost`),
+    `transactions;types=add` (top winning FAAB bid per player — optional, a
+    league without it degrades to draft-only) and Yahoo's `is_keeper` flag
+    (surfaced for confirmation, not trusted silently). Same response shape as
+    the ESPN keeper route, so the planner consumes either.
+    Tokens expire in ~1h: `/api/integrations/yahoo/refresh` + `lib/yahooAuth.ts`
+    persist and refresh the session (localStorage) so the import modal and the
+    keeper planner share one consent.
   - **Team names**: `settings.opponents` and each opponent `DraftPick.team_id`
     are populated from the platform's real team display names
     (`integrations/base.py opponent_team_ids()`) — not generic "Team N" labels.
@@ -216,14 +223,13 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
 
 ## Open threads / next up
 
-- **Yahoo Fantasy access** pending via the sports developer program (the OAuth
-  import path is built and blocked only on the credential — see Integrations).
-  Workaround shipped: paste-based import needs no credential at all.
+- **Yahoo OAuth is live** (import + keeper auto-fill + token refresh). The
+  paste importer stays as the no-credential fallback. Untested against a real
+  Yahoo payload: `draftresults` / `transactions` / `is_keeper` parsing is
+  fixture-tested only — verify field-by-field on the first live pull.
 - **Keeper refinements** (optional): true serpentine slot forfeiture in snake
   (v1 removes the player + shows the round cost but doesn't reorder the exact
-  picks); Yahoo keeper auto-fill via OAuth (blocked on the same Fantasy-scope
-  credential as import — the paste path covers it meanwhile). Draft slots and
-  traded picks are handled, for you and per opponent.
+  picks). Draft slots and traded picks are handled, for you and per opponent.
 - **FantasyPros**: AAV is wired (migration `002_add_aav.sql`); tier surfacing
   (FantasyPros tiers vs. the computed VBD-gap tiers) is still open.
 - **ESPN/Yahoo full scoring auto-detect** (optional): currently PPR-only by

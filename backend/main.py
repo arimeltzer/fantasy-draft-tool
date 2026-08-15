@@ -760,6 +760,80 @@ async def yahoo_exchange(body: YahooExchange, _: User = Depends(get_current_user
     }
 
 
+class YahooRefresh(BaseModel):
+    refresh_token: str
+
+
+@app.post("/api/integrations/yahoo/refresh")
+async def yahoo_refresh(body: YahooRefresh, _: User = Depends(get_current_user)) -> dict:
+    """Trade a refresh token for a fresh access token.
+
+    Yahoo access tokens expire in about an hour. Without this, a draft session
+    that outlasts the token forces the whole consent dance again mid-draft —
+    and the keeper planner, which runs long after the import, would never have
+    a usable token at all."""
+    try:
+        tok = await yahoo_provider.refresh_token(body.refresh_token)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=401, detail=f"Yahoo token refresh failed: {e}")
+    return {
+        "access_token": tok.get("access_token"),
+        # Yahoo rotates the refresh token on some grants; keep whichever came back.
+        "refresh_token": tok.get("refresh_token") or body.refresh_token,
+        "guid": tok.get("xoauth_yahoo_guid"),
+        "expires_in": tok.get("expires_in"),
+    }
+
+
+class YahooKeeperRequest(BaseModel):
+    league_key: str                   # PRIOR season's league key, e.g. "449.l.82486"
+    access_token: str
+    match_season: int = 2026          # current player pool to map candidates onto
+    my_guid: Optional[str] = None     # manager guid, to flag your own roster
+
+
+@app.post("/api/integrations/yahoo/keeper-candidates")
+async def yahoo_keeper_candidates(
+    data: YahooKeeperRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(db_dep),
+) -> dict:
+    """Yahoo's equivalent of the ESPN keeper pull: a prior season's rosters plus
+    what each player cost (draft result, and top FAAB claim where available),
+    mapped onto the current player pool. Same response shape as the ESPN route,
+    so the planner consumes either without special-casing."""
+    try:
+        norm = await yahoo_provider.fetch_keeper_league(
+            data.league_key, data.access_token, my_guid=data.my_guid)
+    except Exception as e:  # noqa: BLE001 — surface provider errors cleanly
+        raise HTTPException(status_code=502, detail=f"yahoo fetch failed: {e}")
+
+    rows = (await db.execute(
+        select(Player.id, Player.name, Player.pos, Player.team).where(Player.season == data.match_season)
+    )).all()
+    if not rows:
+        raise HTTPException(status_code=409, detail=f"No players loaded for season {data.match_season}.")
+    index = build_index([{"id": r.id, "name": r.name, "pos": r.pos, "team": r.team} for r in rows])
+
+    cands = keeper_candidates(norm, index)
+    matched = sum(1 for c in cands if c["matched"])
+    return {
+        "fmt": norm.fmt,
+        "season": data.match_season,
+        "candidates": cands,
+        "matched": matched,
+        "unmatched": len(cands) - matched,
+        "waivers": {
+            "players": sum(1 for c in cands if c.get("waiver")),
+            **(norm.meta.get("transactions") or {}),
+        },
+        "draft": norm.meta.get("draft") or {},
+        # Yahoo's own "was kept" flag — shown for confirmation, not trusted
+        # silently (same treatment as the pasted keeper badge).
+        "kept_detected": norm.meta.get("kept_detected") or [],
+    }
+
+
 class YahooToken(BaseModel):
     access_token: str
 

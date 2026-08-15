@@ -216,6 +216,200 @@ def parse_teams(teams_node, my_guid: str | None = None) -> list[NormTeam]:
     return out
 
 
+# ── keeper inputs: draft results, waivers, keeper flags ─────────────────────
+#
+# Keeper costs need last season's draft (what each player cost) and, for
+# price-basis leagues, the top waiver/FAAB claim — the same two inputs the ESPN
+# adapter pulls. Yahoo identifies players by `player_key` ("449.p.31883") in
+# draft results and transactions but by `player_id` ("31883") on rosters, so
+# everything here is keyed on the numeric id via `player_num()`.
+
+def player_num(key_or_id) -> str:
+    """Last dotted segment of a Yahoo player key — "449.p.31883" -> "31883".
+    Already-bare ids pass through, so callers can mix the two forms."""
+    s = str(key_or_id or "")
+    return s.rsplit(".", 1)[-1]
+
+
+def parse_draft_results(data) -> dict[str, dict]:
+    """`/league/{key}/draftresults` -> {player_id: {round, pick, cost, team_key}}.
+
+    `cost` is present only for auction drafts; snake leagues carry the round.
+    Both are handed to the client untouched — the league's keeper RULE decides
+    which basis applies, exactly as with ESPN and the paste importer."""
+    league = (data.get("fantasy_content") or {}).get("league")
+    node = {}
+    if isinstance(league, list) and len(league) > 1:
+        node = flatten(league[1]).get("draft_results") or {}
+    node = flatten(node)
+
+    out: dict[str, dict] = {}
+    for k, v in node.items():
+        if k == "count" or not isinstance(v, dict):
+            continue
+        dr = flatten(v.get("draft_result", v))
+        pkey = dr.get("player_key")
+        if not pkey:
+            continue
+        cost = dr.get("cost")
+        out[player_num(pkey)] = {
+            "round": int(dr["round"]) if str(dr.get("round") or "").isdigit() else None,
+            "pick": int(dr["pick"]) if str(dr.get("pick") or "").isdigit() else None,
+            "cost": int(cost) if str(cost or "").isdigit() else None,
+            "team_key": dr.get("team_key"),
+        }
+    return out
+
+
+def parse_transactions(data) -> dict[str, int]:
+    """`/league/{key}/transactions;types=add` -> {player_id: top FAAB bid}.
+
+    Keeper price in many leagues is the HIGHER of the draft price and what the
+    player was claimed for, so only the maximum winning bid per player matters.
+    Yahoo puts the bid on the transaction, not the player, and a player can be
+    added more than once in a season — hence the max."""
+    league = (data.get("fantasy_content") or {}).get("league")
+    node = {}
+    if isinstance(league, list) and len(league) > 1:
+        node = flatten(league[1]).get("transactions") or {}
+    node = flatten(node)
+
+    out: dict[str, int] = {}
+    for k, v in node.items():
+        if k == "count" or not isinstance(v, dict):
+            continue
+        txn = v.get("transaction")
+        meta = flatten(txn[0]) if isinstance(txn, list) and txn else flatten(txn)
+        if meta.get("status") not in (None, "successful"):
+            continue
+        bid = meta.get("faab_bid")
+        if not str(bid or "").isdigit():
+            continue
+        bid = int(bid)
+
+        players = {}
+        if isinstance(txn, list):
+            for seg in txn[1:]:
+                if isinstance(seg, dict) and "players" in seg:
+                    players = flatten(seg["players"])
+        for pk, pv in players.items():
+            if pk == "count" or not isinstance(pv, dict):
+                continue
+            pnode = pv.get("player")
+            fields = flatten(pnode[0]) if isinstance(pnode, list) and pnode else flatten(pnode)
+            # Only the ADDED player was bid on; the dropped side rides along.
+            tdata = {}
+            if isinstance(pnode, list):
+                for seg in pnode[1:]:
+                    if isinstance(seg, dict) and "transaction_data" in seg:
+                        td = seg["transaction_data"]
+                        tdata = flatten(td[0]) if isinstance(td, list) and td else flatten(td)
+            if tdata.get("type") not in (None, "add"):
+                continue
+            pid = player_num(fields.get("player_key") or fields.get("player_id"))
+            if pid:
+                out[pid] = max(out.get(pid, 0), bid)
+    return out
+
+
+def parse_keeper_flags(teams_node) -> dict[str, dict]:
+    """Yahoo's own `is_keeper` block per rostered player, if the league has one.
+
+    `kept` means the player was kept THIS season, which in most keeper rules is
+    what makes them ineligible next season. That is Yahoo's data rather than an
+    inference — but it is surfaced for confirmation rather than trusted
+    silently, the same treatment the pasted keeper badge gets, because the
+    field is undocumented and a wrong read would quietly delete real options.
+    """
+    out: dict[str, dict] = {}
+    for tk, tv in flatten(teams_node).items():
+        if tk == "count" or not isinstance(tv, dict):
+            continue
+        tnode = tv.get("team")
+        roster = None
+        if isinstance(tnode, list):
+            for seg in tnode:
+                if isinstance(seg, dict) and "roster" in seg:
+                    roster = seg["roster"]
+        if not roster:
+            continue
+        pmap = flatten(flatten(roster).get("0", {}).get("players", {})) or flatten(
+            flatten(roster).get("players", {}))
+        for pk, pv in pmap.items():
+            if pk == "count" or not isinstance(pv, dict):
+                continue
+            pnode = pv.get("player")
+            fields = flatten(pnode[0]) if isinstance(pnode, list) and pnode else flatten(pnode)
+            keep = fields.get("is_keeper")
+            if not isinstance(keep, dict):
+                continue
+            pid = player_num(fields.get("player_key") or fields.get("player_id"))
+            cost = keep.get("cost")
+            out[pid] = {
+                "kept": str(keep.get("kept") or "").lower() in ("1", "true"),
+                "cost": int(cost) if str(cost or "").isdigit() else None,
+            }
+    return out
+
+
+def team_names_by_key(teams_node) -> dict[str, str]:
+    """team_key -> display name, so a draft pick can be attributed to a team."""
+    out: dict[str, str] = {}
+    for tk, tv in flatten(teams_node).items():
+        if tk == "count" or not isinstance(tv, dict):
+            continue
+        tnode = tv.get("team")
+        meta = flatten(tnode[0]) if isinstance(tnode, list) else flatten(tnode)
+        if meta.get("team_key"):
+            out[meta["team_key"]] = meta.get("name", "Team")
+    return out
+
+
+def attach_keeper_inputs(teams: list[NormTeam], teams_node, draft: dict, waivers: dict,
+                         keeper_flags: dict | None = None) -> list[str]:
+    """Fold draft cost / waiver claim / keeper flag onto each rostered player.
+
+    Returns the names Yahoo reports as already kept, for the import report —
+    the caller shows them for confirmation instead of silently dropping them.
+    """
+    kept_names: list[str] = []
+    # Roster order is preserved by parse_teams, so walking the same structure
+    # again lines player ids up with the NormPlayer objects already built.
+    ids_by_team: list[list[str]] = []
+    for tk, tv in flatten(teams_node).items():
+        if tk == "count" or not isinstance(tv, dict):
+            continue
+        tnode = tv.get("team")
+        roster = None
+        if isinstance(tnode, list):
+            for seg in tnode:
+                if isinstance(seg, dict) and "roster" in seg:
+                    roster = seg["roster"]
+        ids: list[str] = []
+        if roster:
+            pmap = flatten(flatten(roster).get("0", {}).get("players", {})) or flatten(
+                flatten(roster).get("players", {}))
+            for pk, pv in pmap.items():
+                if pk == "count" or not isinstance(pv, dict):
+                    continue
+                pnode = pv.get("player")
+                fields = flatten(pnode[0]) if isinstance(pnode, list) and pnode else flatten(pnode)
+                ids.append(player_num(fields.get("player_key") or fields.get("player_id")))
+        ids_by_team.append(ids)
+
+    for team, ids in zip(teams, ids_by_team):
+        for player, pid in zip(team.players, ids):
+            d = draft.get(pid) or {}
+            player.bid = d.get("cost")
+            player.round = d.get("round")
+            player.waiver = waivers.get(pid)
+            flag = (keeper_flags or {}).get(pid) or {}
+            if flag.get("kept"):
+                player.keeper_ineligible = True
+                kept_names.append(player.name)
+    return kept_names
+
+
 # ── fetch ───────────────────────────────────────────────────────────────────
 
 def parse_my_leagues(data) -> list[dict]:
@@ -289,4 +483,67 @@ async def fetch_league(league_key: str, access_token: str, my_guid: str | None =
         "raw_rule_count": len(raw_stats),
         "raw": raw_stats,
     }
+    return lg
+
+
+async def fetch_keeper_league(league_key: str, access_token: str, my_guid: str | None = None,
+                              ca_bundle: str | None = None) -> NormLeague:
+    """A prior season's league with everything keeper costs need attached.
+
+    `fetch_league` covers settings + rosters, which is all an import needs. The
+    keeper planner additionally needs what each rostered player COST — the draft
+    result, and the top waiver/FAAB claim for price-basis leagues. Those are
+    separate Yahoo endpoints, and the transactions one is optional: leagues with
+    no FAAB, or with transaction history unavailable, must still produce
+    draft-basis candidates rather than failing outright.
+    """
+    verify = ca_bundle if ca_bundle else True
+    headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+    async with httpx.AsyncClient(timeout=30, trust_env=True, verify=verify, headers=headers) as client:
+        rs = await client.get(f"{API}/league/{league_key}/settings?format=json")
+        rs.raise_for_status()
+        settings_json = rs.json()
+
+        rt = await client.get(f"{API}/league/{league_key}/teams/roster?format=json")
+        rt.raise_for_status()
+        teams_json = rt.json()
+
+        rd = await client.get(f"{API}/league/{league_key}/draftresults?format=json")
+        rd.raise_for_status()
+        draft_json = rd.json()
+
+        txn_json, txn_error = None, None
+        try:
+            rx = await client.get(f"{API}/league/{league_key}/transactions;types=add?format=json")
+            if rx.status_code < 400:
+                txn_json = rx.json()
+            else:
+                txn_error = f"{rx.status_code} {rx.text[:120]}"
+        except Exception as e:  # noqa: BLE001 — waivers are a bonus, not a blocker
+            txn_error = str(e)
+
+    league_node = settings_json["fantasy_content"]["league"]
+    settings, fmt, name = parse_settings(league_node)
+
+    teams_node = None
+    tn = teams_json["fantasy_content"]["league"]
+    if isinstance(tn, list) and len(tn) > 1:
+        teams_node = flatten(tn[1]).get("teams")
+    teams = parse_teams(teams_node, my_guid) if teams_node else []
+
+    draft = parse_draft_results(draft_json)
+    waivers = parse_transactions(txn_json) if txn_json else {}
+    flags = parse_keeper_flags(teams_node) if teams_node else {}
+    kept_names = attach_keeper_inputs(teams, teams_node, draft, waivers, flags)
+
+    lg = NormLeague(provider="yahoo", ext_id=league_key, name=name, season=0,
+                    fmt=fmt, settings=settings, teams=teams)
+    lg.meta["draft"] = {"picks": len(draft),
+                        "auction": any(d.get("cost") is not None for d in draft.values())}
+    lg.meta["transactions"] = {
+        "waiver_players": len(waivers),
+        **({"error": txn_error} if txn_error else {}),
+    }
+    # Surfaced for confirmation, never silently trusted — see parse_keeper_flags.
+    lg.meta["kept_detected"] = kept_names
     return lg

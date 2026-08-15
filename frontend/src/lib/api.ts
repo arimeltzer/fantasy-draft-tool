@@ -93,6 +93,8 @@ export interface KeeperCandidatesResult {
   unmatched: number;
   waivers?: WaiverReport;
   paste?: YahooPasteReport;   // present when sourced from a Yahoo paste import
+  draft?: { picks?: number; auction?: boolean };   // Yahoo OAuth keeper pull
+  kept_detected?: string[];   // players the platform says were kept (confirm, don't trust)
 }
 
 /** Cached ESPN keeper import, persisted in league settings (no migration). */
@@ -102,7 +104,7 @@ export interface KeeperImportCache {
   candidates: KeeperCandidate[];
   waivers?: WaiverReport;
   /** Which importer produced this — the planner reopens the matching panel. */
-  source?: "espn" | "yahoo-paste";
+  source?: "espn" | "yahoo-paste" | "yahoo";
   /** Parse report when sourced from a Yahoo paste (kept list, warnings, slots). */
   paste?: YahooPasteReport;
 }
@@ -282,6 +284,15 @@ export const api = {
     req<{ leagues: { key: string; name: string; season: number; num_teams: number }[] }>(
       "/api/integrations/yahoo/leagues", { method: "POST", body: JSON.stringify({ access_token }) }
     ),
+  yahooRefresh: (refresh_token: string) =>
+    req<{ access_token: string; refresh_token: string; guid: string | null; expires_in: number }>(
+      "/api/integrations/yahoo/refresh", { method: "POST", body: JSON.stringify({ refresh_token }) }
+    ),
+  yahooKeeperCandidates: (data: {
+    league_key: string; access_token: string; match_season?: number; my_guid?: string;
+  }) => req<KeeperCandidatesResult>("/api/integrations/yahoo/keeper-candidates", {
+    method: "POST", body: JSON.stringify(data),
+  }),
 
   picks: (leagueId: number) => req<ApiPick[]>(`/api/leagues/${leagueId}/picks`),
   addPick: (leagueId: number, data: { player_id?: number; mine: boolean; team_id?: number; price?: number; slot?: string }) =>

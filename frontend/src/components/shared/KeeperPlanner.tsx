@@ -9,6 +9,7 @@ import { decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
 import { posStyle } from "@/lib/posStyles";
 import KeeperAutofill from "./KeeperAutofill";
 import YahooPasteImport from "./YahooPasteImport";
+import YahooKeeperAutofill from "./YahooKeeperAutofill";
 import KeeperRecommendations from "./KeeperRecommendations";
 
 interface Props {
@@ -366,6 +367,12 @@ export default function KeeperPlanner({
               addPick={addPick}
               onCandidates={setImportedCandidates}
               source={settings.source}
+              cached={settings.keeperImport}
+              onCache={cacheImport}
+            />
+
+            <YahooKeeperAutofill
+              onCandidates={setImportedCandidates}
               cached={settings.keeperImport}
               onCache={cacheImport}
             />

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from .base import NormPlayer, NormTeam, opponent_team_ids
+from .base import NormLeague, NormPlayer, NormTeam, opponent_team_ids
 from .matching import build_index, match_player, keeper_candidates
 from . import espn, yahoo, yahoo_paste
 
@@ -269,6 +269,117 @@ def test_yahoo():
     assert p.name == "A.J. Brown" and p.pos == "WR" and p.team == "PHI"
 
 
+def test_yahoo_keeper():
+    """Yahoo OAuth keeper inputs: draft results, FAAB claims, keeper flags.
+
+    Yahoo identifies a player by `player_key` in draft results and transactions
+    but by `player_id` on rosters, so the fixture mixes both forms deliberately.
+    """
+    # ── draft results ────────────────────────────────────────────────
+    draft_json = {"fantasy_content": {"league": [
+        {"league_key": "449.l.82486"},
+        {"draft_results": {"count": 3,
+            "0": {"draft_result": {"pick": 1, "round": 1, "team_key": "449.l.82486.t.4",
+                                   "player_key": "449.p.31883", "cost": "42"}},
+            "1": {"draft_result": {"pick": 2, "round": 1, "team_key": "449.l.82486.t.1",
+                                   "player_key": "449.p.30977"}},
+            # a pick Yahoo returns with no player (forfeited/blank) must not crash
+            "2": {"draft_result": {"pick": 3, "round": 1, "team_key": "449.l.82486.t.2"}},
+        }},
+    ]}}
+    draft = yahoo.parse_draft_results(draft_json)
+    assert set(draft) == {"31883", "30977"}, draft
+    assert draft["31883"]["cost"] == 42 and draft["31883"]["round"] == 1
+    assert draft["30977"]["cost"] is None, "snake pick carries a round, not a price"
+    assert draft["30977"]["round"] == 1 and draft["30977"]["pick"] == 2
+
+    # ── waiver / FAAB claims ─────────────────────────────────────────
+    def add_txn(bid, pkey, status="successful", ptype="add"):
+        return {"transaction": [
+            {"transaction_key": f"449.l.1.tr.{bid}", "type": "add/drop",
+             "status": status, "faab_bid": bid},
+            {"players": {"count": 1, "0": {"player": [
+                [{"player_key": pkey}, {"name": {"full": "X"}}],
+                {"transaction_data": [{"type": ptype, "source_type": "waivers"}]},
+            ]}}},
+        ]}
+    txn_json = {"fantasy_content": {"league": [
+        {"league_key": "449.l.82486"},
+        {"transactions": {"count": 5,
+            "0": add_txn(17, "449.p.40000"),
+            "1": add_txn(31, "449.p.40000"),            # same player, higher bid
+            "2": add_txn(9, "449.p.41111"),
+            "3": add_txn(99, "449.p.42222", status="failed"),   # lost claim
+            "4": add_txn(50, "449.p.43333", ptype="drop"),      # the drop side
+        }},
+    ]}}
+    waivers = yahoo.parse_transactions(txn_json)
+    assert waivers["40000"] == 31, "only the top winning bid counts"
+    assert waivers["41111"] == 9
+    assert "42222" not in waivers, "a failed claim was never paid"
+    assert "43333" not in waivers, "the dropped player wasn't bid on"
+
+    # ── rosters + keeper flags, and folding it all together ──────────
+    def player(pid, name, keeper=None):
+        fields = [{"player_key": f"449.p.{pid}"}, {"player_id": pid},
+                  {"name": {"full": name}}, {"editorial_team_abbr": "phi"},
+                  {"display_position": "WR"}]
+        if keeper is not None:
+            fields.append({"is_keeper": keeper})
+        return {"player": [fields]}
+
+    teams_node = {"count": 2,
+        "0": {"team": [
+            [{"team_key": "449.l.82486.t.1"}, {"name": "Team Ari"},
+             {"managers": {"0": {"manager": {"guid": "MEGUID"}}}}],
+            {"roster": {"0": {"players": {"count": 2,
+                "0": player("31883", "A.J. Brown", {"status": "1", "cost": "42", "kept": "1"}),
+                "1": player("40000", "Waiver Guy"),
+            }}}},
+        ]},
+        "1": {"team": [
+            [{"team_key": "449.l.82486.t.4"}, {"name": "Rivals"}],
+            {"roster": {"0": {"players": {"count": 1,
+                "0": player("30977", "Snake Pick"),
+            }}}},
+        ]},
+    }
+
+    assert yahoo.team_names_by_key(teams_node) == {
+        "449.l.82486.t.1": "Team Ari", "449.l.82486.t.4": "Rivals"}
+
+    flags = yahoo.parse_keeper_flags(teams_node)
+    assert flags["31883"]["kept"] is True and flags["31883"]["cost"] == 42
+    assert "40000" not in flags, "no is_keeper block means no flag, not a false one"
+
+    teams = yahoo.parse_teams(teams_node, my_guid="MEGUID")
+    kept = yahoo.attach_keeper_inputs(teams, teams_node, draft, waivers, flags)
+    assert kept == ["A.J. Brown"], kept
+    mine = {p.name: p for p in teams[0].players}
+    assert teams[0].is_mine is True and teams[1].is_mine is False
+    assert mine["A.J. Brown"].bid == 42 and mine["A.J. Brown"].keeper_ineligible is True
+    # Drafted AND claimed off waivers: both are carried, the keeper RULE picks.
+    assert mine["Waiver Guy"].bid is None and mine["Waiver Guy"].waiver == 31
+    assert mine["Waiver Guy"].round is None, "undrafted -> the undrafted-round rule applies"
+    assert teams[1].players[0].round == 1 and teams[1].players[0].bid is None
+
+    # Candidates come out in the shape the planner already consumes from ESPN.
+    index = build_index([{"id": 7, "name": "A.J. Brown", "pos": "WR", "team": "PHI"}])
+    lg = NormLeague(provider="yahoo", ext_id="449.l.82486", name="L", season=2025,
+                    fmt="auction", settings={}, teams=teams)
+    cands = {c["name"]: c for c in keeper_candidates(lg, index)}
+    assert cands["A.J. Brown"]["owner"] == "Me" and cands["A.J. Brown"]["is_mine"] is True
+    assert cands["A.J. Brown"]["bid"] == 42 and cands["A.J. Brown"]["matched"] is True
+    assert cands["A.J. Brown"]["keeper_ineligible"] is True
+    assert cands["Snake Pick"]["owner"] == "Rivals" and cands["Snake Pick"]["round"] == 1
+    assert cands["Waiver Guy"]["waiver"] == 31 and cands["Waiver Guy"]["matched"] is False
+
+    # Missing/absent transactions must degrade to draft-only, never explode.
+    assert yahoo.parse_transactions({}) == {}
+    assert yahoo.parse_draft_results({}) == {}
+    assert yahoo.parse_keeper_flags({}) == {}
+
+
 def test_yahoo_leagues():
     data = {"fantasy_content": {"users": {"count": 1, "0": {"user": [
         {"guid": "MEGUID"},
@@ -294,6 +405,7 @@ def main():
     test_scoring_diagnostics(); print("✓ scoring diagnostics")
     test_keeper_candidates(); print("✓ keeper candidates")
     test_yahoo(); print("✓ yahoo parse")
+    test_yahoo_keeper(); print("✓ yahoo keeper inputs")
     test_yahoo_leagues(); print("✓ yahoo leagues list")
     test_waiver_weekly_fetch(); print("✓ waiver weekly fetch")
     test_yahoo_paste(); print("✓ yahoo paste import")
