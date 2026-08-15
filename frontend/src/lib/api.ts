@@ -298,6 +298,10 @@ export const api = {
     req<{ leagues: { key: string; name: string; season: number; num_teams: number }[] }>(
       "/api/integrations/yahoo/leagues", { method: "POST", body: JSON.stringify({ access_token }) }
     ),
+  yahooConfig: () => req<{
+    client_id_set: boolean; client_secret_set: boolean;
+    redirect_uri: string; scope_sent: string | null; scope_from_env: boolean;
+  }>("/api/integrations/yahoo/config"),
   yahooRefresh: (refresh_token: string) =>
     req<{ access_token: string; refresh_token: string; guid: string | null; expires_in: number }>(
       "/api/integrations/yahoo/refresh", { method: "POST", body: JSON.stringify({ refresh_token }) }

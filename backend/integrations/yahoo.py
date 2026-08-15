@@ -33,6 +33,38 @@ POS_LABEL = {
 }
 RECEPTION_STAT_ID = "11"  # Yahoo NFL "Rec"
 
+# Yahoo's fantasy-sports READ scope. Without it a token is issued happily and
+# then rejected by every fantasy endpoint.
+DEFAULT_SCOPE = "fspt-r"
+
+# Yahoo's marker for "this token has no fantasy permission". It arrives as a
+# 401 whose text blames credentials, which sends you hunting the wrong problem.
+NEEDS_FANTASY_SCOPE = "additional_authorization_required"
+
+
+class FantasyScopeError(RuntimeError):
+    """Token is valid but carries no Fantasy Sports permission."""
+
+
+def check_fantasy_scope(status_code: int, body: str) -> None:
+    """Turn Yahoo's misleading 401 into something actionable.
+
+    Yahoo reports a missing fantasy grant as "Please provide valid credentials",
+    which reads as a bad token or a wrong client secret. The real cause is
+    always one of three things, so say so instead of echoing the JSON.
+    """
+    if NEEDS_FANTASY_SCOPE not in (body or ""):
+        return
+    raise FantasyScopeError(
+        "Yahoo issued a token with no Fantasy Sports permission "
+        f'(oauth_problem="{NEEDS_FANTASY_SCOPE}"). Three things to check, in order: '
+        "(1) the Yahoo app at developer.yahoo.com/apps must list API Permissions -> "
+        "Fantasy Sports (Read); (2) the backend must request the scope — it now sends "
+        f"'{DEFAULT_SCOPE}' by default, but Railway only picks up env changes on a fresh "
+        "DEPLOY, not a restart; (3) any token minted before either of those was true is "
+        "still under-scoped and refreshing will not upgrade it — Disconnect and authorize again."
+    )
+
 
 # ── OAuth2 ──────────────────────────────────────────────────────────────────
 
@@ -47,11 +79,13 @@ def authorize_url(state: str = "") -> str:
         raise RuntimeError("Yahoo app not configured (YAHOO_CLIENT_ID / YAHOO_REDIRECT_URI).")
     from urllib.parse import urlencode
     q = {"client_id": cid, "redirect_uri": redirect, "response_type": "code", "language": "en-us"}
-    # Some Yahoo Fantasy credentials require an explicit scope (e.g. "fspt-r"
-    # for fantasy-sports read). Set YAHOO_SCOPE to request it; left unset, the
-    # app's configured permissions apply.
-    scope = os.getenv("YAHOO_SCOPE", "")
-    if scope:
+    # Fantasy read is the ONLY thing this app uses, so request it by default.
+    # Leaving the scope off gets a token that authenticates fine and then fails
+    # every fantasy call with oauth_problem="additional_authorization_required"
+    # — a confusing failure that looks like the credential was never granted.
+    # YAHOO_SCOPE can override (e.g. "fspt-w"); set it to "-" to send none.
+    scope = os.getenv("YAHOO_SCOPE", DEFAULT_SCOPE) or DEFAULT_SCOPE
+    if scope and scope != "-":
         q["scope"] = scope
     if state:
         q["state"] = state
@@ -453,6 +487,7 @@ async def fetch_my_leagues(access_token: str, ca_bundle: str | None = None) -> l
     async with httpx.AsyncClient(timeout=30, trust_env=True, verify=verify, headers=headers) as client:
         r = await client.get(url)
         if r.status_code >= 400:
+            check_fantasy_scope(r.status_code, r.text)
             raise RuntimeError(f"{r.status_code} {r.text[:200]}")
         return parse_my_leagues(r.json())
 
@@ -463,6 +498,8 @@ async def fetch_league(league_key: str, access_token: str, my_guid: str | None =
     headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=30, trust_env=True, verify=verify, headers=headers) as client:
         rs = await client.get(f"{API}/league/{league_key}/settings?format=json")
+        if rs.status_code >= 400:
+            check_fantasy_scope(rs.status_code, rs.text)
         rs.raise_for_status()
         s = rs.json()
         rt = await client.get(f"{API}/league/{league_key}/teams/roster?format=json")
@@ -564,6 +601,8 @@ async def fetch_live_draft(league_key: str, access_token: str, my_guid: str | No
     headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=20, trust_env=True, verify=verify, headers=headers) as client:
         rd = await client.get(f"{API}/league/{league_key}/draftresults?format=json")
+        if rd.status_code >= 400:
+            check_fantasy_scope(rd.status_code, rd.text)
         rd.raise_for_status()
         rt = await client.get(f"{API}/league/{league_key}/teams/roster?format=json")
         rt.raise_for_status()
@@ -585,6 +624,8 @@ async def fetch_keeper_league(league_key: str, access_token: str, my_guid: str |
     headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=30, trust_env=True, verify=verify, headers=headers) as client:
         rs = await client.get(f"{API}/league/{league_key}/settings?format=json")
+        if rs.status_code >= 400:
+            check_fantasy_scope(rs.status_code, rs.text)
         rs.raise_for_status()
         settings_json = rs.json()
 

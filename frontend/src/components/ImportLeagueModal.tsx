@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { X, Loader2, Check, AlertTriangle, ChevronRight } from "lucide-react";
-import { saveYahooSession, loadYahooSession, onYahooSession } from "@/lib/yahooAuth";
+import { saveYahooSession, loadYahooSession, onYahooSession, clearYahooSession } from "@/lib/yahooAuth";
 import { api, ImportReport, YahooPasteReport } from "@/lib/api";
 
 interface Props {
@@ -106,7 +106,16 @@ export default function ImportLeagueModal({ onClose }: Props) {
       setYahooList(leagues);
       if (leagues.length === 0) setError("Yahoo returned no NFL leagues for this account.");
     } catch (e) {
-      setError("Listing leagues failed: " + (e instanceof Error ? e.message : "error"));
+      const msg = e instanceof Error ? e.message : "error";
+      // A token with no fantasy grant can't be refreshed into a good one, so
+      // drop it — otherwise every retry reuses the same dead credential.
+      if (msg.includes("no Fantasy Sports permission")) {
+        clearYahooSession();
+        setAccessToken("");
+        setError(msg);
+      } else {
+        setError("Listing leagues failed: " + msg);
+      }
     }
   };
 

@@ -474,6 +474,8 @@ async def import_league(
             if not data.access_token:
                 raise HTTPException(status_code=400, detail="Yahoo import needs an access_token (connect Yahoo first).")
             norm = await yahoo_provider.fetch_league(data.ext_id, data.access_token, my_guid=data.my_guid)
+    except yahoo_provider.FantasyScopeError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except PermissionError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except HTTPException:
@@ -805,6 +807,8 @@ async def yahoo_keeper_candidates(
     try:
         norm = await yahoo_provider.fetch_keeper_league(
             data.league_key, data.access_token, my_guid=data.my_guid)
+    except yahoo_provider.FantasyScopeError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:  # noqa: BLE001 — surface provider errors cleanly
         raise HTTPException(status_code=502, detail=f"yahoo fetch failed: {e}")
 
@@ -844,9 +848,30 @@ async def yahoo_leagues(body: YahooToken, _: User = Depends(get_current_user)) -
     user can pick the exact league key — including unrenewed/past-season leagues."""
     try:
         leagues = await yahoo_provider.fetch_my_leagues(body.access_token)
+    except yahoo_provider.FantasyScopeError as e:
+        # 403, not 502: the request was fine, the GRANT is wrong. The client
+        # uses this status to offer "disconnect and re-authorize".
+        raise HTTPException(status_code=403, detail=str(e))
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Yahoo leagues fetch failed: {e}")
     return {"leagues": leagues}
+
+
+@app.get("/api/integrations/yahoo/config")
+async def yahoo_config(_: User = Depends(get_current_user)) -> dict:
+    """What the backend is actually configured with — no secret values, just
+    whether each piece is present, plus the scope and redirect being sent.
+    A scope/redirect mismatch is the usual cause of a Yahoo failure and is
+    otherwise invisible from the browser."""
+    cid, secret, redirect = yahoo_provider._cfg()
+    scope = os.getenv("YAHOO_SCOPE", yahoo_provider.DEFAULT_SCOPE) or yahoo_provider.DEFAULT_SCOPE
+    return {
+        "client_id_set": bool(cid),
+        "client_secret_set": bool(secret),
+        "redirect_uri": redirect,
+        "scope_sent": None if scope == "-" else scope,
+        "scope_from_env": bool(os.getenv("YAHOO_SCOPE")),
+    }
 
 
 # ── Live draft sync ───────────────────────────────────────────────────────────
@@ -895,6 +920,8 @@ async def sync_draft(
             norm_data = await espn_provider.fetch_raw_league(
                 data.ext_id, data.season, espn_s2=data.espn_s2, swid=data.swid)
             state = espn_provider.parse_live_draft(norm_data, my_team=data.my_team)
+    except yahoo_provider.FantasyScopeError as e:
+        raise HTTPException(status_code=403, detail=str(e))
     except PermissionError as e:
         raise HTTPException(status_code=401, detail=str(e))
     except HTTPException:

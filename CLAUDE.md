@@ -89,7 +89,11 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
 - `JWT_SECRET`, `JWT_ALGORITHM`, `ACCESS_TOKEN_EXPIRE_MINUTES`
 - `ALLOWED_ORIGINS` — exact Vercel origin incl. `https://` (CORS)
 - `ADMIN_EMAIL`, `ADMIN_PASSWORD` — auto-creates an admin user on startup if the email is new
-- `YAHOO_CLIENT_ID`, `YAHOO_CLIENT_SECRET`, `YAHOO_REDIRECT_URI`, optional `YAHOO_SCOPE` (e.g. `fspt-r`)
+- `YAHOO_CLIENT_ID`, `YAHOO_CLIENT_SECRET`, `YAHOO_REDIRECT_URI`. `YAHOO_SCOPE`
+  defaults to `fspt-r` — do NOT leave it unrequested: a token with no fantasy
+  scope authenticates fine and then 401s every fantasy call with
+  `additional_authorization_required`. `GET /api/integrations/yahoo/config`
+  reports what's configured (no secret values).
 - `FANTASYPROS_API_KEY` — for `projections.py` (pipeline); never commit it
 - Frontend (Vercel): `VITE_API_URL` — backend URL incl. `https://` (build-time, embedded by Vite)
 

@@ -482,6 +482,47 @@ def test_live_draft():
     assert gapped.complete_through == 1
 
 
+def test_yahoo_scope_error():
+    """Yahoo reports a missing Fantasy grant as a 401 that blames credentials,
+    which sends you hunting a bad token or secret. It must be recognised and
+    translated, not echoed."""
+    body = ('{"error":{"lang":"en-US","description":"Please provide valid credentials. '
+            'OAuth oauth_problem=\\"additional_authorization_required\\", realm=\\"yahooapis.com\\""}}')
+    try:
+        yahoo.check_fantasy_scope(401, body)
+        raise AssertionError("a missing fantasy scope must be recognised")
+    except yahoo.FantasyScopeError as e:
+        msg = str(e)
+    # The message has to name all three real causes, in order of likelihood.
+    assert "Fantasy Sports (Read)" in msg, msg
+    assert "DEPLOY" in msg, "Railway only applies env vars on deploy — must be called out"
+    assert "Disconnect" in msg, "an already-minted token stays under-scoped"
+
+    # Any other failure passes through untouched, so real errors aren't masked.
+    yahoo.check_fantasy_scope(401, '{"error":"invalid_token"}')
+    yahoo.check_fantasy_scope(500, "")
+    yahoo.check_fantasy_scope(404, None)
+
+    # Fantasy read is requested by default: leaving it opt-in produced exactly
+    # the failure above, so an unset YAHOO_SCOPE must still send a scope.
+    import os as _os
+    saved = _os.environ.pop("YAHOO_SCOPE", None)
+    _os.environ["YAHOO_CLIENT_ID"] = "cid"
+    _os.environ["YAHOO_REDIRECT_URI"] = "https://example.com"
+    try:
+        assert "scope=fspt-r" in yahoo.authorize_url(), yahoo.authorize_url()
+        _os.environ["YAHOO_SCOPE"] = "fspt-w"
+        assert "scope=fspt-w" in yahoo.authorize_url()
+        _os.environ["YAHOO_SCOPE"] = "-"          # explicit opt-out
+        assert "scope=" not in yahoo.authorize_url()
+    finally:
+        _os.environ.pop("YAHOO_SCOPE", None)
+        if saved is not None:
+            _os.environ["YAHOO_SCOPE"] = saved
+        _os.environ.pop("YAHOO_CLIENT_ID", None)
+        _os.environ.pop("YAHOO_REDIRECT_URI", None)
+
+
 def test_yahoo_leagues():
     data = {"fantasy_content": {"users": {"count": 1, "0": {"user": [
         {"guid": "MEGUID"},
@@ -509,6 +550,7 @@ def main():
     test_yahoo(); print("✓ yahoo parse")
     test_yahoo_keeper(); print("✓ yahoo keeper inputs")
     test_live_draft(); print("✓ live draft sync")
+    test_yahoo_scope_error(); print("✓ yahoo scope diagnosis")
     test_yahoo_leagues(); print("✓ yahoo leagues list")
     test_waiver_weekly_fetch(); print("✓ waiver weekly fetch")
     test_yahoo_paste(); print("✓ yahoo paste import")

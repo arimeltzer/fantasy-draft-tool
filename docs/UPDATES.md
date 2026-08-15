@@ -6,6 +6,26 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Fix: Yahoo 401 "additional_authorization_required"
+- **Cause**: the fantasy scope was opt-in. `authorize_url()` only sent `scope`
+  when `YAHOO_SCOPE` was set, so with it unset Yahoo issued a perfectly valid
+  token carrying no Fantasy Sports permission — which then failed every fantasy
+  call with a 401 that reads "Please provide valid credentials", pointing at the
+  token or the client secret rather than the grant.
+- **Fix**: `fspt-r` is now the default (fantasy read is the only thing this app
+  uses). `YAHOO_SCOPE` still overrides; `"-"` opts out explicitly.
+- **`check_fantasy_scope()`** recognises Yahoo's marker and raises a
+  `FantasyScopeError` naming all three real causes in order: app permissions,
+  a backend that never requested the scope (and Railway needing a **deploy**,
+  not a restart), and an already-minted token that refreshing cannot upgrade.
+  Applied to every fantasy fetch; other failures pass through untouched.
+- Routes return **403** for this, not 502 — the request was fine, the grant was
+  wrong — and the client drops the dead session on that signal, since refreshing
+  an under-scoped token just returns another under-scoped token.
+- **`GET /api/integrations/yahoo/config`** reports what the backend is actually
+  sending (scope, redirect, whether id/secret are set — never their values),
+  because a scope or redirect mismatch is otherwise invisible from the browser.
+
 ## 2026-08 — Fix: "Authorize with Yahoo" appeared to do nothing
 - **Symptom**: clicking Authorize opened a tab, you approved, and landed back on
   the create-a-league screen as if nothing had happened.
