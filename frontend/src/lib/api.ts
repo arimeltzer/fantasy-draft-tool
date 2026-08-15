@@ -300,6 +300,7 @@ export const api = {
     ),
   yahooConfig: () => req<{
     client_id_set: boolean; client_secret_set: boolean;
+    client_id_shape: { length: number; ends_with_dashes: boolean; looks_like_app_id: boolean };
     redirect_uri: string; scope_sent: string | null; scope_from_env: boolean;
   }>("/api/integrations/yahoo/config"),
   yahooRefresh: (refresh_token: string) =>

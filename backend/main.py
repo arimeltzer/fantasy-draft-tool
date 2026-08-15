@@ -868,6 +868,16 @@ async def yahoo_config(_: User = Depends(get_current_user)) -> dict:
     return {
         "client_id_set": bool(cid),
         "client_secret_set": bool(secret),
+        # Yahoo's console shows THREE identifiers and only one belongs here.
+        # The Client ID (Consumer Key) is long and ends in "--"; the App ID is
+        # a short handle. Pasting the App ID here is an easy mistake that fails
+        # in a way that looks like a scope problem, so report the shape (never
+        # the value) to make it self-diagnosable.
+        "client_id_shape": {
+            "length": len(cid),
+            "ends_with_dashes": cid.endswith("--"),
+            "looks_like_app_id": bool(cid) and len(cid) < 32 and not cid.endswith("--"),
+        },
         "redirect_uri": redirect,
         "scope_sent": None if scope == "-" else scope,
         "scope_from_env": bool(os.getenv("YAHOO_SCOPE")),
