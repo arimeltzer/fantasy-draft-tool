@@ -82,14 +82,14 @@ def load_seasons(years):
     for y in years:
         print(f"  loading {y}…", end=" ", flush=True)
         try:
-            df = _pd(nfl.load_player_stats(y, summary_level="season"))
+            df = _pd(nfl.load_player_stats(y, summary_level="reg"))
             typ = _col(df, "season_type")
             if typ:
                 df = df[df[typ] == "REG"]
             df = df[df[_col(df, "position", "pos")].isin(FANTASY_POS)].copy()
             team = _col(df, "team", "recent_team")
             df = df[df[team].notna()]
-            df["gp"] = df[_col(df, "games_played", "gp")].fillna(0).astype(int)
+            df["gp"] = df[_col(df, "games", "games_played", "gp")].fillna(0).astype(int)
             df["fp"] = df.apply(fantasy_points, axis=1)
             pos = _col(df, "position", "pos")
             for g in df[["season", _col(df, "player_id", "gsis_id"), _col(df, "player_display_name", "player_name"), pos, "gp", "fp"]].itertuples():

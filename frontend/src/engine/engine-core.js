@@ -7,10 +7,16 @@
    ===================================================================== */
 
 export const DEFAULT_PARAMS = {
-  // How much last season's actual production should pull the projection.
+  // ⚠ UNUSED. Nothing reads these two — `projectPoints()` blends seasons with
+  // `projection.primaryWeight` / `trendThreshold` instead. They are the only
+  // parameters `data-pipeline/backtest_parameters.py` tunes, which means that
+  // backtest has never been measuring the shipped model.
+  //
+  // Kept (rather than deleted) because the backtest still references them, but
+  // do NOT treat these values as tuned: run against 2015-2025, the grid's best
+  // setting for both was 0.0 — i.e. "apply no correction". See
+  // docs/PROJECTION_BACKTEST.md before wiring them into anything.
   priorWeight: 0.35,
-
-  // Mean reversion: dampens the last-season correction.
   regressionStrength: 0.25,
 
   // Last season normalized to per-game pace, scaled to a full season.
