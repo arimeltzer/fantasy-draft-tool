@@ -63,5 +63,37 @@ const rbGain6pt = board6pt.find((p) => p.id === 2).valuePoints;
 ok(qbGain6pt > qbGainStd, "QB value rises under 6pt-pass-TD/-1-INT scoring");
 eq(rbGain6pt, rbGainStd, "RB value (no passing stats) is unaffected by the passing-scoring override");
 
+/* ── rookies: valued off market rank, not pinned to a floor ────────── */
+// A player with no NFL history has no `last`/`last2` to project from, so the
+// market's opinion of them IS the signal. FantasyPros pulls often carry ECR
+// but no ADP; if only ADP counted, every rookie collapsed to the same floor
+// value and a top-15 rookie looked identical to an unrankable one.
+const rookie = (pos, over) => ({ id: 9, pos, team: "ARI", age: 22,
+                                 proj: null, last: null, last2: null, ...over });
+const val = (p) => valueBoard([p], { teams: 12, roster: { QB:1,RB:2,WR:2,TE:1,FLEX:1,K:1,DST:1,BENCH:6 } },
+                              standard)[0].valuePoints;
+
+const eliteEcr = val(rookie("RB", { ecr: 15 }));
+const midEcr   = val(rookie("RB", { ecr: 45 }));
+const deepEcr  = val(rookie("RB", { ecr: 300 }));
+const noRank   = val(rookie("RB", {}));
+ok(eliteEcr > midEcr, "a top-15 rookie projects above a mid-round one");
+ok(midEcr > deepEcr, "a mid-round rookie projects above a deep one");
+ok(eliteEcr > noRank * 2, "ECR-ranked rookie is far above the unranked floor");
+eq(deepEcr, noRank, "past the ADP span, rank decays to the same floor");
+
+// ADP still wins when both are present — it is the more direct signal.
+const byAdp = val(rookie("RB", { adp: 15, ecr: 300 }));
+eq(byAdp, eliteEcr, "ADP takes precedence over ECR when both exist");
+
+// A real market projection beats any rank-derived estimate.
+const projected = val(rookie("RB", { ecr: 300, proj: { rushYd: 1200, rushTD: 10 } }));
+ok(projected > deepEcr, "a real projection overrides the rank curve");
+
+// Rookies carry elevated risk — no history means a wider range of outcomes.
+const rookieRow = valueBoard([rookie("WR", { ecr: 20 })],
+  { teams: 12, roster: { QB:1,RB:2,WR:2,TE:1,FLEX:1,K:1,DST:1,BENCH:6 } }, standard)[0];
+ok(rookieRow.risk >= 0.2, "rookie risk is flagged, not treated as a known quantity");
+
 console.log(`\nengine-core.selftest: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -6,6 +6,26 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Rookie valuation: rank, not a flat floor
+- Adding the 349 missing ranked players exposed the next problem. With no NFL
+  history there is nothing to project from, so `rookieProjection()` derives a
+  value from the positional ceiling decayed by market rank — but it read
+  **ADP only**, and that pipeline run returned rankings with no ADP at all.
+- Every added player therefore hit the `adp == null` floor branch and got the
+  SAME value: 47.9 pts for every rookie RB, 46.2 for every WR. A top-15 rookie
+  and the 878th-ranked player were indistinguishable, at replacement level.
+  That is worse than being missing — a player shown at replacement level reads
+  as a considered judgement rather than absent data.
+- Rank now falls back ADP → ECR, the same fallback `rankByAdp()` already made
+  and for the same reason. On the existing curve an ECR-15 rookie RB goes from
+  47.9 to **156.1** pts; ECR 45 → 89.9; past the 200 span it decays to the
+  floor as before.
+- Precedence is unchanged where it was already right: a real market projection
+  beats the rank curve, and ADP beats ECR when both exist.
+- Rookie `risk` stays elevated (volatility 0.5 with no prior seasons), so the
+  board flags them rather than presenting a rank-derived number as certain.
+- engine-core selftest 10 → 17.
+
 ## 2026-08 — Rookies were missing entirely; duplicates weren't only about aliases
 ### Every incoming rookie was absent from the pool
 - `ingest_nflverse.py` builds the player base by aggregating **last season's

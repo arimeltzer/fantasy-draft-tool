@@ -122,14 +122,29 @@ function durabilityMult(gp, table) {
   return 1.0;
 }
 
-/** Rookie / no-recent-stats projection: market `proj` if present, else ADP tier. */
+/**
+ * Rookie / no-recent-stats projection.
+ *
+ * Order of evidence: a real market projection if we have one, else the
+ * player's market RANK on a decaying curve from the positional ceiling, else
+ * the floor.
+ *
+ * Rank falls back from ADP to ECR — the same fallback `rankByAdp()` makes, and
+ * for the same reason: a FantasyPros pull often carries rankings but no ADP.
+ * Without it every rookie collapses to the identical floor value, so the #3
+ * pick and the 878th-ranked player look equally worthless. That is worse than
+ * being absent: a player shown at replacement level reads as a considered
+ * judgement rather than missing data.
+ */
 function rookieProjection(player, sc, PP) {
   const marketPts = points(player.proj || {}, sc);
   if (marketPts > 0) return marketPts;
   const ceil = PP.rookieCeil[player.pos] ?? 150;
-  const adp = player.adp;
-  if (adp == null || adp <= 0) return ceil * PP.rookieAdpFloor * PP.rookieEraBonus;
-  const frac = Math.max(PP.rookieAdpFloor, 1 - Math.log(adp) / Math.log(PP.rookieAdpSpan));
+  const rank = player.adp != null && player.adp > 0 ? player.adp
+             : player.ecr != null && player.ecr > 0 ? player.ecr
+             : null;
+  if (rank == null) return ceil * PP.rookieAdpFloor * PP.rookieEraBonus;
+  const frac = Math.max(PP.rookieAdpFloor, 1 - Math.log(rank) / Math.log(PP.rookieAdpSpan));
   return ceil * frac * PP.rookieEraBonus;
 }
 
