@@ -65,6 +65,11 @@ import pandas as pd
 from scipy import stats
 
 from projection_model import DEFAULT_PARAMS, default_scoring, project_points, with_overrides
+from projection_v2 import league_rates, stabilize_player
+
+# Prior strength for v2's touchdown shrinkage, as a multiple of a typical
+# season's workload. 0 must reproduce the shipped model exactly (checked).
+V2_K = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0]
 
 try:
     from adp_probe import fetch_adp          # needs FANTASYPROS_API_KEY
@@ -82,6 +87,11 @@ COMP = {
     "rushing_yards": "rushYd", "rushing_tds": "rushTD",
     "receptions": "rec", "receiving_yards": "recYd", "receiving_tds": "recTD",
 }
+
+# Volume, carried alongside the scoring components. These are NOT worth points,
+# so `points()` ignores them; they exist so v2 can shrink a touchdown rate
+# against the opportunities that produced it.
+VOLUME = {"carries": "carries", "targets": "targets", "attempts": "attempts"}
 
 
 def _pd(df):
@@ -114,7 +124,7 @@ def load_seasons(years) -> pd.DataFrame:
             "pos": df[pos_c],
             "gp": df[gp_c].fillna(0).astype(int),
         })
-        for src, dst in COMP.items():
+        for src, dst in {**COMP, **VOLUME}.items():
             keep[dst] = df[src].fillna(0) if src in df.columns else 0
         fum = 0
         for c in ("rushing_fumbles_lost", "receiving_fumbles_lost", "sack_fumbles_lost"):
@@ -148,7 +158,9 @@ def load_ages(years) -> dict:
 
 
 def season_line(row) -> dict:
-    return {"gp": int(row.gp), **{v: float(getattr(row, v)) for v in COMP.values()},
+    return {"gp": int(row.gp),
+            **{v: float(getattr(row, v)) for v in COMP.values()},
+            **{v: float(getattr(row, v, 0) or 0) for v in VOLUME.values()},
             "fumbles": float(row.fumbles)}
 
 
@@ -379,6 +391,12 @@ def main():
         if not players:
             continue
 
+        # League scoring rates for v2, from seasons STRICTLY BEFORE the test
+        # year — the only ones a drafter would have had. Reading the test
+        # season here would leak the answer into the "prediction".
+        rates = league_rates((r.pos, season_line(r))
+                             for r in data[data.season < year].itertuples())
+
         # ── the matched population ────────────────────────────────────
         # Comparing the model to the market is only meaningful over players
         # BOTH can rank. ADP covers different (fewer) players than nflverse
@@ -443,11 +461,36 @@ def main():
 
                 if pop_name == "all":
                     for pos, m in disagreement_signal(pop, base_projs, adp_by_player, sc).items():
-                        dis_rows.append({"year": year, "pos": pos, **m})
+                        dis_rows.append({"year": year, "variant": "shipped", "k": 0.0,
+                                         "pos": pos, **m})
+
+            # ── v2: touchdowns shrunk toward the league rate ──────────
+            # Scored on its own AND on the partial, because those answer
+            # different questions: solo score says "is it a better model",
+            # the partial says "does it add anything the market lacks" —
+            # and only the second one makes a blend worth more.
+            for k in V2_K:
+                v2 = [project_points(stabilize_player(p, rates, k), sc, DEFAULT_PARAMS)["proj"]
+                      for p in pop]
+                for pos, m in score(pop, v2, sc).items():
+                    per_year.append({"year": year, "population": pop_name,
+                                     "model": "v2", "variant": f"k{k}", "k": k,
+                                     "pos": pos, **m})
+                if pop_name == "all" and adp_by_player and k > 0:
+                    for pos, m in disagreement_signal(pop, v2, adp_by_player, sc).items():
+                        dis_rows.append({"year": year, "variant": f"v2_k{k}", "k": k,
+                                         "pos": pos, **m})
+                    # the merge that matters: does a better model raise the ceiling?
+                    for w in (0.2, 0.3, 0.4, 0.5):
+                        for pos, m in score(pop, blend_with_market(pop, v2, adp_by_player, w), sc).items():
+                            per_year.append({"year": year, "population": pop_name,
+                                             "model": "v2_blend", "variant": f"k{k}_w{w}",
+                                             "k": k, "blend_w": w, "pos": pos, **m})
 
     df = pd.DataFrame(per_year)
-    if "blend_w" not in df.columns:
-        df["blend_w"] = float("nan")
+    for c in ("blend_w", "k"):
+        if c not in df.columns:
+            df[c] = float("nan")
     os.makedirs(args.out, exist_ok=True)
     df.to_csv(f"{args.out}/projection_backtest_by_year.csv", index=False)
 
@@ -455,8 +498,9 @@ def main():
              .agg(spearman_total=("spearman_total", "mean"),
                   spearman_pace=("spearman_pace", "mean"),
                   hit24_total=("hit24_total", "mean"),
-                  # carried through the groupby so the sweep can be ordered
+                  # carried through the groupby so the sweeps can be ordered
                   blend_w=("blend_w", "first"),
+                  k=("k", "first"),
                   n_years=("year", "nunique"))
              .reset_index()
              .sort_values(["pos", "spearman_total"], ascending=[True, False]))
@@ -521,6 +565,35 @@ def main():
                           f"  (vs {ref_label} {r.spearman_total - ref_s:+.4f})"
                           f"  top24 {r.hit24_total:.3f}{star}")
 
+    # ── v2: did shrinking touchdowns help, and did it help the BLEND? ─────
+    v2a = agg[(agg["population"] == "all") & (agg["model"] == "v2")]
+    if len(v2a):
+        print("\n=== v2: TOUCHDOWN REGRESSION (full board) ===")
+        print("k = prior strength, as multiples of a typical season's workload.")
+        print("k=0 is the shipped model. Two columns, because they answer different")
+        print("questions: solo = is it a better model, merged = does the market-anchored")
+        print("board get better, which is the one that ships.")
+        vb = agg[(agg["population"] == "all") & (agg["model"] == "v2_blend")]
+        for posn in sorted(v2a["pos"].unique()):
+            s = v2a[v2a["pos"] == posn].sort_values("k")
+            base = s[s.k == 0.0]
+            b0 = base.iloc[0].spearman_total if len(base) else float("nan")
+            print(f"\n  {posn}   (shipped solo {b0:.4f})")
+            for _, r in s.iterrows():
+                m = vb[(vb["pos"] == posn) & (vb["k"] == r.k)]
+                best = f"{m.spearman_total.max():.4f}" if len(m) else "   —  "
+                bw = (f" @w{m.loc[m.spearman_total.idxmax()].blend_w}") if len(m) else ""
+                print(f"    k={r.k:<5} solo {r.spearman_total:.4f} ({r.spearman_total - b0:+.4f})"
+                      f"   merged {best}{bw}")
+        # the shipped model's own best merge, for the comparison that matters
+        mb = agg[(agg["population"] == "all") & (agg["model"] == "blend")]
+        if len(mb):
+            print("\n  shipped model's best merge, for reference:")
+            for posn in sorted(mb["pos"].unique()):
+                s = mb[mb["pos"] == posn]
+                r = s.loc[s.spearman_total.idxmax()]
+                print(f"    {posn}  {r.spearman_total:.4f} @w{r.blend_w}")
+
     if dis_rows:
         dis = pd.DataFrame(dis_rows)
         dis.to_csv(f"{args.out}/projection_disagreement.csv", index=False)
@@ -529,17 +602,25 @@ def main():
         print("market's share removed. Null is 0. > 0 means a blend has something to")
         print("work with; ~0 means the disagreements are noise and no weight helps.")
         for posn in sorted(dis["pos"].unique()):
-            s = dis[dis["pos"] == posn]
+            ps = dis[dis["pos"] == posn]
+            s = ps[ps["variant"] == "shipped"]
             print(f"\n  {posn}  (n_years={s['year'].nunique()}, ~{s['n'].mean():.0f} ranked players/yr)")
             print(f"    model vs actual    : {s['rho_model'].mean():+.4f}")
             print(f"    market vs actual   : {s['rho_market'].mean():+.4f}")
             print(f"    model vs market    : {s['rho_model_market'].mean():+.4f}"
                   f"   (overlap — how much the model just echoes ADP)")
             print(f"    PARTIAL (model|ADP): {s['partial_model'].mean():+.4f}   <-- the one that matters")
-            if "partial_model_big" in s and s["partial_model_big"].notna().any():
+            if s["partial_model_big"].notna().any():
                 b = s[s["partial_model_big"].notna()]
                 print(f"    big calls (>=10 rk): {b['partial_model_big'].mean():+.4f}"
                       f"   (~{b['n_big'].mean():.0f} players/yr)")
+            v2v = sorted(v for v in ps["variant"].unique() if v.startswith("v2_"))
+            if v2v:
+                print("    v2 partials — the number a model tweak has to move:")
+                for v in v2v:
+                    r = ps[ps["variant"] == v]
+                    print(f"      {v:<10} partial {r['partial_model'].mean():+.4f}"
+                          f"   overlap {r['rho_model_market'].mean():+.4f}")
 
     print(f"\n✓ wrote {args.out}/projection_backtest_summary.csv and _by_year.csv")
 

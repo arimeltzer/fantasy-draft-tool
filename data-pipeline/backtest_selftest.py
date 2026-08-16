@@ -109,6 +109,54 @@ echo = partial([-ADP[i] for i in range(N)])
 check("a model that just echoes ADP is nan, never a big number",
       echo != echo or abs(echo) < 0.10, f"{echo:+.4f}")
 
+# ── projection_v2: touchdown shrinkage ─────────────────────────────────────
+print("\nprojection_v2 (touchdown shrinkage)")
+from projection_v2 import league_rates, stabilize_line, stabilize_player   # noqa: E402
+
+# League: 10 TDs per 100 carries, 5 per 100 targets.
+rows = [("RB", {"carries": 100.0, "rushTD": 10.0, "targets": 100.0, "recTD": 5.0})
+        for _ in range(20)]
+R = league_rates(rows)
+check("league rate is TDs per opportunity",
+      approx(R[("RB", "rush")]["rate"], 0.10, 1e-9) and approx(R[("RB", "rec")]["rate"], 0.05, 1e-9))
+check("mean_opp is per-player, not the pooled total",
+      approx(R[("RB", "rush")]["mean_opp"], 100.0, 1e-9), str(R[("RB", "rush")]["mean_opp"]))
+
+lucky = {"carries": 100.0, "rushTD": 20.0, "targets": 0.0, "recTD": 0.0}
+check("k=0 changes nothing (the shipped model, exactly)",
+      stabilize_line(lucky, "RB", R, 0.0) == lucky)
+
+k1 = stabilize_line(lucky, "RB", R, 1.0)
+check("shrinkage pulls a lucky season toward the league rate",
+      15.0 - 1e-9 <= k1["rushTD"] < 20.0, f"20.0 -> {k1['rushTD']:.2f}")
+check("k=1 with equal workload lands exactly halfway",
+      approx(k1["rushTD"], 15.0, 1e-9), f"{k1['rushTD']:.4f}")
+check("more shrinkage moves further toward league average",
+      stabilize_line(lucky, "RB", R, 4.0)["rushTD"] < k1["rushTD"])
+check("volume itself is never touched", k1["carries"] == lucky["carries"])
+
+unlucky = stabilize_line({"carries": 100.0, "rushTD": 2.0}, "RB", R, 1.0)
+check("an unlucky season is pulled UP, not just down",
+      2.0 < unlucky["rushTD"] <= 10.0, f"2.0 -> {unlucky['rushTD']:.2f}")
+
+big = stabilize_line({"carries": 400.0, "rushTD": 40.0}, "RB", R, 1.0)
+small = stabilize_line({"carries": 25.0, "rushTD": 5.0}, "RB", R, 1.0)
+check("a big sample is shrunk proportionally less than a small one",
+      (40.0 - big["rushTD"]) / 40.0 < (5.0 - small["rushTD"]) / 5.0,
+      f"400 carries {(40.0 - big['rushTD']) / 40.0:.1%} vs 25 carries {(5.0 - small['rushTD']) / 5.0:.1%}")
+
+check("a stat the position never records is left alone",
+      stabilize_line({"carries": 0.0, "rushTD": 3.0}, "RB", R, 1.0)["rushTD"] == 3.0)
+check("an unknown position falls through untouched",
+      stabilize_line(lucky, "P", R, 1.0) == lucky)
+
+orig = {"carries": 100.0, "rushTD": 20.0}
+player = {"pos": "RB", "last": orig, "last2": None}
+out = stabilize_player(player, R, 1.0)
+check("stabilize_player does not mutate the caller's line", orig["rushTD"] == 20.0)
+check("stabilize_player handles a missing prior season", out["last2"] is None)
+check("stabilize_player rewrites the season it does have", out["last"]["rushTD"] < 20.0)
+
 print()
 if FAILS:
     raise SystemExit(f"backtest selftest: {len(FAILS)} FAILED — {', '.join(FAILS)}")
