@@ -6,6 +6,25 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Assign the drafting team at the moment you log the pick
+- **Before**: the snake board's ✕ meant only "someone took him". Saying WHO
+  meant opening the draft log, finding the pick, and setting the team — several
+  steps, during the one part of the app where seconds matter. (The auction room
+  already had a winner dropdown; snake never got one.)
+- **Now**: ✕ is replaced by a "Drafted by…" dropdown listing you plus every
+  opponent. One click opens, one click logs the pick to that team.
+- **The team on the clock is lifted to the top and labelled**, taken from
+  `currentOwners()` — the same draft-order board the pick math uses, so traded
+  picks are honoured instead of assuming plain serpentine. Everything else
+  keeps league order so muscle memory survives.
+- `teamOptions()` keeps each option's `teamId` bound to its index in
+  `settings.opponents` (that index IS `DraftPick.team_id`), so reordering the
+  display can't silently reassign picks to the wrong team.
+- The header now shows `#<pick> <team>` — the app's idea of whose turn it is.
+  If that drifts from the real room, it's visible before it mis-assigns
+  anything, rather than after.
+- ✓ ("I drafted him") is unchanged and still one click.
+
 ## 2026-08 — Fix: Yahoo 401 "additional_authorization_required"
 - **Cause**: the fantasy scope was opt-in. `authorize_url()` only sent `scope`
   when `YAHOO_SCOPE` was set, so with it unset Yahoo issued a perfectly valid

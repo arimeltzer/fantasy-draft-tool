@@ -1,8 +1,8 @@
 import { useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, X, Lock, ListOrdered, Radio } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio } from "lucide-react";
 import { myPickNumbers, rankByAdp } from "@/engine/snake-engine.js";
-import { roundsFor } from "@/engine/draft-order.js";
+import { roundsFor, currentOwners } from "@/engine/draft-order.js";
 import type { BoardPlayer, SnakeLiveState } from "@/engine/snake-engine.js";
 import { LeagueSettings, ApiLeague } from "@/lib/api";
 import { useDraftStore } from "@/store/draftStore";
@@ -17,6 +17,7 @@ import KeeperPlanner from "@/components/shared/KeeperPlanner";
 import DraftOverview from "@/components/shared/DraftOverview";
 import DraftLogModal from "@/components/shared/DraftLogModal";
 import LiveDraftPanel from "@/components/shared/LiveDraftPanel";
+import TeamPicker from "@/components/shared/TeamPicker";
 import DraftOrderBoard from "@/components/shared/DraftOrderBoard";
 import Tip from "@/components/shared/Tip";
 import PickClock from "./PickClock";
@@ -125,8 +126,8 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
     }
   }, [picks, updatePick]);
 
-  const draft = useCallback((p: BoardPlayer, mine: boolean) => {
-    addPick({ playerId: p.id as number, mine });
+  const draft = useCallback((p: BoardPlayer, mine: boolean, teamId?: number) => {
+    addPick({ playerId: p.id as number, mine, teamId });
   }, [addPick]);
 
   const undo = useCallback((pickId: number) => removePick(pickId), [removePick]);
@@ -143,6 +144,20 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
     if (query && !p.name.toLowerCase().includes(query.toLowerCase()) && !p.team.toLowerCase().includes(query.toLowerCase())) return false;
     return true;
   }), [board, hideTaken, draftedIds, posFilter, query]);
+
+  const opponents = useMemo(
+    () => (settings.opponents?.length
+      ? settings.opponents
+      : Array.from({ length: Math.max(0, settings.teams - 1) }, (_, i) => `Team ${i + 2}`)),
+    [settings.opponents, settings.teams],
+  );
+
+  // Whose pick it is, straight from the draft-order board — so traded picks are
+  // honoured rather than assuming plain serpentine.
+  const onClockOwner = useMemo(() => {
+    const owners = currentOwners(settings, roundsFor(settings));
+    return owners[overallPick];
+  }, [settings, overallPick]);
 
   const pprLabel = settings.ppr === 1 ? "PPR" : settings.ppr === 0.5 ? "Half-PPR" : "Std";
 
@@ -166,6 +181,16 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2 text-xs">
+            {/* The pick the app THINKS is next. Shown so a drift between this
+                and the real room is visible before it mis-assigns picks. */}
+            <Tip tip="Whose pick the app has next, from the draft order (including any traded picks). If this doesn't match the real draft, fix the order or log the missing picks.">
+              <span className="hidden md:flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-gray-500">
+                <span className="text-gray-400">#{overallPick}</span>
+                <span className={onClockOwner === "__me__" ? "font-semibold text-emerald-600" : "text-gray-700"}>
+                  {onClockOwner === "__me__" ? "You" : onClockOwner ?? "—"}
+                </span>
+              </span>
+            </Tip>
             <PickClock
               draftSlot={settings.draftSlot ?? 1}
               teams={settings.teams}
@@ -368,13 +393,13 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
                           >
                             <Check className="w-3.5 h-3.5" />
                           </button>
-                          <button
-                            onClick={() => draft(p, false)}
-                            className="px-1.5 py-1 rounded text-xs bg-gray-50 border border-gray-300 text-gray-500 hover:text-gray-700 hover:border-gray-400"
-                            title="Someone else drafted"
-                          >
-                            <X className="w-3.5 h-3.5" />
-                          </button>
+                          <TeamPicker
+                            opponents={opponents}
+                            onClockOwner={onClockOwner}
+                            onPick={(teamId) =>
+                              teamId === null ? draft(p, true) : draft(p, false, teamId)}
+                            className="flex-1"
+                          />
                         </>
                       )}
                     </div>
