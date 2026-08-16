@@ -42,6 +42,10 @@ data-pipeline/      offline data prep -> JSON -> Postgres
   fantasypros.py      FantasyPros public API client (x-api-key): rankings + projections
   load_to_db.py       load JSON into Postgres (also bakes SOS multipliers)
   sos_backtest.py / sos_engine.py   empirical SOS tuning (validated vs JS)
+  projection_model.py   Python port of engine-core.js projectPoints (parity-tested)
+  projection_parity.py  asserts the port == the shipped JS — run after ANY change
+  projection_backtest.py  the SHIPPED model vs a naive baseline, scored on rank
+                      correlation (see docs/PROJECTION_BACKTEST.md)
 ```
 
 ## Data flow
@@ -76,6 +80,8 @@ node frontend/src/engine/draft-order.selftest.mjs # draft board / traded picks
 cd backend && uvicorn main:app --reload
 # integration parsers (no net/db) — regression guard
 cd backend && python -m integrations.selftest
+# projection model: port parity, then backtest (both pull from nflverse)
+cd data-pipeline && python projection_parity.py && python projection_backtest.py
 # SOS tuning (pulls 10 seasons from nflverse)
 cd data-pipeline && python sos_engine.py && python sos_backtest.py
 # load/refresh DB (run locally; needs Railway DATABASE_PUBLIC_URL)

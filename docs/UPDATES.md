@@ -6,6 +6,30 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — The projection model, finally measured
+- `projection_model.py` is a line-for-line Python port of `engine-core.js`
+  `projectPoints()`, and `projection_parity.py` asserts it matches the shipped JS
+  over 444 players × 5 parameter sets (2220/2220 identical). Without that guard a
+  drifting port measures a fiction just as convincingly as the old backtest did.
+  - It caught a real one immediately: `f"{x:.1f}"` uses banker's rounding
+    (220.25 → 220.2) where JS `toFixed(1)` rounds half away from zero
+    (220.25 → 220.3). Now `Decimal(x)` + `ROUND_HALF_UP` on the exact binary
+    value, which also matches JS on values that merely look like halves.
+- `projection_backtest.py` scores it on **Spearman**, not MAE — a board is a
+  ranking, and being uniformly low costs nothing if the order holds.
+- **The model works.** vs "just use last season's pace", 2017–2025:
+  QB 0.643 → **0.703**, RB 0.660 → **0.689**, TE 0.675 → **0.708**,
+  WR 0.715 → **0.735**; ahead in **26 of 27** position-years.
+- **The shipped parameters are already near-optimal** — best in a 20-combo grid
+  beats them by 0.001–0.003, which is noise over 9 years. Nothing to retune.
+- **The trend adjustment does nothing measurable.** Disabling it entirely moves
+  Spearman by +0.0002…+0.0013 and wins 4–6 years of 9. Harmless, but it is
+  complexity carrying no weight — don't extend it without evidence.
+- Bounds stated in the doc: survivorship (players absent in year Y are excluded,
+  not counted as misses), rookies untested (that path now covers ~349 of 959
+  live players), and no ADP baseline — beating last-season pace is a low bar,
+  beating the market is the real one.
+
 ## 2026-08 — FantasyPros projections fixed against the spec; injury flags
 ### Projections/ADP were parser bugs, not a plan tier
 The upgraded subscription returned exactly the same `0 players`, so the cause
