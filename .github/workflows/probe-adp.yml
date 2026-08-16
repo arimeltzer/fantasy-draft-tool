@@ -1,0 +1,30 @@
+name: Probe historical ADP
+
+# Manual only. Answers whether FantasyPros serves genuine PRESEASON ADP for past
+# seasons, which decides whether the projection backtest can use it as a
+# baseline. See data-pipeline/adp_probe.py for why correlation is the test.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: "Seasons to probe (space separated)"
+        required: false
+        default: "2022 2023 2024"
+        type: string
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+      - name: Probe
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python adp_probe.py --seasons ${{ inputs.seasons }}
