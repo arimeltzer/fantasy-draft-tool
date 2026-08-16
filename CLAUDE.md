@@ -76,6 +76,7 @@ node frontend/src/engine/engine-core.selftest.mjs # scoring/VBD engine tests
 node frontend/src/engine/keeper.selftest.mjs      # keeper-rule engine tests
 node frontend/src/engine/keeperReco.selftest.mjs  # keeper recommender tests
 node frontend/src/engine/draft-order.selftest.mjs # draft board / traded picks
+node frontend/src/components/draft-rooms.selftest.mjs # the board renders players at all
 # backend (needs DATABASE_URL etc.)
 cd backend && uvicorn main:app --reload
 # integration parsers (no net/db) — regression guard
@@ -181,6 +182,14 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   `player_stats`); the gzipped CSV is parser-friendly (parquet needs heavy deps).
 - The frontend is an intentional **light** theme (semantic tokens in
   `tailwind.config.ts`); the old inverted-slate hack was removed — don't reinstate it.
+- **`npm run build` does not prove the UI renders.** There are no frontend
+  render tests, and bare text is valid JSX, so a component whose list render was
+  deleted still type-checks and bundles clean. That shipped once: the SnakeRoom
+  player list was replaced by the literal token `ROW_MAP_PLACEHOLDER` during a
+  perf refactor and the board rendered no players. `draft-rooms.selftest.mjs`
+  covers that specific hole; real render tests (vitest + testing-library) are
+  still the missing layer. After touching a room's markup, run the selftest and
+  actually look at the page.
 
 ## Keepers (built)
 

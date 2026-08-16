@@ -341,7 +341,20 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
             </div>
 
             <div className="divide-y divide-gray-200 max-h-[60vh] overflow-y-auto">
-ROW_MAP_PLACEHOLDER
+              {filtered.map((p, i) => (
+                <PlayerRow
+                  key={p.id as number}
+                  p={p}
+                  idx={i}
+                  pick={pickByPlayer.get(p.id as number)}
+                  rank={rankById.get(p.id as number)}
+                  maxVbd={maxVbd}
+                  opponents={opponents}
+                  getOnClock={getOnClock}
+                  onDraft={draft}
+                  onUndo={undo}
+                />
+              ))}
               {filtered.length === 0 && (
                 <div className="px-3 py-8 text-center text-sm text-gray-500">No players match.</div>
               )}
@@ -402,7 +415,6 @@ const PlayerRow = memo(function PlayerRow({
 
   return (
                   <div
-                    key={p.id}
                     className={`grid grid-cols-[28px_1fr_auto] sm:grid-cols-[28px_44px_1fr_70px_140px] gap-2 px-3 py-2 items-center text-sm ${
                       mine ? "bg-emerald-500/[0.06]" :
                       taken ? "bg-gray-100 opacity-50" :
