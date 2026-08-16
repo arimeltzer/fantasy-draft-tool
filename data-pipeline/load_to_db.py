@@ -124,9 +124,10 @@ def main():
         if pos not in ("QB", "RB", "WR", "TE", "K", "DST"):
             continue
         cur.execute("""
-            INSERT INTO fantasy_players (season, name, pos, team, age, proj, last, last2, ecr, adp, aav)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s)
+            INSERT INTO fantasy_players (season, name, pos, team, age, proj, last, last2, ecr, adp, aav, injury)
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s, %s::jsonb)
             ON CONFLICT (season, name, pos, team) DO UPDATE SET
+                injury = EXCLUDED.injury,
                 age   = EXCLUDED.age,
                 proj  = EXCLUDED.proj,
                 last  = EXCLUDED.last,
@@ -138,7 +139,8 @@ def main():
         """, (args.season, p["name"], pos, normalize_team(p.get("team"))[:5],
               int(p["age"]) if p.get("age") else None,
               json.dumps(p.get("proj")), json.dumps(p.get("last")),
-              json.dumps(p.get("last2")), p.get("ecr"), p.get("adp"), p.get("aav")))
+              json.dumps(p.get("last2")), p.get("ecr"), p.get("adp"), p.get("aav"),
+              json.dumps(p.get("injury")) if p.get("injury") else None))
         db_id = cur.fetchone()[0]
         if p.get("id"):
             id_map[str(p["id"])] = db_id

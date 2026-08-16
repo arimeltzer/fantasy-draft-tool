@@ -6,6 +6,41 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — FantasyPros projections fixed against the spec; injury flags
+### Projections/ADP were parser bugs, not a plan tier
+The upgraded subscription returned exactly the same `0 players`, so the cause
+was ours. Read against the published OpenAPI spec rather than guessed:
+- **Position field is `position_id`.** We read `player_position_id`/`position`,
+  got `""`, and filtered every row out. That alone zeroed the whole pull.
+- **`stats` is an ARRAY of stat objects, not a dict.** `_extract_stats` treated
+  it as a dict, fell through to the player object, and read zeros for
+  everything even when rows did parse.
+- **Receptions are `rec_rec`.** Missing from the synonym list — PPR scoring
+  depends on it.
+- **ADP is `rank_adp`**, not `player_adp`; that is why ADP matched 0 and every
+  rookie fell to the projection floor.
+- **AAV does not exist on this API.** "auction" appears nowhere in the spec and
+  `NFLRankingTypes` is WW/WAIVER/ROS/DRAFT/PRESEASON/SLEEPERS/ADP/BEST/PROSPECT/
+  PRO/DEVY/ROOKIES/DYNADP. The old `type=auction` call was answered as an
+  ordinary ranking pull, which is why it silently parsed to zero instead of
+  failing. `fetch_aav()` is now an explicit no-op with the reason written down;
+  `marketPrice()` uses its modeled curve, as it already did whenever aav was null.
+
+### Injury flags
+- New `/nfl/injuries` pull (`fetch_injuries`/`parse_injuries`), stored on the
+  player row as `injury` jsonb (**migration 005**) and surfaced by
+  `InjuryBadge` in both draft rooms.
+- Severity is mapped from the spec's closed status enum — IR/PUP/OUT/COV-IR/
+  Suspended are "out", Doubtful, Questionable, Not Starting below that. An
+  unrecognised status is shown as a note rather than dropped: an unknown status
+  is a reason to look, not to hide it.
+- Out/IR renders as a filled red chip. The failure being prevented is drafting
+  someone on IR without noticing, so it is deliberately hard to miss, while
+  Questionable stays quiet because a badge that cries wolf gets ignored.
+- **Valuations are untouched.** What an injury is worth depends on your IR spot,
+  bench depth and the length of the absence — none of which the app knows, so it
+  reports the status instead of silently discounting the player.
+
 ## 2026-08 — Rookie valuation: rank, not a flat floor
 - Adding the 349 missing ranked players exposed the next problem. With no NFL
   history there is nothing to project from, so `rookieProjection()` derives a

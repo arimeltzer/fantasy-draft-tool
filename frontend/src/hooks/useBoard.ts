@@ -16,6 +16,7 @@ function toEnginePlayer(p: ApiPlayer) {
     ecr: p.ecr ?? undefined,
     adp: p.adp ?? undefined,
     aav: p.aav ?? undefined,
+    injury: p.injury ?? null,
   };
 }
 
@@ -86,6 +87,7 @@ function dedupePlayers(players: ApiPlayer[]): ApiPlayer[] {
     kept.adp ??= p.adp;
     kept.aav ??= p.aav;
     kept.age ??= p.age;
+    kept.injury ??= p.injury;
   }
   return out;
 }

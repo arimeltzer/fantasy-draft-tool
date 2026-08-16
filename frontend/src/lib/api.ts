@@ -13,6 +13,16 @@ export interface ApiPlayer {
   ecr: number | null;
   adp: number | null;
   aav: number | null;
+  injury: InjuryInfo | null;
+}
+
+/** Reported injury, from the FantasyPros injuries endpoint (see the pipeline). */
+export interface InjuryInfo {
+  status: string;            // "Questionable" | "IR" | "OUT" | …
+  short?: string | null;     // "Q" | "IR" | "O" | …
+  type?: string | null;      // "Knee", "Achilles", …
+  severity: "out" | "doubtful" | "questionable" | "note";
+  chance?: number | null;    // probability of playing, when reported
 }
 
 export interface ApiLeague {

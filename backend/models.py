@@ -61,6 +61,8 @@ class Player(Base):
     ecr    = Column(Float, nullable=True)
     adp    = Column(Float, nullable=True)
     aav    = Column(Float, nullable=True)   # FantasyPros consensus auction average value
+    # Reported injury status (migration 005); NULL = nothing reported.
+    injury = Column(JSONB, nullable=True)
 
     __table_args__ = (UniqueConstraint("season", "name", "pos", "team", name="uq_player_season"),)
 

@@ -20,6 +20,7 @@ import DraftLogModal from "@/components/shared/DraftLogModal";
 import LiveDraftPanel from "@/components/shared/LiveDraftPanel";
 import TeamPicker from "@/components/shared/TeamPicker";
 import DraftOrderBoard from "@/components/shared/DraftOrderBoard";
+import InjuryBadge from "@/components/shared/InjuryBadge";
 import Tip from "@/components/shared/Tip";
 import PickClock from "./PickClock";
 import NeedsPanel, { computeNeeds } from "./NeedsPanel";
@@ -419,6 +420,7 @@ const PlayerRow = memo(function PlayerRow({
                       <div className="flex items-center gap-1.5">
                         {mine && <Crown className="w-3 h-3 text-emerald-600 shrink-0" />}
                         <span className="font-medium truncate">{p.name}</span>
+                        <InjuryBadge injury={p.injury} />
                         <span className="font-mono text-xs text-gray-500">{p.team}</span>
                         {p.tier && <span className="text-xs font-mono bg-gray-100 px-1 rounded text-gray-500" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
                         {p.risk >= 0.4 && (

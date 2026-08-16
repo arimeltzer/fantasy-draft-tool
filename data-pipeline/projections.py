@@ -160,14 +160,17 @@ def main():
         except Exception as e:
             print(f"  ! FantasyPros projections failed ({e}); proj left as baseline")
 
-    # --- AAV (auction average value) --- FantasyPros API only, no free fallback.
+    # --- AAV --- not offered by the public API (see fantasypros.fetch_aav).
     aav: dict = {}
+
+    # --- injuries --- so the board can flag a hurt player before you draft him.
+    injuries: dict = {}
     if fp_mod:
         try:
-            aav = fp_mod.fetch_aav(args.season, args.scoring)
-            print(f"Pulling AAV from FantasyPros API ({args.scoring}, {args.season})…  {len(aav)} players")
+            injuries = fp_mod.fetch_injuries(args.season)
+            print(f"Pulling injuries from FantasyPros API ({args.season})…  {len(injuries)} flagged")
         except Exception as e:
-            print(f"  ! FantasyPros AAV failed ({e}); leaving `aav` unset")
+            print(f"  ! FantasyPros injuries failed ({e}); no injury flags this run")
 
     n_ecr = n_adp = n_proj = n_aav = 0
     seen = set()
@@ -182,6 +185,7 @@ def main():
             p["proj"] = proj[k]; n_proj += 1
         if k in aav:
             p["aav"] = aav[k]; n_aav += 1
+        p["injury"] = injuries.get(k)
 
     # --- players the base doesn't have at all -------------------------------
     # The base is built from LAST season's stats, so anyone who never played an
@@ -209,6 +213,7 @@ def main():
                 "ecr": round(ecr[k], 1) if k in ecr else None,
                 "adp": round(adp[k], 1) if k in adp else None,
                 "aav": aav.get(k),
+                "injury": injuries.get(k),
                 "rookie": True,
             })
             seen.add(k)
@@ -226,10 +231,11 @@ def main():
     else:
         print("  • projections: none applied; `proj` left as baseline "
               "(set FANTASYPROS_API_KEY, or pass --proj-csv, for real forecasts)")
-    if aav:
-        print(f"  ✓ AAV matched: {n_aav}/{len(players)}")
-    else:
-        print("  • AAV: none applied (needs FANTASYPROS_API_KEY); marketPrice() falls back to the modeled curve")
+    if injuries:
+        hit = sum(1 for p in players if p.get("injury"))
+        out_now = sum(1 for p in players if (p.get("injury") or {}).get("severity") == "out")
+        print(f"  ✓ injuries matched: {hit}/{len(players)}  ({out_now} out/IR)")
+    print("  • AAV: not offered by the FantasyPros public API; marketPrice() uses the modeled curve")
     print(f"Wrote {args.out}  ({len(players)} players)")
 
 if __name__ == "__main__":

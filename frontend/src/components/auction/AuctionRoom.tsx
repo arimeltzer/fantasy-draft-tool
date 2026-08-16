@@ -23,6 +23,7 @@ import KeeperPlanner from "@/components/shared/KeeperPlanner";
 import DraftOverview from "@/components/shared/DraftOverview";
 import DraftLogModal from "@/components/shared/DraftLogModal";
 import LiveDraftPanel from "@/components/shared/LiveDraftPanel";
+import InjuryBadge from "@/components/shared/InjuryBadge";
 import Tip from "@/components/shared/Tip";
 import SettingsDrawer from "./SettingsDrawer";
 
@@ -329,6 +330,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                       <div className="flex items-center gap-1.5">
                         {pickEntry?.mine && <Crown className="w-3 h-3 text-amber-400 shrink-0" />}
                         <span className="font-medium truncate">{p.name}</span>
+                        <InjuryBadge injury={p.injury} />
                         <span className="font-mono text-xs text-gray-500">{p.team}</span>
                         {p.tier && <span className="text-xs font-mono bg-gray-100 px-1 rounded text-gray-500" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
                         {p.risk >= 0.4 && (

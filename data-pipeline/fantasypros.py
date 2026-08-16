@@ -35,7 +35,7 @@ PROJ_FIELDS = {
     "int":    ["int", "ints", "interceptions", "pass_ints"],
     "rushYd": ["rush_yds", "rushing_yards", "ry"],
     "rushTD": ["rush_tds", "rushing_tds", "rtd"],
-    "rec":    ["rec", "receptions"],
+    "rec":    ["rec_rec", "rec", "receptions"],
     "recYd":  ["rec_yds", "receiving_yards", "rey"],
     "recTD":  ["rec_tds", "receiving_tds", "retd"],
     "fumbles":["fumbles", "fl", "fum_lost", "fumbles_lost"],
@@ -119,14 +119,15 @@ def parse_rankings(data: dict) -> dict:
     out: dict[tuple, dict] = {}
     for p in players:
         name = p.get("player_name") or p.get("name") or p.get("player")
-        pos = (p.get("player_position_id") or p.get("position") or p.get("pos") or "").upper()
+        pos = (p.get("player_position_id") or p.get("position_id")
+               or p.get("position") or p.get("pos") or "").upper()
         pos = re.sub(r"[^A-Z]", "", pos)
         if pos == "DEF":
             pos = "DST"
         if not name or pos not in ("QB", "RB", "WR", "TE", "K", "DST"):
             continue
         ecr = _num(p, "rank_ecr", "ecr", "rank")
-        adp = _num(p, "player_adp", "adp")  # only if the payload carries it
+        adp = _num(p, "rank_adp", "player_adp", "adp")
         tier = _num(p, "tier", "player_tier")
         out[(norm(name), pos)] = {
             "ecr": ecr, "adp": adp,
@@ -176,7 +177,8 @@ def parse_aav(data: dict, cap: float = 250.0) -> dict:
     out: dict[tuple, float] = {}
     for p in players:
         name = p.get("player_name") or p.get("name") or p.get("player")
-        pos = (p.get("player_position_id") or p.get("position") or p.get("pos") or "").upper()
+        pos = (p.get("player_position_id") or p.get("position_id")
+               or p.get("position") or p.get("pos") or "").upper()
         pos = re.sub(r"[^A-Z]", "", pos)
         if pos == "DEF":
             pos = "DST"
@@ -190,11 +192,24 @@ def parse_aav(data: dict, cap: float = 250.0) -> dict:
 
 def fetch_aav(season: int, scoring: str = "HALF", api_key: str | None = None,
              position: str = "ALL", week: int = 0) -> dict:
-    """Fetch consensus AUCTION values (AAV) for a season. Returns parse_aav() output.
+    """Auction values are NOT available on this API.
 
-    Same endpoint as fetch_rankings with type=auction — FantasyPros' auction-format
-    consensus rankings carry the average price paid, not just rank order.
+    The public v2 spec contains no auction endpoint and no auction field: the
+    NFL ranking types are WW/WAIVER/ROS/DRAFT/PRESEASON/SLEEPERS/ADP/BEST/
+    PROSPECT/PRO/DEVY/ROOKIES/DYNADP, with nothing auction-shaped among them.
+    The old `type=auction` request was answered as an ordinary ranking pull,
+    which is why it always parsed to zero rather than failing loudly.
+
+    Kept as an explicit no-op so callers don't need branching and so this stays
+    documented; `marketPrice()` falls back to its modeled price curve, which is
+    what it already does whenever `aav` is null.
     """
+    return {}
+
+
+def _fetch_aav_unavailable(season: int, scoring: str = "HALF", api_key: str | None = None,
+                           position: str = "ALL", week: int = 0) -> dict:
+    """Previous implementation, retained for reference only."""
     api_key = api_key or os.getenv("FANTASYPROS_API_KEY")
     if not api_key:
         raise RuntimeError("FANTASYPROS_API_KEY not set")
@@ -224,8 +239,19 @@ def _extract_stats(player: dict) -> dict:
 
     Stats may be nested under "stats" or flat on the player object.
     """
-    s = player.get("stats") if isinstance(player.get("stats"), dict) else player
-    low = {str(k).lower(): v for k, v in s.items()}
+    raw = player.get("stats")
+    if isinstance(raw, dict):
+        merged = raw
+    elif isinstance(raw, list):
+        # Spec models `stats` as an array whose items are the per-position stat
+        # objects; flatten so a QB's and an RB's shapes both read the same.
+        merged = {}
+        for entry in raw:
+            if isinstance(entry, dict):
+                merged.update(entry)
+    else:
+        merged = player
+    low = {str(k).lower(): v for k, v in merged.items()}
     out: dict[str, float] = {}
     for eng, syns in PROJ_FIELDS.items():
         val = 0.0
@@ -246,7 +272,9 @@ def parse_projections(data: dict) -> dict:
     out: dict[tuple, dict] = {}
     for p in players:
         name = p.get("player_name") or p.get("name") or p.get("player")
-        pos = re.sub(r"[^A-Z]", "", (p.get("player_position_id") or p.get("position") or "").upper())
+        pos = re.sub(r"[^A-Z]", "",
+                     (p.get("player_position_id") or p.get("position_id")
+                      or p.get("position") or "").upper())
         if not name or pos not in ("QB", "RB", "WR", "TE"):
             continue
         out[(norm(name), pos)] = _extract_stats(p)
@@ -299,3 +327,80 @@ if __name__ == "__main__":
     print(f"pulled {len(data)} players ({args.what}); sample:")
     for k, v in list(data.items())[:5]:
         print(" ", k, v)
+
+
+# ── injuries ────────────────────────────────────────────────────────────────
+#
+# GET /public/v2/json/nfl/injuries?year=&week=
+# Response: {"injuries": [ {player_id, name, team_id, position_id, injury_type,
+#            status, status_short, probability_of_playing, ...} ]}
+#
+# `status` is a closed enum in the spec, which is what makes this safe to act
+# on rather than merely display: COV-IR, Doubtful, IR, Not Starting, OUT, PUP,
+# Questionable, Suspended.
+
+INJURY_BASE = "https://api.fantasypros.com/public/v2/json/nfl/injuries"
+
+# How much each status should worry you on draft day. Season-ending or
+# multi-week absences are a different thing from a Questionable tag.
+INJURY_SEVERITY = {
+    "IR": "out", "COV-IR": "out", "PUP": "out", "OUT": "out",
+    "Suspended": "out", "Doubtful": "doubtful", "Questionable": "questionable",
+    "Not Starting": "note",
+}
+
+
+def parse_injuries(data: dict) -> dict:
+    """API JSON -> {(norm_name, pos): {status, short, type, severity, chance}}.
+
+    Only the documented enum values map to a severity; anything unrecognised is
+    still surfaced with severity "note" rather than dropped, because an unknown
+    status is a reason to look, not a reason to hide the player's situation.
+    """
+    rows = data.get("injuries") or data.get("players") or []
+    out: dict[tuple, dict] = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        name = r.get("name") or r.get("player_name")
+        pos = re.sub(r"[^A-Z]", "",
+                     (r.get("position_id") or r.get("player_position_id") or "").upper())
+        if pos == "DEF":
+            pos = "DST"
+        if not name or pos not in ("QB", "RB", "WR", "TE", "K", "DST"):
+            continue
+        status = (r.get("status") or "").strip()
+        if not status:
+            continue
+        out[(norm(name), pos)] = {
+            "status": status,
+            "short": (r.get("status_short") or "").strip() or None,
+            "type": (r.get("injury_type") or "").strip() or None,
+            "severity": INJURY_SEVERITY.get(status, "note"),
+            "chance": r.get("probability_of_playing"),
+        }
+    return out
+
+
+def fetch_injuries(season: int, week: int = 0, api_key: str | None = None) -> dict:
+    """Current injury statuses. Week 0 is the preseason/current report."""
+    api_key = api_key or os.getenv("FANTASYPROS_API_KEY")
+    if not api_key:
+        raise RuntimeError("FANTASYPROS_API_KEY not set")
+    url = INJURY_BASE + "?" + urlencode(
+        {"year": season, "week": week, "include_probabilities": "true"})
+    req = urllib.request.Request(url, headers={
+        "x-api-key": api_key, "Accept": "application/json",
+        "User-Agent": "fantasy-draft-tool/1.0",
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.load(r)
+    except urllib.error.HTTPError as e:
+        body = e.read()[:200].decode("utf-8", "replace")
+        print(f"  ! injuries: HTTP {e.code} {body}")
+        return {}
+    got = parse_injuries(data)
+    if not got:
+        print(describe_payload(data, "injuries parsed 0 rows"))
+    return got
