@@ -189,6 +189,42 @@ def score(players: list[dict], projections: list[float], sc: dict) -> dict:
     return out
 
 
+def blend_with_market(players, model_pts, adp_by_player, w):
+    """Blend the model's projected POINTS with the market's opinion.
+
+    Points space, not rank space, deliberately: `valuePoints` feeds VBD,
+    replacement level, tiers and auction dollars. A rank-only blend would score
+    well here and break everything downstream.
+
+    The market's rank is converted to points by RANK TRANSFER — if ADP says a
+    player is the 7th-best RB, he receives the points the model assigns to its
+    OWN 7th-best RB. That uses no information from the season being predicted,
+    keeps the output on the model's own scale, and preserves the position's
+    points-vs-rank shape (which is what VBD cares about).
+
+    w = 1.0 is the pure model; w = 0.0 is the model's point distribution
+    reordered by ADP — which must score like ADP, and is asserted below.
+    """
+    by_pos = {}
+    for i, p in enumerate(players):
+        by_pos.setdefault(p["pos"], []).append(i)
+
+    out = list(model_pts)
+    for pos, idxs in by_pos.items():
+        have_adp = [i for i in idxs if adp_by_player.get(players[i]["player_id"])]
+        if not have_adp:
+            continue
+        # The model's own points for this position, best first: the ladder the
+        # market's rank is read against.
+        ladder = sorted((model_pts[i] for i in idxs), reverse=True)
+        # Market order within the position.
+        market_order = sorted(have_adp, key=lambda i: adp_by_player[players[i]["player_id"]])
+        for slot, i in enumerate(market_order):
+            implied = ladder[min(slot, len(ladder) - 1)]
+            out[i] = w * model_pts[i] + (1 - w) * implied
+    return out
+
+
 def _points(line, sc):
     from projection_model import points
     return points(line, sc)
@@ -283,6 +319,16 @@ def main():
                                      "model": "shipped", "variant": label,
                                      **combo, "pos": pos, **m})
 
+            # ── model (x) market blend, swept ─────────────────────────
+            if adp_by_player:
+                base_projs = [project_points(p, sc, DEFAULT_PARAMS)["proj"] for p in pop]
+                for w in [round(x / 10, 1) for x in range(0, 11)]:
+                    blended = blend_with_market(pop, base_projs, adp_by_player, w)
+                    for pos, m in score(pop, blended, sc).items():
+                        per_year.append({"year": year, "population": pop_name,
+                                         "model": "blend", "variant": f"w{w}",
+                                         "blend_w": w, "pos": pos, **m})
+
     df = pd.DataFrame(per_year)
     os.makedirs(args.out, exist_ok=True)
     df.to_csv(f"{args.out}/projection_backtest_by_year.csv", index=False)
@@ -320,6 +366,28 @@ def main():
                 print(f"    SHIPPED model    : {s0.spearman_total:.4f}   "
                       f"top24 hit {s0.hit24_total:.3f}"
                       + (f"   vs market {edge:+.4f}" if edge is not None else ""))
+
+            bl = sub[sub["model"] == "blend"].sort_values("blend_w")
+            if len(bl) and len(mkt):
+                mkt_s = mkt.iloc[0].spearman_total
+                best = bl.loc[bl.spearman_total.idxmax()]
+                # Endpoint check: w=1 must reproduce the model and w=0 must
+                # reproduce the market. If either drifts, the blend is wrong and
+                # nothing between them means anything.
+                w1 = bl[bl.blend_w == 1.0]
+                w0 = bl[bl.blend_w == 0.0]
+                if len(w1) and len(ship) and abs(w1.iloc[0].spearman_total - s0.spearman_total) > 1e-6:
+                    print(f"    !! w=1.0 ({w1.iloc[0].spearman_total:.4f}) != shipped "
+                          f"({s0.spearman_total:.4f}) — blend is not interpolating the model")
+                if len(w0) and abs(w0.iloc[0].spearman_total - mkt_s) > 0.02:
+                    print(f"    !! w=0.0 ({w0.iloc[0].spearman_total:.4f}) != market "
+                          f"({mkt_s:.4f}) — blend is not interpolating ADP")
+                print("    blend model⊕market (w = weight on MODEL):")
+                for _, r in bl.iterrows():
+                    star = "  <-- best" if r.variant == best.variant else ""
+                    print(f"      w={r.blend_w:<4} {r.spearman_total:.4f}"
+                          f"  (vs market {r.spearman_total - mkt_s:+.4f})"
+                          f"  top24 {r.hit24_total:.3f}{star}")
 
     print(f"\n✓ wrote {args.out}/projection_backtest_summary.csv and _by_year.csv")
 
