@@ -55,10 +55,19 @@ WHERE k.id = m.keep_id;
 UPDATE fantasy_draft_picks p SET player_id = m.keep_id
 FROM dupe_map m WHERE p.player_id = m.dupe_id;
 
-DELETE FROM fantasy_player_logs l USING dupe_map m
+-- Logs cascade on delete, so they must move BEFORE the rows go. A week can be
+-- covered by the survivor OR by another duplicate in the same group, so the
+-- collision test spans the whole group — comparing only against the survivor
+-- lets two duplicates collide with each other on the UPDATE.
+DELETE FROM fantasy_player_logs l
+USING dupe_map m
 WHERE l.player_id = m.dupe_id
-  AND EXISTS (SELECT 1 FROM fantasy_player_logs k
-              WHERE k.player_id = m.keep_id AND k.season = l.season AND k.week = l.week);
+  AND EXISTS (
+    SELECT 1 FROM fantasy_player_logs k
+    LEFT JOIN dupe_map m2 ON m2.dupe_id = k.player_id
+    WHERE COALESCE(m2.keep_id, k.player_id) = m.keep_id
+      AND k.season = l.season AND k.week = l.week AND k.id < l.id);
+
 UPDATE fantasy_player_logs l SET player_id = m.keep_id
 FROM dupe_map m WHERE l.player_id = m.dupe_id;
 

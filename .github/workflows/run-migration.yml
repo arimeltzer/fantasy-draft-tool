@@ -1,0 +1,62 @@
+name: Run a database migration
+
+# Migrations are deliberately NOT part of the scheduled data refresh: that job
+# runs unattended every day, and schema/data surgery should be an explicit,
+# deliberate act. This one is manual only.
+#
+# The SQL in backend/migrations/*.sql is written to be safe to re-run, and each
+# file wraps itself in BEGIN/COMMIT so a failure rolls the whole thing back.
+
+on:
+  workflow_dispatch:
+    inputs:
+      file:
+        description: "Migration file under backend/migrations (e.g. 004_dedupe_players_by_name_pos.sql)"
+        required: true
+        type: string
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install psql client
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+
+      - name: Show duplicate counts BEFORE
+        env:
+          PGURL: ${{ secrets.DATABASE_PUBLIC_URL }}
+        run: |
+          psql "$PGURL" -qAt -c "
+            SELECT 'player rows: '||count(*) FROM fantasy_players;
+            SELECT 'rows on alias team codes: '||count(*) FROM fantasy_players
+             WHERE team IN ('AZ','ARZ','CRD','JAC','WSH','WFT','OTI','LA','STL','RAM',
+                            'SD','SDG','OAK','LVR','RAI','BLT','RAV','CLV','HST','HTX',
+                            'GNB','KAN','NWE','NOR','SFO','TAM');
+            SELECT 'rows with blank team: '||count(*) FROM fantasy_players WHERE coalesce(team,'')='';
+          "
+
+      - name: Apply migration
+        env:
+          PGURL: ${{ secrets.DATABASE_PUBLIC_URL }}
+        run: |
+          f="backend/migrations/${{ inputs.file }}"
+          test -f "$f" || { echo "No such migration: $f"; exit 1; }
+          echo "Applying $f"
+          psql "$PGURL" -v ON_ERROR_STOP=1 -f "$f"
+
+      - name: Verify AFTER
+        env:
+          PGURL: ${{ secrets.DATABASE_PUBLIC_URL }}
+        run: |
+          psql "$PGURL" -qAt -c "
+            SELECT 'player rows: '||count(*) FROM fantasy_players;
+            SELECT 'duplicate (season,name,pos) groups remaining: '||count(*) FROM (
+              SELECT season, lower(regexp_replace(name,'[^a-zA-Z0-9]+','','g')), pos
+              FROM fantasy_players GROUP BY 1,2,3 HAVING count(*)>1) x;
+            SELECT 'orphaned picks: '||count(*) FROM fantasy_draft_picks p
+             WHERE p.player_id IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM fantasy_players f WHERE f.id=p.player_id);
+          "
