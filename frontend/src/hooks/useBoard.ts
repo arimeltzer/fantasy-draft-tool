@@ -33,6 +33,21 @@ const TEAM_ALIASES: Record<string, string> = {
 
 const canonTeam = (t: string) => TEAM_ALIASES[(t || "").toUpperCase()] ?? (t || "").toUpperCase();
 
+const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
+
+/** Mirrors backend `matching.normalize_name` / pipeline `teams.normalize_name`:
+ *  accents, case, punctuation and Jr/III all folded, whitespace collapsed. */
+function canonName(name: string): string {
+  return (name || "")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[.'`\u2019]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((w) => w && !NAME_SUFFIXES.has(w))
+    .join(" ");
+}
+
 /**
  * Collapse the same player appearing twice under different team spellings.
  *
@@ -52,7 +67,10 @@ function dedupePlayers(players: ApiPlayer[]): ApiPlayer[] {
   const out: ApiPlayer[] = [];
   for (const raw of players) {
     const p = { ...raw, team: canonTeam(raw.team) };
-    const key = `${p.name.trim().toLowerCase()}|${p.pos}|${p.team}`;
+    // Keyed on name+position, NOT team. Team is the field the sources disagree
+    // about — and it is blank whenever a load ran without roster data, so a
+    // blank-vs-ARI pair splits exactly like an ARI-vs-AZ pair does.
+    const key = `${canonName(p.name)}|${p.pos}`;
     const kept = byKey.get(key);
     if (!kept) {
       byKey.set(key, p);
@@ -60,6 +78,7 @@ function dedupePlayers(players: ApiPlayer[]): ApiPlayer[] {
       continue;
     }
     // Same player, two rows — keep whichever value is actually present.
+    if (!kept.team && p.team) kept.team = p.team;
     kept.proj ??= p.proj;
     kept.last ??= p.last;
     kept.last2 ??= p.last2;

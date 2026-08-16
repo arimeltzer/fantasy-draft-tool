@@ -6,6 +6,37 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Rookies were missing entirely; duplicates weren't only about aliases
+### Every incoming rookie was absent from the pool
+- `ingest_nflverse.py` builds the player base by aggregating **last season's
+  stats**, so anyone who has never taken an NFL snap produces no row. Rosters
+  only supply team/age for players already in that aggregate.
+- `projections.py` then only ENRICHED existing rows — `for p in players` — so a
+  FantasyPros-ranked rookie could never enter the pool either. Jeremiyah Love
+  and every other 2026 rookie simply did not exist in the app.
+- That is worse than a bad projection: you cannot draft, or plan around, a
+  player the tool never shows. Ranked players missing from the base are now
+  added, carrying ECR/ADP/AAV/projection and flagged `rookie`. `parse_rankings`
+  keeps the display name and team so they can be.
+- The engine already handles a player with no history (leans on market rank,
+  and the board labels it "no '25"), so nothing downstream needed changing.
+
+### The duplicate was blank-vs-ARI, not only ARI-vs-AZ
+- The earlier fix keyed dedupe on `(name, pos, team)` after canonicalizing
+  aliases. Trey McBride survived it because his rows didn't differ by alias:
+  `ingest_nflverse` falls back to `team = ""` whenever the roster fetch is
+  unavailable, and a blank-vs-`ARI` pair splits exactly like `AZ`-vs-`ARI`.
+- Key is now **(normalized name, position)** — team is reconciled, not part of
+  identity. Within one season a name+position is one player. Name normalization
+  matches `matching.py` (accents, punctuation, Jr/III, collapsed whitespace), so
+  a stray double space can't split a row either.
+- `backend/migrations/004_dedupe_players_by_name_pos.sql` applies the same key
+  to stored rows: picks the most complete row, unions the rest onto it,
+  re-points draft picks and player logs, deletes the losers. Re-runnable.
+- Verified: three McBride rows (blank / ARI / AZ) collapse to one ARI row
+  keeping the projection from the first, ECR+ADP from the second, AAV from
+  the third.
+
 ## 2026-08 — Pick latency, and a player appearing twice
 ### The freeze between picks was the network, not the maths
 - Measured the per-pick JS first: the whole live-state recompute is **0.22 ms**

@@ -19,6 +19,7 @@ RUN
   python projections.py --base data/players_base.json --out data/players_base.json
   python projections.py --base data/players_base.json --out data/players_base.json --proj-csv fp_2026.csv
 """
+from teams import normalize_team
 import argparse, csv, json, os, re
 import nflreadpy as nfl
 
@@ -130,9 +131,11 @@ def main():
     ecr: dict = {}
     adp: dict = {}
     source = "nflverse load_ff_rankings"
+    fp_rank: dict = {}
     if fp_mod:
         try:
             fp = fp_mod.fetch_rankings(args.season, args.scoring)
+            fp_rank = fp
             ecr = {k: v["ecr"] for k, v in fp.items() if v.get("ecr") is not None}
             adp = {k: v["adp"] for k, v in fp.items() if v.get("adp") is not None}
             source = f"FantasyPros API ({args.scoring}, {args.season})"
@@ -167,8 +170,10 @@ def main():
             print(f"  ! FantasyPros AAV failed ({e}); leaving `aav` unset")
 
     n_ecr = n_adp = n_proj = n_aav = 0
+    seen = set()
     for p in players:
         k = (norm(p.get("name")), p.get("pos"))
+        seen.add(k)
         if k in ecr:
             p["ecr"] = round(ecr[k], 1); n_ecr += 1
         if k in adp:
@@ -177,6 +182,40 @@ def main():
             p["proj"] = proj[k]; n_proj += 1
         if k in aav:
             p["aav"] = aav[k]; n_aav += 1
+
+    # --- players the base doesn't have at all -------------------------------
+    # The base is built from LAST season's stats, so anyone who never played an
+    # NFL snap isn't in it — i.e. every incoming rookie. Enriching only existing
+    # rows meant a ranked rookie silently didn't exist on the draft board, which
+    # is worse than a bad projection: you can't draft, or plan around, a player
+    # the tool never shows. Add anyone FantasyPros ranks that we're missing.
+    added = 0
+    if fp_rank:
+        for k, meta in fp_rank.items():
+            if k in seen or not meta.get("name"):
+                continue
+            name, pos = meta["name"], k[1]
+            players.append({
+                "id": None,
+                "name": name,
+                "pos": pos,
+                "team": normalize_team(meta.get("team")),
+                "age": None,
+                # No NFL history — the engine already handles this (it leans on
+                # market rank when `last` is absent, and the board labels it
+                # "no '25").
+                "last": None, "last2": None,
+                "proj": proj.get(k),
+                "ecr": round(ecr[k], 1) if k in ecr else None,
+                "adp": round(adp[k], 1) if k in adp else None,
+                "aav": aav.get(k),
+                "rookie": True,
+            })
+            seen.add(k)
+            added += 1
+        if added:
+            print(f"  + added {added} ranked player(s) missing from the nflverse base "
+                  f"(rookies / no prior-season stats)")
 
     json.dump(players, open(args.out, "w"), indent=2)
     print(f"  ✓ ECR matched: {n_ecr}/{len(players)}  (source: {source})")
@@ -191,7 +230,7 @@ def main():
         print(f"  ✓ AAV matched: {n_aav}/{len(players)}")
     else:
         print("  • AAV: none applied (needs FANTASYPROS_API_KEY); marketPrice() falls back to the modeled curve")
-    print(f"Wrote {args.out}")
+    print(f"Wrote {args.out}  ({len(players)} players)")
 
 if __name__ == "__main__":
     main()

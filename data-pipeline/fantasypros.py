@@ -90,6 +90,12 @@ def parse_rankings(data: dict) -> dict:
             "ecr": ecr, "adp": adp,
             "tier": int(tier) if tier else None,
             "pos_rank": p.get("pos_rank"),
+            # Display name + team are kept so a ranked player who ISN'T in the
+            # nflverse base (every incoming rookie, since the base is built from
+            # last season's stats) can be added to the pool rather than dropped.
+            "name": name,
+            "team": (p.get("player_team_id") or p.get("player_team")
+                     or p.get("team") or "").upper(),
         }
     return out
 

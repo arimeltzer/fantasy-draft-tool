@@ -51,31 +51,59 @@ def normalize_team(team: str | None) -> str:
     return TEAM_ALIASES.get(t, t)
 
 
-def merge_player_rows(players: list[dict]) -> tuple[list[dict], list[str]]:
-    """Collapse rows that are the same player once team codes are canonical.
+_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
-    Returns (merged, notes). Later rows fill gaps in earlier ones rather than
-    overwriting: the point is to end up with ONE row holding the union of what
-    the sources knew, not to pick a winner and discard data.
+
+def normalize_name(name: str | None) -> str:
+    """Match `backend/integrations/matching.py:normalize_name` — accents, case,
+    punctuation and Jr/III suffixes all folded away, whitespace collapsed."""
+    import re
+    import unicodedata
+    if not name:
+        return ""
+    s = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode().lower()
+    s = re.sub(r"[.\'`]", "", s)
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return " ".join(p for p in s.split() if p and p not in _SUFFIXES)
+
+
+def merge_player_rows(players: list[dict]) -> tuple[list[dict], list[str]]:
+    """Collapse rows that are the same player.
+
+    Keyed on (normalized name, position) — deliberately NOT on team. Team was
+    the first thing to disagree between sources (ARI vs AZ), but it is not the
+    only one: a load where the roster fetch failed leaves `team` blank, and a
+    blank-vs-ARI pair splits into two rows just as an alias pair does. Within a
+    single season a name+position identifies one player, so that is the key,
+    and the team is then reconciled to whichever spelling is real.
+
+    Returns (merged, notes). Later rows fill gaps rather than overwriting: the
+    goal is ONE row holding the union of what the sources knew.
     """
-    by_key: dict[tuple[str, str, str], dict] = {}
-    order: list[tuple[str, str, str]] = []
+    by_key: dict[tuple[str, str], dict] = {}
+    order: list[tuple[str, str]] = []
     notes: list[str] = []
 
     for p in players:
-        team = normalize_team(p.get("team"))
-        p = {**p, "team": team}
-        key = ((p.get("name") or "").strip().lower(), p.get("pos", ""), team)
+        p = {**p, "team": normalize_team(p.get("team"))}
+        key = (normalize_name(p.get("name")), p.get("pos", ""))
+        if not key[0]:
+            continue
         if key not in by_key:
             by_key[key] = p
             order.append(key)
             continue
         kept = by_key[key]
+        before_team = kept.get("team")
         for field, value in p.items():
             if value in (None, "", {}, []):
                 continue
             if kept.get(field) in (None, "", {}, []):
                 kept[field] = value
-        notes.append(f"{p.get('name')} ({p.get('pos')}) — merged duplicate rows into {team}")
+        after = kept.get("team")
+        notes.append(
+            f"{kept.get('name')} ({kept.get('pos')}) — merged duplicate rows"
+            + (f" [{before_team or 'blank'} + {p.get('team') or 'blank'} -> {after}]"
+               if before_team != p.get("team") else ""))
 
     return [by_key[k] for k in order], notes
