@@ -6,6 +6,46 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Pick latency, and a player appearing twice
+### The freeze between picks was the network, not the maths
+- Measured the per-pick JS first: the whole live-state recompute is **0.22 ms**
+  and the per-row work **1.9 ms**. Nowhere near the couple of seconds seen, so
+  "it's recalculating" was the wrong diagnosis.
+- The real cause: `addPick` **awaited the Railway round trip before touching
+  state**. The board could not move until the API answered, so pick latency was
+  exactly API latency. Nothing about a pick needs the server's opinion — the
+  only field it supplies is the row id.
+- Now optimistic: the pick lands immediately under a temporary id, swapped for
+  the real one when the response arrives, and **rolled back if the call fails**
+  (a phantom pick would hide a player who is still genuinely available).
+- Supporting fixes, all measured:
+  - `picks.find()` and `board.findIndex()` ran **per row** — ~600 × 600
+    comparisons every render. Replaced with lookup maps built once per change:
+    **1.92 ms → 0.16 ms (12×)**.
+  - The row is now a `memo`'d `PlayerRow`, so a pick re-renders **one row**
+    instead of the entire ~600-row pool.
+  - On-the-clock reaches rows through a stable getter rather than a prop — as a
+    prop it changed every pick and would have defeated the memo entirely.
+  - `TeamPicker` builds its option list on first interaction, not on every
+    render of every row.
+- No functionality removed.
+
+### One player, two rows (ARI and AZ)
+- `fantasy_players` is unique on `(season, name, pos, team)`, so the team code
+  is part of a player's identity. A feed spelling Arizona `AZ` where another
+  says `ARI` therefore creates a **second row for the same player** — and
+  drafting one copy leaves the twin looking available, which corrupts the
+  remaining pool and every scarcity/tier/replacement number drawn from it.
+- Fixed in three places:
+  - `data-pipeline/teams.py` — one canonical alias map, applied at load, with
+    `merge_player_rows()` unioning the split rows (typically one holds the
+    projection, the other the ADP/AAV) instead of picking a winner.
+  - `backend/migrations/003_canonicalize_team_codes.sql` — cleans rows already
+    in the database: fills gaps on the survivor, re-points draft picks at it,
+    deletes the twin, renames leftovers. Re-runnable.
+  - `useBoard` — a client-side guard so a stale database still can't put a
+    duplicate on a live board.
+
 ## 2026-08 — Assign the drafting team at the moment you log the pick
 - **Before**: the snake board's ✕ meant only "someone took him". Saying WHO
   meant opening the draft log, finding the pick, and setting the team — several

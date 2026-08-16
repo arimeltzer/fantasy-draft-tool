@@ -9,6 +9,8 @@ export interface DraftEntry {
   teamId: number | null;
   price: number | null;
   slot: string | null;
+  /** True while the server hasn't confirmed this pick yet (optimistic row). */
+  pending?: boolean;
 }
 
 interface DraftState {
@@ -53,14 +55,44 @@ export const useDraftStore = create<DraftState>((set, get) => ({
   addPick: async (data) => {
     const { leagueId } = get();
     if (!leagueId) return;
-    const serverPick = await api.addPick(leagueId, {
-      player_id: data.playerId,
+
+    // Show the pick immediately, then reconcile with the server.
+    //
+    // This used to await the round trip before touching state, so every pick
+    // froze the board for as long as the API took — which reads as "the app is
+    // recalculating" but is really just waiting on the network. Nothing about
+    // a pick needs the server's opinion: the only field it supplies is the row
+    // id, so we use a temporary one and swap it when the response lands.
+    const tempId = -Date.now() - Math.floor(Math.random() * 1000);
+    const optimistic: DraftEntry = {
+      pickId: tempId,
+      playerId: data.playerId ?? null,
+      overallPick: get().picks.length + 1,
       mine: data.mine,
-      team_id: data.teamId,
-      price: data.price,
-      slot: data.slot,
-    });
-    set((s) => ({ picks: [...s.picks, mapPick(serverPick)] }));
+      teamId: data.teamId ?? null,
+      price: data.price ?? null,
+      slot: data.slot ?? null,
+      pending: true,
+    };
+    set((s) => ({ picks: [...s.picks, optimistic] }));
+
+    try {
+      const serverPick = await api.addPick(leagueId, {
+        player_id: data.playerId,
+        mine: data.mine,
+        team_id: data.teamId,
+        price: data.price,
+        slot: data.slot,
+      });
+      set((s) => ({
+        picks: s.picks.map((p) => (p.pickId === tempId ? mapPick(serverPick) : p)),
+      }));
+    } catch (e) {
+      // Roll the row back rather than leaving a pick that only exists here —
+      // a phantom pick would hide a player who is still on the board.
+      set((s) => ({ picks: s.picks.filter((p) => p.pickId !== tempId) }));
+      throw e;
+    }
   },
 
   updatePick: async (pickId, data) => {

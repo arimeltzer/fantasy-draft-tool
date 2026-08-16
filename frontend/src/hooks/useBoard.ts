@@ -21,6 +21,56 @@ function toEnginePlayer(p: ApiPlayer) {
 
 const FLEX_SHARE: Record<string, number> = { RB: 0.5, WR: 0.42, TE: 0.08 };
 
+/** Team spellings that mean the same franchise. Mirrors data-pipeline/teams.py
+ *  and backend/integrations/matching.py. */
+const TEAM_ALIASES: Record<string, string> = {
+  AZ: "ARI", ARZ: "ARI", CRD: "ARI", JAC: "JAX", WSH: "WAS", WFT: "WAS",
+  LA: "LAR", STL: "LAR", RAM: "LAR", SD: "LAC", SDG: "LAC",
+  OAK: "LV", LVR: "LV", RAI: "LV", BLT: "BAL", RAV: "BAL", CLV: "CLE",
+  HST: "HOU", HTX: "HOU", OTI: "TEN", GNB: "GB", KAN: "KC", NWE: "NE",
+  NOR: "NO", SFO: "SF", TAM: "TB",
+};
+
+const canonTeam = (t: string) => TEAM_ALIASES[(t || "").toUpperCase()] ?? (t || "").toUpperCase();
+
+/**
+ * Collapse the same player appearing twice under different team spellings.
+ *
+ * The database keys players on `(season, name, pos, team)`, so a feed calling
+ * Arizona "AZ" while another calls it "ARI" yields two rows. A duplicate on the
+ * board is not cosmetic: drafting one copy leaves the twin looking available,
+ * so the remaining pool — and every scarcity, tier and replacement-level number
+ * derived from it — is wrong for the rest of the draft.
+ *
+ * The pipeline now canonicalizes at load time and a migration cleans existing
+ * rows; this stays as a guard so a stale database can't corrupt a live draft.
+ * Fields are unioned rather than picking a winner, since the split usually
+ * means one row has the projection and the other the ADP/AAV.
+ */
+function dedupePlayers(players: ApiPlayer[]): ApiPlayer[] {
+  const byKey = new Map<string, ApiPlayer>();
+  const out: ApiPlayer[] = [];
+  for (const raw of players) {
+    const p = { ...raw, team: canonTeam(raw.team) };
+    const key = `${p.name.trim().toLowerCase()}|${p.pos}|${p.team}`;
+    const kept = byKey.get(key);
+    if (!kept) {
+      byKey.set(key, p);
+      out.push(p);
+      continue;
+    }
+    // Same player, two rows — keep whichever value is actually present.
+    kept.proj ??= p.proj;
+    kept.last ??= p.last;
+    kept.last2 ??= p.last2;
+    kept.ecr ??= p.ecr;
+    kept.adp ??= p.adp;
+    kept.aav ??= p.aav;
+    kept.age ??= p.age;
+  }
+  return out;
+}
+
 export function useBoard(
   players: ApiPlayer[] | undefined,
   settings: LeagueSettings | undefined,
@@ -36,7 +86,7 @@ export function useBoard(
       superflex: settings.superflex,
     };
 
-    const enginePlayers = players.map(toEnginePlayer);
+    const enginePlayers = dedupePlayers(players).map(toEnginePlayer);
     let board = valueBoard(enginePlayers, league, sc);
 
     if (sos && Object.keys(sos).length > 0) {

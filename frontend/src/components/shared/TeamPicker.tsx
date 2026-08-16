@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { MY_TEAM } from "@/engine/draft-order.js";
 
 export interface TeamOption {
@@ -32,8 +33,9 @@ export function teamOptions(
 
 interface Props {
   opponents: string[];
-  /** Team label on the clock, from the draft-order board (snake only). */
-  onClockOwner?: string;
+  /** Reads the team on the clock. A GETTER, not a value: it changes on every
+   *  pick, and as a prop it would re-render every row in the player list. */
+  getOnClock?: () => string | undefined;
   onPick: (teamId: number | null) => void;
   title?: string;
   className?: string;
@@ -46,12 +48,19 @@ interface Props {
  * say by whom — the team is chosen at the moment the pick is logged, which is
  * the only moment you actually know it.
  */
-export default function TeamPicker({ opponents, onClockOwner, onPick, title, className = "" }: Props) {
-  const opts = teamOptions(opponents, onClockOwner);
+export default function TeamPicker({ opponents, getOnClock, onPick, title, className = "" }: Props) {
+  // Options are built on first interaction, not on every render: with the whole
+  // player pool on screen that is hundreds of selects, and the list is only
+  // ever read once the dropdown is actually open.
+  const [opened, setOpened] = useState(false);
+  const opts = opened ? teamOptions(opponents, getOnClock?.()) : [];
   return (
     <select
       value=""
       title={title ?? "Who drafted this player?"}
+      onMouseDown={() => setOpened(true)}
+      onFocus={() => setOpened(true)}
+      onKeyDown={() => setOpened(true)}
       onChange={(e) => {
         if (e.target.value === "") return;
         onPick(e.target.value === "mine" ? null : Number(e.target.value));

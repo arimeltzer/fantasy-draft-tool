@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from "react";
+import { memo, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio } from "lucide-react";
 import { myPickNumbers, rankByAdp } from "@/engine/snake-engine.js";
@@ -6,6 +6,7 @@ import { roundsFor, currentOwners } from "@/engine/draft-order.js";
 import type { BoardPlayer, SnakeLiveState } from "@/engine/snake-engine.js";
 import { LeagueSettings, ApiLeague } from "@/lib/api";
 import { useDraftStore } from "@/store/draftStore";
+import type { DraftEntry } from "@/store/draftStore";
 import { usePatchLeague } from "@/hooks/useLeague";
 import { posStyle } from "@/lib/posStyles";
 import { isKeeper, decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
@@ -145,6 +146,21 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
     return true;
   }), [board, hideTaken, draftedIds, posFilter, query]);
 
+  // Per-row lookups, built once per change instead of scanned per row. The
+  // previous `picks.find()` + `board.findIndex()` inside the row map were both
+  // O(rows x n) — ~600 x 600 comparisons every single render.
+  const pickByPlayer = useMemo(() => {
+    const m = new Map<number, typeof picks[number]>();
+    for (const pk of picks) if (pk.playerId != null) m.set(pk.playerId, pk);
+    return m;
+  }, [picks]);
+
+  const rankById = useMemo(() => {
+    const m = new Map<number, number>();
+    board.forEach((p, i) => m.set(p.id as number, i + 1));
+    return m;
+  }, [board]);
+
   const opponents = useMemo(
     () => (settings.opponents?.length
       ? settings.opponents
@@ -158,6 +174,14 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
     const owners = currentOwners(settings, roundsFor(settings));
     return owners[overallPick];
   }, [settings, overallPick]);
+
+  // Rows read this through a STABLE getter rather than taking it as a prop:
+  // it changes on every pick, and as a prop it would defeat row memoisation
+  // and re-render the whole list each time. The dropdown only needs the value
+  // at the moment it opens.
+  const onClockRef = useRef(onClockOwner);
+  onClockRef.current = onClockOwner;
+  const getOnClock = useCallback(() => onClockRef.current, []);
 
   const pprLabel = settings.ppr === 1 ? "PPR" : settings.ppr === 0.5 ? "Half-PPR" : "Std";
 
@@ -316,16 +340,66 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
             </div>
 
             <div className="divide-y divide-gray-200 max-h-[60vh] overflow-y-auto">
-              {filtered.map((p, i) => {
-                const st = posStyle(p.pos);
-                const pickEntry = picks.find((pk) => pk.playerId === (p.id as number));
-                const mine = pickEntry?.mine ?? false;
-                const taken = !!pickEntry && !mine;
-                const mktDiff = p.ecr != null
-                  ? Math.round(board.findIndex((b) => b.id === p.id) + 1 - p.ecr)
-                  : null;
+ROW_MAP_PLACEHOLDER
+              {filtered.length === 0 && (
+                <div className="px-3 py-8 text-center text-sm text-gray-500">No players match.</div>
+              )}
+            </div>
+          </div>
+        </section>
 
-                return (
+        <aside className="space-y-3">
+          <DraftOverview
+            picks={picks}
+            board={board}
+            settings={settings}
+            mode="snake"
+            onEditLog={() => setShowLog(true)}
+          />
+        </aside>
+      </main>
+
+      {showLog && (
+        <DraftLogModal
+          picks={picks}
+          board={board}
+          settings={settings}
+          mode="snake"
+          onClose={() => setShowLog(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * One player row.
+ *
+ * Memoised because the list is the whole player pool (~600 rows) and a single
+ * pick used to re-render every one of them. Props are deliberately primitives,
+ * stable callbacks, or objects whose identity only changes when that row's
+ * data really does — so logging a pick now re-renders one row, not the board.
+ */
+const PlayerRow = memo(function PlayerRow({
+  p, idx, pick, rank, maxVbd, opponents, getOnClock, onDraft, onUndo,
+}: {
+  p: BoardPlayer;
+  idx: number;
+  pick: DraftEntry | undefined;
+  rank: number | undefined;
+  maxVbd: number;
+  opponents: string[];
+  getOnClock: () => string | undefined;
+  onDraft: (p: BoardPlayer, mine: boolean, teamId?: number) => void;
+  onUndo: (pickId: number) => void;
+}) {
+  const st = posStyle(p.pos);
+  const mine = pick?.mine ?? false;
+  const taken = !!pick && !mine;
+  const mktDiff = p.ecr != null && rank != null ? Math.round(rank - p.ecr) : null;
+
+  return (
                   <div
                     key={p.id}
                     className={`grid grid-cols-[28px_1fr_auto] sm:grid-cols-[28px_44px_1fr_70px_140px] gap-2 px-3 py-2 items-center text-sm ${
@@ -334,7 +408,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
                       "hover:bg-gray-100"
                     }`}
                   >
-                    <span className="font-mono text-xs text-gray-400">{i + 1}</span>
+                    <span className="font-mono text-xs text-gray-400">{idx + 1}</span>
 
                     <span className="hidden sm:flex items-center gap-1 text-xs font-mono">
                       <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
@@ -377,17 +451,17 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
                     </div>
 
                     <div className="flex items-center justify-end gap-1">
-                      {pickEntry ? (
+                      {pick ? (
                         <button
-                          onClick={() => undo(pickEntry.pickId)}
+                          onClick={() => onUndo(pick!.pickId)}
                           className="text-xs font-mono px-2 py-1 rounded bg-gray-100 border border-gray-300 text-gray-500 hover:text-gray-700"
                         >
-                          {mine ? "Mine" : "Taken"} ✕
+                          {mine ? "Mine" : "Taken"}{pick?.pending ? "…" : " ✕"}
                         </button>
                       ) : (
                         <>
                           <button
-                            onClick={() => draft(p, true)}
+                            onClick={() => onDraft(p, true)}
                             className="px-1.5 py-1 rounded text-xs bg-gray-50 border border-gray-300 text-gray-500 hover:text-emerald-600 hover:border-emerald-600"
                             title="I drafted this player"
                           >
@@ -395,44 +469,14 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
                           </button>
                           <TeamPicker
                             opponents={opponents}
-                            onClockOwner={onClockOwner}
+                            getOnClock={getOnClock}
                             onPick={(teamId) =>
-                              teamId === null ? draft(p, true) : draft(p, false, teamId)}
+                              teamId === null ? onDraft(p, true) : onDraft(p, false, teamId)}
                             className="flex-1"
                           />
                         </>
                       )}
                     </div>
                   </div>
-                );
-              })}
-              {filtered.length === 0 && (
-                <div className="px-3 py-8 text-center text-sm text-gray-500">No players match.</div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <aside className="space-y-3">
-          <DraftOverview
-            picks={picks}
-            board={board}
-            settings={settings}
-            mode="snake"
-            onEditLog={() => setShowLog(true)}
-          />
-        </aside>
-      </main>
-
-      {showLog && (
-        <DraftLogModal
-          picks={picks}
-          board={board}
-          settings={settings}
-          mode="snake"
-          onClose={() => setShowLog(false)}
-        />
-      )}
-    </div>
   );
-}
+});

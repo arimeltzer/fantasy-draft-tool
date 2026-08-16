@@ -15,6 +15,7 @@ Reads four files from --data:
 
 All inserts are upserts (safe to re-run).
 """
+from teams import merge_player_rows, normalize_team
 import argparse, json, os, sys
 from pathlib import Path
 
@@ -108,6 +109,14 @@ def main():
     # ── 1. Players ────────────────────────────────────────────────────────────
     print("Loading players…")
     players = json.load(open(data / "players_base.json"))
+    # Team code is part of the row's identity (uniq on season,name,pos,team),
+    # so an alias split (ARI vs AZ) silently creates a SECOND row for the same
+    # player. Canonicalize and merge BEFORE insert.
+    players, merge_notes = merge_player_rows(players)
+    for note in merge_notes:
+        print(f"  merged duplicate: {note}")
+    if merge_notes:
+        print(f"  {len(merge_notes)} duplicate player row(s) collapsed by team alias")
     id_map  = {}   # nflverse gsis_id -> db integer id
     n = 0
     for p in players:
@@ -126,7 +135,7 @@ def main():
                 adp   = EXCLUDED.adp,
                 aav   = EXCLUDED.aav
             RETURNING id
-        """, (args.season, p["name"], pos, (p.get("team") or "")[:5],
+        """, (args.season, p["name"], pos, normalize_team(p.get("team"))[:5],
               int(p["age"]) if p.get("age") else None,
               json.dumps(p.get("proj")), json.dumps(p.get("last")),
               json.dumps(p.get("last2")), p.get("ecr"), p.get("adp"), p.get("aav")))
@@ -147,7 +156,7 @@ def main():
                 INSERT INTO fantasy_schedule (season, team, week, opp)
                 VALUES (%s, %s, %s, %s)
                 ON CONFLICT (season, team, week) DO UPDATE SET opp = EXCLUDED.opp
-            """, (args.season, team[:5], g["week"], g["opp"][:5]))
+            """, (args.season, normalize_team(team)[:5], g["week"], normalize_team(g["opp"])[:5]))
             n += 1
     conn.commit()
     print(f"  ✓ {n} schedule rows upserted")
@@ -184,7 +193,7 @@ def main():
                 INSERT INTO fantasy_sos (season, team, pos, mult)
                 VALUES (%s, %s, %s, %s)
                 ON CONFLICT (season, team, pos) DO UPDATE SET mult = EXCLUDED.mult
-            """, (args.season, team[:5], pos, mult))
+            """, (args.season, normalize_team(team)[:5], pos, mult))
             n += 1
     conn.commit()
     print(f"  ✓ {n} SOS multiplier rows upserted")

@@ -19,11 +19,18 @@ from .base import NormPlayer
 _SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 # Canonicalize NFL team abbreviations across platforms/eras.
+# Keep in step with data-pipeline/teams.py — that one decides what lands in the
+# database, this one decides what an imported roster matches against.
 _TEAM_ALIASES = {
-    "JAC": "JAX", "WSH": "WAS", "LA": "LAR", "STL": "LAR", "SD": "LAC",
-    "OAK": "LV", "ARZ": "ARI", "BLT": "BAL", "CLV": "CLE", "HST": "HOU",
-    "GNB": "GB", "KAN": "KC", "NWE": "NE", "NOR": "NO", "SFO": "SF",
-    "TAM": "TB", "LVR": "LV",
+    "JAC": "JAX", "WSH": "WAS", "WFT": "WAS", "LA": "LAR", "STL": "LAR",
+    "RAM": "LAR", "SD": "LAC", "SDG": "LAC",
+    "OAK": "LV", "LVR": "LV", "RAI": "LV",
+    # Arizona is spelled three ways across feeds; AZ is the one that split a
+    # player into two board rows.
+    "AZ": "ARI", "ARZ": "ARI", "CRD": "ARI",
+    "BLT": "BAL", "RAV": "BAL", "CLV": "CLE", "HST": "HOU", "HTX": "HOU",
+    "OTI": "TEN", "GNB": "GB", "KAN": "KC", "NWE": "NE", "NOR": "NO",
+    "SFO": "SF", "TAM": "TB",
 }
 
 
