@@ -73,9 +73,47 @@ the players it likes at those positions do not deliver.
 - **No rookies.** Players with no prior-season history are skipped, so the rookie
   path (`rookieProjection`) is untested here. That branch now covers ~349 of 959
   players in the live pool and remains unvalidated.
-- **No ADP/ECR baseline.** Historical consensus rankings aren't in the pipeline,
-  so the comparison that matters commercially — model vs. the market — cannot be
-  run yet. Beating last-season pace is a low bar; beating ADP is the real one.
+- **Survivorship applies to the ADP comparison too** (see below).
+
+## Model vs. the market — the model LOSES
+
+FantasyPros serves genuine preseason ADP for past seasons (verified: correlation
+with that year's finish is 0.53–0.66, the band for real preseason opinion, not
+the >0.85 that would signal hindsight). Scored over the **matched population** —
+only players both the model and the market rank, ~185–299 per year:
+
+| pos | last-season pace | **ADP (market)** | shipped model | model − market |
+|-----|------------------|------------------|---------------|----------------|
+| QB  | 0.4398 | **0.6476** | 0.4968 | **−0.151** |
+| RB  | 0.5266 | **0.6515** | 0.5510 | **−0.101** |
+| TE  | 0.4463 | **0.5351** | 0.4715 | **−0.064** |
+| WR  | 0.5609 | **0.6499** | 0.5943 | **−0.056** |
+
+Top-24 hit rate says the same, by smaller margins: QB .852 vs .829, RB .681 vs
+.634, TE .778 vs .731, WR .662 vs .625.
+
+**Every correlation drops on the matched set** (model QB 0.703 → 0.497) because
+that set is only players the market bothers to rank — draftable, compressed,
+genuinely hard to order. Ranking 220 relevant players is a harder exam than
+ranking 460 where half are obvious scrubs. That is why the earlier
+model-vs-market claim, drawn from two different populations, pointed the wrong
+way: on the same exam, **consensus ADP beats the projection at every position.**
+
+### What that does and doesn't mean
+
+It does NOT mean the tool is worthless — VBD, scarcity, tiers, roster fit,
+auction dollars, keeper valuation and draft-order logic are all built on top of
+a ranking and add value independent of how that ranking was produced. It does
+mean the tool's edge is currently **not** superior player evaluation.
+
+### The obvious lead
+
+`projectPoints()` never looks at ECR or ADP for an established player. Market
+rank is used for rookies, for `rankByAdp`, and for `marketPrice` — but the core
+board ranking for veterans is derived purely from prior-season stats, discarding
+the single best predictor available. A model⊕market blend is the cheapest
+experiment with the largest expected gain, and this harness can now measure it
+directly.
 
 ## Superseded
 

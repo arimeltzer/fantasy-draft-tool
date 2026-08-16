@@ -6,6 +6,34 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Model vs. market on a matched population: the market wins
+- Historical preseason ADP is available and genuine (correlation with that
+  season's finish 0.53–0.66 — the band for real preseason opinion; hindsight
+  would be >0.85). `adp_probe.py` checks this rather than assuming it.
+- Scored over the **matched population** (only players both rank, ~185–299/yr),
+  mean Spearman vs actual season total, 2017–2025:
+
+  | pos | ADP (market) | shipped model | delta |
+  |-----|--------------|---------------|-------|
+  | QB  | **0.648** | 0.497 | −0.151 |
+  | RB  | **0.652** | 0.551 | −0.101 |
+  | TE  | **0.535** | 0.472 | −0.064 |
+  | WR  | **0.650** | 0.594 | −0.056 |
+
+- **This corrects the previous entry's optimistic read.** That comparison used
+  two different populations — the exact error the matched run was built to
+  avoid — and pointed the wrong way. On the same exam the market wins at every
+  position. All correlations fall on the matched set because it contains only
+  draftable players, which is a much harder ordering problem.
+- What it doesn't mean: VBD, scarcity, tiers, keeper math, auction dollars and
+  draft-order logic sit on top of the ranking and add value regardless. The
+  tool's edge is the draft-mechanics layer, not player evaluation.
+- The lead this exposes: `projectPoints()` never consults ECR/ADP for an
+  established player. Market rank drives rookies, `rankByAdp` and
+  `marketPrice`, but the veteran board ranking is pure prior-season stats —
+  discarding the best predictor available. A model⊕market blend is now
+  measurable in one run.
+
 ## 2026-08 — The projection model, finally measured
 - `projection_model.py` is a line-for-line Python port of `engine-core.js`
   `projectPoints()`, and `projection_parity.py` asserts it matches the shipped JS
