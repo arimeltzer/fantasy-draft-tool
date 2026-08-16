@@ -330,6 +330,8 @@ def main():
                                          "blend_w": w, "pos": pos, **m})
 
     df = pd.DataFrame(per_year)
+    if "blend_w" not in df.columns:
+        df["blend_w"] = float("nan")
     os.makedirs(args.out, exist_ok=True)
     df.to_csv(f"{args.out}/projection_backtest_by_year.csv", index=False)
 
@@ -337,6 +339,8 @@ def main():
              .agg(spearman_total=("spearman_total", "mean"),
                   spearman_pace=("spearman_pace", "mean"),
                   hit24_total=("hit24_total", "mean"),
+                  # carried through the groupby so the sweep can be ordered
+                  blend_w=("blend_w", "first"),
                   n_years=("year", "nunique"))
              .reset_index()
              .sort_values(["pos", "spearman_total"], ascending=[True, False]))
