@@ -26,7 +26,21 @@ TWO TARGETS, deliberately both
 
 BASELINES
   pace1  — last season's per-game pace. The "just use last year" strawman.
-  ecr_ish— not available historically, so omitted rather than faked.
+  adp    — FantasyPros preseason consensus, i.e. the market. Only scored on the
+           players it actually ranks (see POPULATIONS).
+
+POPULATIONS, because which players you score decides the answer
+  matched_adp — only players the market ranks. The only fair model-vs-market
+                comparison; the market wins here at every position.
+  all         — every player with prior-season history, which is the board the
+                app must actually produce. ADP has no opinion on ~50% of it, so
+                the market cannot be scored here at all. The question becomes
+                whether anchoring the covered slice to the market beats the
+                model we already ship — the COVERAGE MERGE.
+
+DIAGNOSTIC: `disagreement_signal()` asks whether the model's disagreements with
+the market carry any information. If they do not, no blend weight can help, and
+the fix has to be in the model rather than in the mixing.
 
 CAVEAT, stated because it bounds every number below: players are scored only if
 they appear in season Y. Someone who was projected well and then never played is
@@ -41,6 +55,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 from datetime import date
 from itertools import product
@@ -202,6 +217,18 @@ def blend_with_market(players, model_pts, adp_by_player, w):
     keeps the output on the model's own scale, and preserves the position's
     points-vs-rank shape (which is what VBD cares about).
 
+    COVERAGE. The market ranks only some players; the model ranks all of them.
+    The ladder is therefore built from the RANKED players only, so the transfer
+    is a permutation WITHIN that subset: every ranked player is reshuffled among
+    the point values ranked players already held, and unranked players keep
+    their model points and their position in the distribution untouched. Reading
+    the market's k-th rank off a ladder that included unranked players would
+    hand out slots those players already occupy — inflating the covered group
+    and quietly demoting everyone the market ignores.
+
+    When every player is ranked (the matched population) the two constructions
+    coincide, so this does not move the matched numbers.
+
     w = 1.0 is the pure model; w = 0.0 is the model's point distribution
     reordered by ADP — which must score like ADP, and is asserted below.
     """
@@ -214,14 +241,94 @@ def blend_with_market(players, model_pts, adp_by_player, w):
         have_adp = [i for i in idxs if adp_by_player.get(players[i]["player_id"])]
         if not have_adp:
             continue
-        # The model's own points for this position, best first: the ladder the
-        # market's rank is read against.
-        ladder = sorted((model_pts[i] for i in idxs), reverse=True)
+        # The model's own points for the RANKED players, best first: the ladder
+        # the market's rank is read against.
+        ladder = sorted((model_pts[i] for i in have_adp), reverse=True)
         # Market order within the position.
         market_order = sorted(have_adp, key=lambda i: adp_by_player[players[i]["player_id"]])
         for slot, i in enumerate(market_order):
             implied = ladder[min(slot, len(ladder) - 1)]
             out[i] = w * model_pts[i] + (1 - w) * implied
+    return out
+
+
+def _partial_spearman(x, y, z):
+    """Correlation of x and y with z held constant, on ranks.
+
+    The naive version of this diagnostic — correlate (market - model) against
+    (market - actual) — is broken: both sides carry +market, so they correlate
+    positively no matter what the model says. Scored that way a pure random
+    model reads +0.39 and an INVERTED model reads ~0. The shared term has to
+    come out, which is exactly what a partial correlation does; its null is 0.
+    """
+    rxy = stats.spearmanr(x, y).statistic
+    rxz = stats.spearmanr(x, z).statistic
+    ryz = stats.spearmanr(y, z).statistic
+    denom = math.sqrt(max(0.0, (1 - rxz ** 2) * (1 - ryz ** 2)))
+    if denom < 1e-12 or any(v != v for v in (rxy, rxz, ryz)):
+        return float("nan")
+    return (rxy - rxz * ryz) / denom
+
+
+def disagreement_signal(pop, model_pts, adp_by_player, sc):
+    """Does the model know anything the market does not?
+
+    This is the question that decides whether ANY blend can work, and it is not
+    the same as "is the model good" — a model can rank players well purely by
+    agreeing with the market, and adding it to the market would then buy you
+    nothing. What matters is the INCREMENTAL signal: of the part of a player's
+    finish the market failed to anticipate, does the model's disagreement with
+    the market predict any of it?
+
+    That quantity is the partial Spearman correlation between the model's
+    ranking and the actual finish, controlling for ADP. Its null is 0.
+
+      > 0  the model carries real information the market lacks. A blend can
+           help, and the only open question is the weight.
+      ~ 0  the model's disagreements are noise. No weight will help, because
+           there is nothing to weight — the fix has to go into the model.
+      < 0  the model is reliably wrong exactly where it departs from consensus.
+
+    Reported twice: over everyone, and over BIG disagreements only (>= 10 ranks
+    apart), because a model can carry signal in aggregate and still be wrong on
+    the loud calls — and the loud calls are the ones that change a draft.
+    """
+    by_pos = {}
+    for i, p in enumerate(pop):
+        if adp_by_player.get(p["player_id"]):
+            by_pos.setdefault(p["pos"], []).append(i)
+
+    out = {}
+    for pos, idxs in by_pos.items():
+        if len(idxs) < 15:
+            continue
+        act_pts = {i: _points(season_line(pop[i]["_actual"]), sc) for i in idxs}
+        # rank 0 = best, in each of the three orderings
+        mkt = {i: r for r, i in enumerate(sorted(idxs, key=lambda i: adp_by_player[pop[i]["player_id"]]))}
+        mdl = {i: r for r, i in enumerate(sorted(idxs, key=lambda i: -model_pts[i]))}
+        act = {i: r for r, i in enumerate(sorted(idxs, key=lambda i: -act_pts[i]))}
+
+        # Negated so that "higher = better player" in all three, making a
+        # positive correlation mean "agrees with reality" rather than the
+        # reverse — the sign of this number is the whole result.
+        X = [-mdl[i] for i in idxs]
+        Y = [-act[i] for i in idxs]
+        Z = [-mkt[i] for i in idxs]
+        res = {"n": len(idxs),
+               "partial_model": round(_partial_spearman(X, Y, Z), 4),
+               # for context: how much the market alone explains, and how much
+               # the model overlaps it (a model that just echoes ADP has
+               # nothing left to contribute no matter how good it looks solo)
+               "rho_market": round(float(stats.spearmanr(Z, Y).statistic), 4),
+               "rho_model": round(float(stats.spearmanr(X, Y).statistic), 4),
+               "rho_model_market": round(float(stats.spearmanr(X, Z).statistic), 4)}
+
+        big = [k for k, i in enumerate(idxs) if abs(mkt[i] - mdl[i]) >= 10]
+        res["n_big"] = len(big)
+        if len(big) >= 10:
+            res["partial_model_big"] = round(
+                _partial_spearman([X[k] for k in big], [Y[k] for k in big], [Z[k] for k in big]), 4)
+        out[pos] = res
     return out
 
 
@@ -265,6 +372,8 @@ def main():
               "The model-vs-market comparison is the point; run this where the key lives.")
 
     per_year = []
+    dis_rows = []          # model-vs-market disagreement diagnostic
+    coverage = []          # (year, ranked, total) — how much of the board ADP covers
     for year in test_years:
         players = build_players(data, ages, year)
         if not players:
@@ -287,6 +396,7 @@ def main():
         if adp_by_player:
             matched = [p for p in players if p["player_id"] in adp_by_player]
             populations.append(("matched_adp", matched))
+            coverage.append((year, len(matched), len(players)))
             print(f"  {year}: {len(players)} players, {len(matched)} also have ADP")
         else:
             print(f"  {year}: {len(players)} players")
@@ -320,6 +430,8 @@ def main():
                                      **combo, "pos": pos, **m})
 
             # ── model (x) market blend, swept ─────────────────────────
+            # On `all` this IS the coverage merge: ranked players get pulled
+            # toward the market, everyone the market ignores keeps the model.
             if adp_by_player:
                 base_projs = [project_points(p, sc, DEFAULT_PARAMS)["proj"] for p in pop]
                 for w in [round(x / 10, 1) for x in range(0, 11)]:
@@ -328,6 +440,10 @@ def main():
                         per_year.append({"year": year, "population": pop_name,
                                          "model": "blend", "variant": f"w{w}",
                                          "blend_w": w, "pos": pos, **m})
+
+                if pop_name == "all":
+                    for pos, m in disagreement_signal(pop, base_projs, adp_by_player, sc).items():
+                        dis_rows.append({"year": year, "pos": pos, **m})
 
     df = pd.DataFrame(per_year)
     if "blend_w" not in df.columns:
@@ -352,6 +468,10 @@ def main():
                  "MATCHED population — only players the market also ranks")
         print(f"\n=== {title} ===")
         print("mean Spearman vs actual season TOTAL, over test years")
+        if pop == "all" and coverage:
+            cov = sum(r / t for _, r, t in coverage) / len(coverage)
+            print(f"ADP covers {cov:.0%} of this population on average — the blend can only"
+                  f" move that share; the rest is the model alone.")
         pa = agg[agg["population"] == pop]
         for posn in sorted(pa["pos"].unique()):
             sub = pa[pa["pos"] == posn]
@@ -372,26 +492,54 @@ def main():
                       + (f"   vs market {edge:+.4f}" if edge is not None else ""))
 
             bl = sub[sub["model"] == "blend"].sort_values("blend_w")
-            if len(bl) and len(mkt):
-                mkt_s = mkt.iloc[0].spearman_total
+            if len(bl) and len(ship):
+                # Reference differs by population, on purpose. Where the market
+                # ranks everyone, the market is the bar to clear. Where it does
+                # not, ADP has no score to compare against and the honest
+                # question is whether anchoring the covered slice beats the
+                # model we already ship.
+                ref_s = mkt.iloc[0].spearman_total if len(mkt) else s0.spearman_total
+                ref_label = "market" if len(mkt) else " model"
                 best = bl.loc[bl.spearman_total.idxmax()]
-                # Endpoint check: w=1 must reproduce the model and w=0 must
-                # reproduce the market. If either drifts, the blend is wrong and
-                # nothing between them means anything.
+                # Endpoint check: w=1 must reproduce the model, and (matched
+                # only) w=0 must reproduce the market. If either drifts, the
+                # blend is wrong and nothing between them means anything.
                 w1 = bl[bl.blend_w == 1.0]
                 w0 = bl[bl.blend_w == 0.0]
-                if len(w1) and len(ship) and abs(w1.iloc[0].spearman_total - s0.spearman_total) > 1e-6:
+                if len(w1) and abs(w1.iloc[0].spearman_total - s0.spearman_total) > 1e-6:
                     print(f"    !! w=1.0 ({w1.iloc[0].spearman_total:.4f}) != shipped "
                           f"({s0.spearman_total:.4f}) — blend is not interpolating the model")
-                if len(w0) and abs(w0.iloc[0].spearman_total - mkt_s) > 0.02:
+                if len(mkt) and len(w0) and abs(w0.iloc[0].spearman_total - ref_s) > 0.02:
                     print(f"    !! w=0.0 ({w0.iloc[0].spearman_total:.4f}) != market "
-                          f"({mkt_s:.4f}) — blend is not interpolating ADP")
-                print("    blend model⊕market (w = weight on MODEL):")
+                          f"({ref_s:.4f}) — blend is not interpolating ADP")
+                head = ("blend model⊕market (w = weight on MODEL)" if len(mkt) else
+                        "coverage merge: market where ranked, model elsewhere")
+                print(f"    {head}:")
                 for _, r in bl.iterrows():
                     star = "  <-- best" if r.variant == best.variant else ""
                     print(f"      w={r.blend_w:<4} {r.spearman_total:.4f}"
-                          f"  (vs market {r.spearman_total - mkt_s:+.4f})"
+                          f"  (vs {ref_label} {r.spearman_total - ref_s:+.4f})"
                           f"  top24 {r.hit24_total:.3f}{star}")
+
+    if dis_rows:
+        dis = pd.DataFrame(dis_rows)
+        dis.to_csv(f"{args.out}/projection_disagreement.csv", index=False)
+        print("\n=== DOES THE MODEL KNOW ANYTHING THE MARKET DOESN'T? ===")
+        print("partial Spearman(model, actual | ADP) — the model's signal with the")
+        print("market's share removed. Null is 0. > 0 means a blend has something to")
+        print("work with; ~0 means the disagreements are noise and no weight helps.")
+        for posn in sorted(dis["pos"].unique()):
+            s = dis[dis["pos"] == posn]
+            print(f"\n  {posn}  (n_years={s['year'].nunique()}, ~{s['n'].mean():.0f} ranked players/yr)")
+            print(f"    model vs actual    : {s['rho_model'].mean():+.4f}")
+            print(f"    market vs actual   : {s['rho_market'].mean():+.4f}")
+            print(f"    model vs market    : {s['rho_model_market'].mean():+.4f}"
+                  f"   (overlap — how much the model just echoes ADP)")
+            print(f"    PARTIAL (model|ADP): {s['partial_model'].mean():+.4f}   <-- the one that matters")
+            if "partial_model_big" in s and s["partial_model_big"].notna().any():
+                b = s[s["partial_model_big"].notna()]
+                print(f"    big calls (>=10 rk): {b['partial_model_big'].mean():+.4f}"
+                      f"   (~{b['n_big'].mean():.0f} players/yr)")
 
     print(f"\n✓ wrote {args.out}/projection_backtest_summary.csv and _by_year.csv")
 

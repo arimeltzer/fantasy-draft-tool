@@ -1,7 +1,10 @@
 name: Projection backtest
 
 # Manual. Scores the SHIPPED projection against a naive baseline and against the
-# market (FantasyPros ADP) on a MATCHED population, on rank correlation.
+# market (FantasyPros ADP) on a MATCHED population, on rank correlation; then on
+# the FULL board, where ADP covers only ~half the players, scores the coverage
+# merge (market where ranked, model elsewhere) against the shipped model.
+# Also reports whether the model carries any signal the market lacks.
 # See docs/PROJECTION_BACKTEST.md.
 
 on:
@@ -31,6 +34,9 @@ jobs:
       - name: Port parity (the backtest is worthless if the port has drifted)
         working-directory: data-pipeline
         run: python projection_parity.py
+      - name: Backtest selftest (blend + diagnostic pinned to known answers)
+        working-directory: data-pipeline
+        run: python backtest_selftest.py
       - name: Backtest
         working-directory: data-pipeline
         env:
