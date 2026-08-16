@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import urllib.error
 import urllib.request
 from urllib.parse import urlencode
 
@@ -54,6 +55,47 @@ def norm(n: str) -> str:
     n = _SUFFIX.sub("", n)
     n = re.sub(r"[^a-z ]", " ", n)
     return re.sub(r"\s+", " ", n).strip()
+
+
+def describe_payload(data, label: str, limit: int = 24) -> str:
+    """Report the SHAPE of an API response — never guess field names from memory.
+
+    A pull that returns HTTP 200 and parses to zero rows means our key
+    expectations are wrong, and the only way to fix that honestly is to look at
+    what actually arrived. Prints top-level keys, the row count, and the keys of
+    the first row (plus any nested `stats`), with a couple of sample values —
+    enough to write a correct parser, small enough to read in a CI log.
+    """
+    out = [f"  [diag] {label}:"]
+    if not isinstance(data, dict):
+        return f"  [diag] {label}: payload is {type(data).__name__}, not an object"
+    out.append(f"    top-level keys: {sorted(data.keys())[:limit]}")
+    rows = None
+    for k in ("players", "projections", "rankings", "data", "results"):
+        v = data.get(k)
+        if isinstance(v, list):
+            rows = v
+            out.append(f"    '{k}' is a list of {len(v)}")
+            break
+    if rows is None:
+        for k, v in data.items():
+            out.append(f"    {k}: {type(v).__name__}"
+                       + (f" (len {len(v)})" if isinstance(v, (list, dict)) else f" = {v!r}"[:60]))
+        return "\n".join(out)
+    if not rows:
+        out.append("    (row list is EMPTY — the request returned no players)")
+        return "\n".join(out)
+    first = rows[0]
+    if isinstance(first, dict):
+        out.append(f"    first row keys: {sorted(first.keys())[:limit]}")
+        for k in ("stats", "projection", "projections"):
+            if isinstance(first.get(k), dict):
+                out.append(f"    first row ['{k}'] keys: {sorted(first[k].keys())[:limit]}")
+        sample = {k: v for k, v in list(first.items())[:6] if not isinstance(v, (dict, list))}
+        out.append(f"    first row sample: {sample}")
+    else:
+        out.append(f"    first row is {type(first).__name__}: {str(first)[:120]}")
+    return "\n".join(out)
 
 
 def _num(d: dict, *keys):
@@ -164,9 +206,17 @@ def fetch_aav(season: int, scoring: str = "HALF", api_key: str | None = None,
         "Accept": "application/json",
         "User-Agent": "fantasy-draft-tool/1.0",
     })
-    with urllib.request.urlopen(req, timeout=30) as r:
-        data = json.load(r)
-    return parse_aav(data)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.load(r)
+    except urllib.error.HTTPError as e:
+        body = e.read()[:200].decode("utf-8", "replace")
+        print(f"  ! AAV: HTTP {e.code} {body}")
+        return {}
+    got = parse_aav(data)
+    if not got:
+        print(describe_payload(data, "AAV parsed 0 rows"))
+    return got
 
 
 def _extract_stats(player: dict) -> dict:
@@ -221,8 +271,18 @@ def fetch_projections(season: int, scoring: str = "HALF", api_key: str | None = 
             "x-api-key": api_key, "Accept": "application/json",
             "User-Agent": "fantasy-draft-tool/1.0",
         })
-        with urllib.request.urlopen(req, timeout=30) as r:
-            merged.update(parse_projections(json.load(r)))
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = json.load(r)
+        except urllib.error.HTTPError as e:
+            # Per-position, so one bad position can't silently zero the whole pull.
+            body = e.read()[:200].decode("utf-8", "replace")
+            print(f"  ! projections {pos}: HTTP {e.code} {body}")
+            continue
+        got = parse_projections(data)
+        if not got:
+            print(describe_payload(data, f"projections {pos} parsed 0 rows"))
+        merged.update(got)
     return merged
 
 
