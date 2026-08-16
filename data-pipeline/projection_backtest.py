@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import date
 from itertools import product
 
@@ -49,6 +50,13 @@ import pandas as pd
 from scipy import stats
 
 from projection_model import DEFAULT_PARAMS, default_scoring, project_points, with_overrides
+
+try:
+    from adp_probe import fetch_adp          # needs FANTASYPROS_API_KEY
+    from fantasypros import norm as fp_norm
+except Exception:                             # probe/key absent -> ADP skipped
+    fetch_adp = None
+    fp_norm = None
 
 FANTASY_POS = {"QB", "RB", "WR", "TE"}
 PPR = 0.5
@@ -191,6 +199,8 @@ def main():
     ap.add_argument("--out", default="./backtest_results")
     ap.add_argument("--first", type=int, default=2017, help="first TEST season")
     ap.add_argument("--last", type=int, default=2025, help="last TEST season")
+    ap.add_argument("--no-adp", action="store_true",
+                    help="skip the ADP baseline even when a FantasyPros key is present")
     args = ap.parse_args()
 
     test_years = list(range(args.first, args.last + 1))
@@ -213,35 +223,71 @@ def main():
     }
     combos = [dict(zip(GRID, v)) for v in product(*GRID.values())]
 
+    use_adp = bool(fetch_adp) and not args.no_adp and os.getenv("FANTASYPROS_API_KEY")
+    if not use_adp:
+        print("\n! ADP baseline SKIPPED (no FANTASYPROS_API_KEY or --no-adp). "
+              "The model-vs-market comparison is the point; run this where the key lives.")
+
     per_year = []
     for year in test_years:
         players = build_players(data, ages, year)
         if not players:
             continue
-        print(f"  {year}: {len(players)} players")
 
-        # Baseline: last season's pace, i.e. "just use last year".
-        base = []
-        for p in players:
-            last = p["last"] or p["last2"]
-            base.append((_points(last, sc) / last["gp"]) * 17 if last and last["gp"] else 0.0)
-        for pos, m in score(players, base, sc).items():
-            per_year.append({"year": year, "model": "baseline_pace", "pos": pos, **m})
+        # ── the matched population ────────────────────────────────────
+        # Comparing the model to the market is only meaningful over players
+        # BOTH can rank. ADP covers different (fewer) players than nflverse
+        # history does, so scoring each on its own population would compare
+        # two different exams and call it a result.
+        adp_by_player = {}
+        if use_adp:
+            adp = fetch_adp(year, rank_type="ADP") or fetch_adp(year, rank_type="DRAFT")
+            for p in players:
+                v = adp.get((fp_norm(p["name"]), p["pos"]))
+                if v:
+                    adp_by_player[p["player_id"]] = v
 
-        for combo in combos:
-            P = with_overrides(**combo)
-            projs = [project_points(p, sc, P)["proj"] for p in players]
-            label = f"pw{combo['primaryWeight']}_tt{combo['trendThreshold']}"
-            for pos, m in score(players, projs, sc).items():
-                per_year.append({"year": year, "model": "shipped", "variant": label,
-                                 **combo, "pos": pos, **m})
+        populations = [("all", players)]
+        if adp_by_player:
+            matched = [p for p in players if p["player_id"] in adp_by_player]
+            populations.append(("matched_adp", matched))
+            print(f"  {year}: {len(players)} players, {len(matched)} also have ADP")
+        else:
+            print(f"  {year}: {len(players)} players")
+
+        for pop_name, pop in populations:
+            if len(pop) < 40:
+                continue
+
+            base = []
+            for p in pop:
+                last = p["last"] or p["last2"]
+                base.append((_points(last, sc) / last["gp"]) * 17 if last and last["gp"] else 0.0)
+            for pos, m in score(pop, base, sc).items():
+                per_year.append({"year": year, "population": pop_name,
+                                 "model": "baseline_pace", "pos": pos, **m})
+
+            if pop_name == "matched_adp":
+                # ADP ascends (1 = best); negate so a good ranking scores positive.
+                adp_scores = [-adp_by_player[p["player_id"]] for p in pop]
+                for pos, m in score(pop, adp_scores, sc).items():
+                    per_year.append({"year": year, "population": pop_name,
+                                     "model": "adp_market", "pos": pos, **m})
+
+            for combo in combos:
+                P = with_overrides(**combo)
+                projs = [project_points(p, sc, P)["proj"] for p in pop]
+                label = f"pw{combo['primaryWeight']}_tt{combo['trendThreshold']}"
+                for pos, m in score(pop, projs, sc).items():
+                    per_year.append({"year": year, "population": pop_name,
+                                     "model": "shipped", "variant": label,
+                                     **combo, "pos": pos, **m})
 
     df = pd.DataFrame(per_year)
-    import os
     os.makedirs(args.out, exist_ok=True)
     df.to_csv(f"{args.out}/projection_backtest_by_year.csv", index=False)
 
-    agg = (df.groupby(["model", "variant", "pos"], dropna=False)
+    agg = (df.groupby(["population", "model", "variant", "pos"], dropna=False)
              .agg(spearman_total=("spearman_total", "mean"),
                   spearman_pace=("spearman_pace", "mean"),
                   hit24_total=("hit24_total", "mean"),
@@ -250,22 +296,30 @@ def main():
              .sort_values(["pos", "spearman_total"], ascending=[True, False]))
     agg.to_csv(f"{args.out}/projection_backtest_summary.csv", index=False)
 
-    print("\n=== mean over test years — ranked by Spearman vs actual season TOTAL ===")
-    for pos in sorted(agg["pos"].unique()):
-        sub = agg[agg["pos"] == pos]
-        best = sub.iloc[0]
-        basel = sub[sub["model"] == "baseline_pace"].iloc[0]
-        ship = sub[(sub["model"] == "shipped")
-                   & (sub["variant"] == "pw0.7_tt50")]
-        shipped_default = ship.iloc[0] if len(ship) else None
-        print(f"\n{pos}  (n_years={int(best.n_years)})")
-        print(f"  baseline last-season pace : {basel.spearman_total:.4f}  "
-              f"(pace target {basel.spearman_pace:.4f}, top24 hit {basel.hit24_total:.3f})")
-        if shipped_default is not None:
-            print(f"  SHIPPED  pw0.7 tt50      : {shipped_default.spearman_total:.4f}  "
-                  f"(pace target {shipped_default.spearman_pace:.4f}, top24 hit {shipped_default.hit24_total:.3f})")
-        print(f"  best in grid {best.variant if isinstance(best.variant, str) else best.model:14}: "
-              f"{best.spearman_total:.4f}")
+    for pop in [p for p in ("all", "matched_adp") if p in set(agg["population"])]:
+        title = ("ALL players with prior-season history"
+                 if pop == "all" else
+                 "MATCHED population — only players the market also ranks")
+        print(f"\n=== {title} ===")
+        print("mean Spearman vs actual season TOTAL, over test years")
+        pa = agg[agg["population"] == pop]
+        for posn in sorted(pa["pos"].unique()):
+            sub = pa[pa["pos"] == posn]
+            basel = sub[sub["model"] == "baseline_pace"]
+            ship = sub[(sub["model"] == "shipped") & (sub["variant"] == "pw0.7_tt50")]
+            mkt = sub[sub["model"] == "adp_market"]
+            print(f"\n  {posn}  (n_years={int(sub.n_years.max())})")
+            if len(basel):
+                print(f"    last-season pace : {basel.iloc[0].spearman_total:.4f}")
+            if len(mkt):
+                print(f"    ADP (the market) : {mkt.iloc[0].spearman_total:.4f}   "
+                      f"top24 hit {mkt.iloc[0].hit24_total:.3f}")
+            if len(ship):
+                s0 = ship.iloc[0]
+                edge = (s0.spearman_total - mkt.iloc[0].spearman_total) if len(mkt) else None
+                print(f"    SHIPPED model    : {s0.spearman_total:.4f}   "
+                      f"top24 hit {s0.hit24_total:.3f}"
+                      + (f"   vs market {edge:+.4f}" if edge is not None else ""))
 
     print(f"\n✓ wrote {args.out}/projection_backtest_summary.csv and _by_year.csv")
 

@@ -1,0 +1,42 @@
+name: Projection backtest
+
+# Manual. Scores the SHIPPED projection against a naive baseline and against the
+# market (FantasyPros ADP) on a MATCHED population, on rank correlation.
+# See docs/PROJECTION_BACKTEST.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      first:
+        description: "First test season"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last test season"
+        required: false
+        default: "2025"
+        type: string
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+      - name: Port parity (the backtest is worthless if the port has drifted)
+        working-directory: data-pipeline
+        run: python projection_parity.py
+      - name: Backtest
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python projection_backtest.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: projection-backtest
+          path: data-pipeline/results/
