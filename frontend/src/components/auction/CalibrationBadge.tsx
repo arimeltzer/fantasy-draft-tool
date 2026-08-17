@@ -26,6 +26,11 @@ export default function CalibrationBadge({ cal }: { cal: AuctionCalibration | nu
   // count means dropped players are missing and the shares lean toward picks
   // that worked. Worth knowing before you trust a price.
   const thin = on && cal!.coverage != null && cal!.coverage < 0.75;
+  // Multiple drafts let the premise be tested rather than assumed. A failed
+  // test is worth as much screen space as a passed one: it means the swings
+  // are noise, and the numbers beside it should be discounted accordingly.
+  const stab = on ? cal!.stability : null;
+  const unstable = !!stab && !stab.persists;
 
   const tip = on
     ? `Market prices are adjusted for how this league actually spends, learned from ${cal!.pricedPicks} priced picks in your imported prior season. ${detail}. `
@@ -34,6 +39,13 @@ export default function CalibrationBadge({ cal }: { cal: AuctionCalibration | nu
       + (thin
         ? ` ⚠ Only ${Math.round(cal!.coverage! * 100)}% of a full draft carries a price: the import reads end-of-season rosters, so players who were drafted and later dropped are missing and these shares tilt toward picks that worked out.`
         : "")
+      + (stab
+        ? (stab.persists
+          ? ` Checked across ${stab.seasons.length} drafts (${stab.seasons.join(", ")}): this league's own history predicts its next draft ${Math.round(stab.lift * 100)}% better than the generic split, so the habit is real and not one year's noise.`
+          : ` ⚠ Checked across ${stab.seasons.length} drafts (${stab.seasons.join(", ")}): this league's history does NOT predict its own next draft better than the generic split. The year-to-year swings look like noise, so the adjustment has been shrunk twice as hard — treat it as weak.`)
+        : (cal!.seasons && cal!.seasons.length > 1
+          ? ""
+          : " Only one draft was available, so whether this is a durable habit or one year's accident is unknown — import earlier seasons to find out."))
     : `Market prices use the generic model curve. ${detail}. `
       + `Import a prior season in the Keepers panel (the Keepers button) and the forecast will learn what your room overpays for — no need to recreate the league.`;
 
@@ -42,7 +54,7 @@ export default function CalibrationBadge({ cal }: { cal: AuctionCalibration | nu
       title={tip}
       className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded border font-mono text-xs cursor-help ${
         !on ? "bg-gray-50 border-gray-200 text-gray-400"
-        : thin ? "bg-amber-50 border-amber-200 text-amber-700"
+        : (thin || unstable) ? "bg-amber-50 border-amber-200 text-amber-700"
         : "bg-sky-50 border-sky-200 text-sky-700"
       }`}
     >
@@ -53,6 +65,9 @@ export default function CalibrationBadge({ cal }: { cal: AuctionCalibration | nu
             : "league-neutral")
         : "generic prices"}
       {thin && <span title="partial draft data">*</span>}
+      {stab && <span title={stab.persists
+        ? `holds up across ${stab.seasons.length} drafts`
+        : `does not repeat across ${stab.seasons.length} drafts`}>{stab.persists ? " ✓" : " ?"}</span>}
     </div>
   );
 }

@@ -50,7 +50,105 @@ export const MIN_PICKS = 40;
 /** Hard bounds on any one multiplier, whatever the data says. */
 export const MULT_CLAMP = [0.60, 1.60];
 
+/**
+ * How fast an old draft stops counting. A season's picks are weighted
+ * `RECENCY_DECAY ** (seasons ago)`, so last year counts fully, two years ago
+ * about two thirds, four years ago a fifth.
+ *
+ * Leagues turn over. The people who set the prices three years ago may not be
+ * in it now, so old drafts are real evidence but weaker evidence, and pooling
+ * them flat would let a stale roster of managers outvote the current one.
+ */
+export const RECENCY_DECAY = 0.8;
+
 const clamp = (x, [lo, hi]) => Math.min(hi, Math.max(lo, x));
+
+/** Positional spend shares for one season's picks. */
+function sharesOf(picks) {
+  const spend = {};
+  let total = 0;
+  for (const p of picks) {
+    spend[p.pos] = (spend[p.pos] || 0) + p.price;
+    total += p.price;
+  }
+  const out = {};
+  for (const pos of POSITIONS) out[pos] = total ? (spend[pos] || 0) / total : 0;
+  return { share: out, total };
+}
+
+/**
+ * Does this league's own past predict its own future better than the generic
+ * allocation does?
+ *
+ * This is the premise of the whole feature, and with one draft it can only be
+ * assumed. With several it is measurable, so it should be measured: for each
+ * season, predict its positional shares from the OTHER seasons and compare the
+ * error against predicting them from the model's generic split. Leave-one-out,
+ * so no season is ever used to predict itself.
+ *
+ * `lift` > 0 means the league's habits carry across years and calibrating on
+ * them is justified. `lift` <= 0 means the year-to-year swings are noise
+ * dressed up as culture — the honest response is a stronger prior, not a
+ * confident multiplier, and `calibrateAuction` doubles the shrinkage when it
+ * sees that.
+ *
+ * Needs at least two seasons; returns null below that, which the caller must
+ * treat as "unknown", NOT as "fine".
+ */
+export function assessStability(bySeason, modelShare) {
+  const seasons = Object.keys(bySeason || {})
+    .map(Number)
+    .filter((s) => (bySeason[s] || []).length >= 20)
+    .sort((a, b) => a - b);
+  if (seasons.length < 2) return null;
+
+  const shares = {};
+  for (const s of seasons) shares[s] = sharesOf(bySeason[s]).share;
+
+  // PER POSITION, not one verdict for the board.
+  //
+  // A single global number hides exactly the case that matters: a league can
+  // be rock-steady at quarterback and tight end while its running-back share
+  // swings twenty points a year. Averaged together that still beats the
+  // generic split, so a global test passes and the running-back multiplier
+  // gets a confidence it has not earned. Each position is therefore judged on
+  // its own record, and shrunk on its own record.
+  const perPos = {};
+  let genericErr = 0;
+  let leagueErr = 0;
+  let n = 0;
+  for (const pos of POSITIONS) {
+    if (!modelShare[pos]) continue;
+    let g = 0;
+    let l = 0;
+    for (const target of seasons) {
+      const others = seasons.filter((s) => s !== target);
+      const actual = shares[target][pos];
+      const league = others.reduce((sum, s) => sum + shares[s][pos], 0) / others.length;
+      g += Math.abs(actual - modelShare[pos]);
+      l += Math.abs(actual - league);
+    }
+    genericErr += g;
+    leagueErr += l;
+    n += seasons.length;
+    perPos[pos] = g > 0 ? +((g - l) / g).toFixed(3) : 0;
+  }
+  if (!n || genericErr <= 0) return null;
+
+  const lift = +((genericErr - leagueErr) / genericErr).toFixed(3);
+  return {
+    seasons,
+    genericMAE: +(genericErr / n).toFixed(4),
+    leagueMAE: +(leagueErr / n).toFixed(4),
+    lift,
+    /** Per-position lift; this is what actually drives the shrinkage. */
+    perPos,
+    /** True when the league's own history is the better predictor overall.
+     *  Summary for display — do NOT use it to decide a single position. */
+    persists: lift > 0,
+  };
+}
+
 
 /** The identity calibration — used whenever there is no usable history. */
 export function noCalibration(note = "no prior-season auction prices") {
@@ -84,13 +182,47 @@ export function calibrateAuction(picks, league = {}, P = DEFAULT_AUCTION_PARAMS)
       `only ${priced.length} priced picks; need ${MIN_PICKS} before trusting a positional split`);
   }
 
+  // Seasons, when picks carry one. Older drafts count less (RECENCY_DECAY) and
+  // each season's spend is converted to SHARES before pooling, so a season
+  // with a bigger budget cannot outvote the others just by having more dollars
+  // in it — the quantity being averaged is the split, not the money.
+  const bySeason = {};
+  for (const p of priced) {
+    const key = Number.isFinite(p.season) ? p.season : 0;
+    (bySeason[key] ||= []).push(p);
+  }
+  const seasonKeys = Object.keys(bySeason).map(Number).sort((a, b) => b - a);
+  const newest = seasonKeys[0];
+  const multiSeason = seasonKeys.length > 1 && newest > 0;
+
   const spend = {};
   const count = {};
   let totalSpend = 0;
-  for (const p of priced) {
-    spend[p.pos] = (spend[p.pos] || 0) + p.price;
-    count[p.pos] = (count[p.pos] || 0) + 1;
-    totalSpend += p.price;
+
+  if (multiSeason) {
+    // Weighted average of each season's SHARES, and a weighted pick count so
+    // the shrinkage below sees an effective sample rather than a raw one.
+    const shareAcc = {};
+    let wSum = 0;
+    for (const s of seasonKeys) {
+      const w = Math.pow(RECENCY_DECAY, newest - s);
+      const { share, total } = sharesOf(bySeason[s]);
+      if (total <= 0) continue;
+      for (const pos of POSITIONS) shareAcc[pos] = (shareAcc[pos] || 0) + w * share[pos];
+      for (const p of bySeason[s]) count[p.pos] = (count[p.pos] || 0) + w;
+      wSum += w;
+      totalSpend += total;
+    }
+    if (wSum <= 0) return noCalibration("prior drafts have no positive prices");
+    for (const pos of POSITIONS) spend[pos] = (shareAcc[pos] || 0) / wSum;   // already a share
+    notes.push(`${seasonKeys.length} seasons (${seasonKeys.slice().reverse().join(", ")}), ` +
+               `older drafts weighted down`);
+  } else {
+    for (const p of priced) {
+      spend[p.pos] = (spend[p.pos] || 0) + p.price;
+      count[p.pos] = (count[p.pos] || 0) + 1;
+      totalSpend += p.price;
+    }
   }
   if (totalSpend <= 0) return noCalibration("prior draft has no positive prices");
 
@@ -103,17 +235,41 @@ export function calibrateAuction(picks, league = {}, P = DEFAULT_AUCTION_PARAMS)
   const baseSum = present.reduce((s, pos) => s + (baseAlloc[pos] || 0), 0);
   if (baseSum <= 0) return noCalibration("no reference allocation for these positions");
 
+  // In the multi-season path `spend` already holds shares that sum to 1; in
+  // the single-season path it holds dollars. One denominator covers both.
+  const shareDenom = multiSeason ? 1 : totalSpend;
+
   const modelShare = {};
+  for (const pos of POSITIONS) {
+    modelShare[pos] = present.includes(pos) ? (baseAlloc[pos] || 0) / baseSum : 0;
+  }
+
+  // Does the league's own past predict its own future? With one draft this is
+  // unanswerable and the premise stays an assumption. With several it is
+  // testable, and a failed test is evidence the swings are noise — which in an
+  // empirical-Bayes framing means a STRONGER prior, not a confident number.
+  const stability = multiSeason ? assessStability(bySeason, modelShare) : null;
+  const unstablePositions = [];
+
   const observedShare = {};
   const posMult = {};
   for (const pos of POSITIONS) {
-    modelShare[pos] = present.includes(pos) ? (baseAlloc[pos] || 0) / baseSum : 0;
-    observedShare[pos] = totalSpend ? (spend[pos] || 0) / totalSpend : 0;
+    observedShare[pos] = shareDenom ? (spend[pos] || 0) / shareDenom : 0;
     if (!present.includes(pos) || modelShare[pos] <= 0) { posMult[pos] = 1; continue; }
     const raw = observedShare[pos] / modelShare[pos];
     const n = count[pos] || 0;
-    // Empirical-Bayes shrink toward 1 (= "behaves like the reference").
-    posMult[pos] = 1 + (raw - 1) * (n / (n + SHRINK_K0));
+    // Empirical-Bayes shrink toward 1 (= "behaves like the reference"), with
+    // the prior doubled for a position whose own share does not repeat across
+    // seasons. An unrepeatable deviation is noise however large its average.
+    const posLift = stability?.perPos?.[pos];
+    const shaky = posLift != null && posLift <= 0;
+    if (shaky) unstablePositions.push(pos);
+    posMult[pos] = 1 + (raw - 1) * (n / (n + (shaky ? SHRINK_K0 * 2 : SHRINK_K0)));
+  }
+
+  if (unstablePositions.length) {
+    notes.push(`${unstablePositions.join(", ")}: this league's share swings year to year ` +
+               "rather than repeating — shrunk twice as hard, treat as weak");
   }
 
   // Spend-neutral: rescale so the model-share-weighted mean multiplier is 1.
@@ -164,6 +320,10 @@ export function calibrateAuction(picks, league = {}, P = DEFAULT_AUCTION_PARAMS)
     modelShare,
     totalSpend,
     pricedPicks: priced.length,
+    seasons: multiSeason ? seasonKeys.slice().reverse() : [],
+    /** Leave-one-season-out test of the premise. null = only one season, i.e.
+     *  UNKNOWN rather than fine. */
+    stability,
     /** priced picks / a full draft. Below ~0.75 the sample is survivors. */
     coverage,
     topHeaviness,
@@ -193,7 +353,7 @@ export function picksFromKeeperImport(cache) {
   if (Array.isArray(cache.draftPicks) && cache.draftPicks.length) {
     const full = cache.draftPicks
       .filter((p) => p && Number.isFinite(p.bid) && p.bid > 0 && POSITIONS.includes(p.pos))
-      .map((p) => ({ pos: p.pos, price: p.bid }));
+      .map((p) => ({ pos: p.pos, price: p.bid, season: p.season }));
     if (full.length) return full;
   }
 

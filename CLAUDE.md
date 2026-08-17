@@ -229,6 +229,19 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   it can't name are skipped rather than guessed. Yahoo/paste still fall back to
   the roster sample. `coverage` (priced picks / teams x rosterSize) measures
   what's missing either way; below 0.75 the badge turns amber with a `*`.
+- **Multiple seasons** (`history_seasons` on the ESPN keeper-candidates route,
+  `espn.fetch_draft_history` via the `leagueHistory` host): older drafts are
+  pooled as SHARES, weighted `RECENCY_DECAY ** age` so a departed roster of
+  managers can't outvote the current one. More seasons = stronger adjustment.
+- **It tests its own premise.** `assessStability` predicts each season's shares
+  from the OTHER seasons (leave-one-out) and compares against the generic
+  split. Verdict is **per position**, not global — a league steady at QB/TE but
+  swingy at RB passes a global test and RB gets confidence it hasn't earned
+  (a selftest caught exactly this). A position whose share fails is shrunk with
+  double the prior. Note the distinction the metric gets right: swings that
+  stay on ONE side of generic are a real level shift and still count; swings
+  that STRADDLE it carry no usable signal and get shrunk. One season leaves
+  stability `null` = UNKNOWN, not fine.
 - `topHeaviness` is computed and shown but **not applied**; acting on it needs a
   separately validated model of the curve's shape.
 - `CalibrationBadge` states the sample and per-position effect, and reads

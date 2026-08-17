@@ -11,7 +11,7 @@
  */
 import {
   calibrateAuction, picksFromKeeperImport, describeCalibration,
-  noCalibration, MIN_PICKS, MULT_CLAMP, POSITIONS,
+  noCalibration, assessStability, MIN_PICKS, MULT_CLAMP, POSITIONS,
 } from "./auction-calibration.js";
 import { marketPrice, DEFAULT_AUCTION_PARAMS, dollarValues } from "./auction-engine.js";
 
@@ -197,6 +197,94 @@ check("describeCalibration explains an unusable one",
   });
   check("unresolved picks are skipped, not guessed at",
         withUnresolved.length === 1 && withUnresolved[0].pos === "RB");
+}
+
+// ── multiple seasons ──────────────────────────────────────────────────────
+// One draft cannot separate a league's habits from one year's accidents.
+// Several can — and can TEST the premise instead of assuming it.
+{
+  const seasonPicks = (season, shares, per = 25, pot = 2000) => {
+    const out = [];
+    for (const [pos, sh] of Object.entries(shares)) {
+      for (let i = 0; i < per; i++) out.push({ pos, price: (pot * sh) / per, season });
+    }
+    return out;
+  };
+  const RB_HEAVY = { QB: 0.072, RB: 0.50, WR: 0.25, TE: 0.113, K: 0.015, DST: 0.015 };
+  const RB_HEAVY2 = { QB: 0.072, RB: 0.48, WR: 0.27, TE: 0.113, K: 0.015, DST: 0.015 };
+
+  const one = calibrateAuction(seasonPicks(2025, RB_HEAVY), LEAGUE);
+  const three = calibrateAuction(
+    [...seasonPicks(2025, RB_HEAVY), ...seasonPicks(2024, RB_HEAVY2), ...seasonPicks(2023, RB_HEAVY)],
+    LEAGUE);
+
+  check("multiple seasons are recorded", three.seasons.length === 3, JSON.stringify(three.seasons));
+  check("a repeated habit earns a STRONGER adjustment than one draft",
+        three.posMult.RB > one.posMult.RB,
+        `1yr ${one.posMult.RB} -> 3yr ${three.posMult.RB}`);
+  check("a single season reports stability as UNKNOWN, not fine",
+        one.stability === null || one.stability === undefined);
+  check("three consistent seasons test as persistent",
+        three.stability && three.stability.persists, JSON.stringify(three.stability));
+  check("...with the league beating the generic split", three.stability.lift > 0);
+  check("multipliers stay spend-neutral across seasons too",
+        near(POSITIONS.reduce((s, p) => s + three.modelShare[p] * three.posMult[p], 0), 1, 0.02));
+
+  // A league whose split swings wildly year to year: the mean may look
+  // extreme, but the swings are noise and the prior must fight back harder.
+  const WILD_A = { QB: 0.25, RB: 0.25, WR: 0.35, TE: 0.10, K: 0.03, DST: 0.02 };
+  const WILD_B = { QB: 0.05, RB: 0.55, WR: 0.28, TE: 0.09, K: 0.02, DST: 0.01 };
+  const wild = calibrateAuction(
+    [...seasonPicks(2025, WILD_A), ...seasonPicks(2024, WILD_B), ...seasonPicks(2023, WILD_A)],
+    LEAGUE);
+  check("an erratic league fails the persistence test",
+        wild.stability && !wild.stability.persists, JSON.stringify(wild.stability));
+  check("...and names the positions whose share does not repeat",
+        wild.notes.some((n) => /swings year to year/.test(n)),
+        JSON.stringify(wild.notes));
+
+  // SAME mean share, different consistency. This is the case a single global
+  // stability verdict got wrong: swings that STRADDLE the generic value carry
+  // no usable level shift, so the league's own history predicts its next
+  // draft worse than the generic split does, and the multiplier must reflect
+  // that even though the average is identical to the steady league's.
+  //
+  // (Swings that stay entirely on one side of generic are a different animal
+  // and SHOULD still be trusted — the level shift is real even if the exact
+  // share moves. The metric handles both; only this one gets shrunk.)
+  const steady = calibrateAuction(
+    [...seasonPicks(2025, { ...RB_HEAVY, RB: 0.50, WR: 0.25 }),
+     ...seasonPicks(2024, { ...RB_HEAVY, RB: 0.50, WR: 0.25 }),
+     ...seasonPicks(2023, { ...RB_HEAVY, RB: 0.50, WR: 0.25 })], LEAGUE);
+  const straddling = calibrateAuction(
+    [...seasonPicks(2025, { ...RB_HEAVY, RB: 0.70, WR: 0.05 }),
+     ...seasonPicks(2024, { ...RB_HEAVY, RB: 0.10, WR: 0.65 }),
+     ...seasonPicks(2023, { ...RB_HEAVY, RB: 0.70, WR: 0.05 })], LEAGUE);
+  check("a straddling swing fails persistence at that position",
+        straddling.stability.perPos.RB <= 0,
+        `RB lift ${straddling.stability.perPos.RB}`);
+  check("...so the same mean share is trusted less than a repeated one",
+        steady.posMult.RB > straddling.posMult.RB,
+        `steady ${steady.posMult.RB} vs straddling ${straddling.posMult.RB}`);
+  check("a one-sided swing still counts as a real level shift",
+        calibrateAuction(
+          [...seasonPicks(2025, { ...RB_HEAVY, RB: 0.62, WR: 0.13 }),
+           ...seasonPicks(2024, { ...RB_HEAVY, RB: 0.38, WR: 0.37 }),
+           ...seasonPicks(2023, { ...RB_HEAVY, RB: 0.62, WR: 0.13 })],
+          LEAGUE).stability.perPos.RB > 0);
+
+  // Recency: the same evidence weighted so the newest draft dominates.
+  const oldHeavy = calibrateAuction(
+    [...seasonPicks(2025, ALLOC), ...seasonPicks(2019, RB_HEAVY)], LEAGUE);
+  const newHeavy = calibrateAuction(
+    [...seasonPicks(2025, RB_HEAVY), ...seasonPicks(2019, ALLOC)], LEAGUE);
+  check("a recent habit outweighs an old one",
+        newHeavy.posMult.RB > oldHeavy.posMult.RB,
+        `old-heavy ${oldHeavy.posMult.RB} vs new-heavy ${newHeavy.posMult.RB}`);
+
+  // assessStability needs two seasons to say anything at all.
+  check("assessStability returns null below two seasons",
+        assessStability({ 2025: seasonPicks(2025, RB_HEAVY) }, ALLOC) === null);
 }
 
 console.log();

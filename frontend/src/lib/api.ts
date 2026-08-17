@@ -106,6 +106,9 @@ export interface PriorDraftPick {
   round: number | null;
   owner: string;
   resolved: boolean;
+  /** Which draft this pick came from. Lets calibration weight older seasons
+   *  down and test whether the league's habits actually persist. */
+  season?: number;
 }
 
 export interface KeeperCandidatesResult {
@@ -300,6 +303,8 @@ export const api = {
     espn_s2?: string;
     swid?: string;
     my_team?: string;
+    /** Extra COMPLETED seasons of draft prices, for auction calibration only. */
+    history_seasons?: number;
   }) => req<KeeperCandidatesResult>("/api/integrations/espn/keeper-candidates", {
     method: "POST", body: JSON.stringify(data),
   }),

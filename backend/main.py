@@ -449,6 +449,11 @@ class ImportRequest(BaseModel):
     espn_s2: Optional[str] = None
     swid: Optional[str] = None
     my_team: Optional[str] = None     # ESPN team id or name to flag as "mine"
+    # Extra COMPLETED seasons to pull draft prices from, purely to calibrate
+    # auction prices. One draft cannot tell a league's habits from one year's
+    # accidents; several can, and can test whether the habits persist at all.
+    # Keepers are unaffected — those still come from `season` alone.
+    history_seasons: int = 0
     # Yahoo (token obtained via the OAuth helper routes below)
     access_token: Optional[str] = None
     my_guid: Optional[str] = None     # Yahoo manager guid to flag as "mine"
@@ -625,6 +630,11 @@ class KeeperCandidatesRequest(BaseModel):
     espn_s2: Optional[str] = None
     swid: Optional[str] = None
     my_team: Optional[str] = None     # ESPN team id or name to flag as "mine"
+    # Extra COMPLETED seasons to pull draft prices from, purely to calibrate
+    # auction prices. One draft cannot tell a league's habits from one year's
+    # accidents; several can, and can test whether the habits persist at all.
+    # Keepers are unaffected — those still come from `season` alone.
+    history_seasons: int = 0
 
 
 @app.post("/api/integrations/espn/keeper-candidates")
@@ -653,6 +663,21 @@ async def espn_keeper_candidates(
         raise HTTPException(status_code=409, detail=f"No players loaded for season {data.match_season}.")
     index = build_index([{"id": r.id, "name": r.name, "pos": r.pos, "team": r.team} for r in rows])
 
+    # Older drafts, for calibration only. Best-effort per season and never
+    # fatal: a league that predates ESPN's history, or a season it declines to
+    # serve, simply contributes nothing.
+    all_drafts = [(data.season, norm.draft_picks)]
+    history_meta: dict = {}
+    if data.history_seasons > 0:
+        want = [data.season - i for i in range(1, min(data.history_seasons, 6) + 1)]
+        try:
+            hist = await espn_provider.fetch_draft_history(
+                data.ext_id, want, espn_s2=data.espn_s2, swid=data.swid)
+            all_drafts += sorted(hist["by_season"].items(), reverse=True)
+            history_meta = {"history": hist["diag"]}
+        except Exception as e:  # noqa: BLE001 — history is an enhancement
+            history_meta = {"history_error": f"{type(e).__name__}: {e}"}
+
     cands = keeper_candidates(norm, index)
     matched = sum(1 for c in cands if c["matched"])
     return {
@@ -666,10 +691,12 @@ async def espn_keeper_candidates(
         # each question is answered from the data that fits it.
         "draft_picks": [
             {"ext_id": p.ext_id, "name": p.name, "pos": p.pos, "team": p.team,
-             "bid": p.bid, "round": p.round, "owner": p.owner, "resolved": p.resolved}
-            for p in norm.draft_picks
+             "bid": p.bid, "round": p.round, "owner": p.owner,
+             "resolved": p.resolved, "season": season}
+            for season, rows in all_drafts
+            for p in rows
         ],
-        "draft_meta": norm.meta.get("draft", {}),
+        "draft_meta": {**norm.meta.get("draft", {}), **history_meta},
         "matched": matched,
         "unmatched": len(cands) - matched,
         # How the waiver/FAAB pull went — surfaced in the UI so a league with no

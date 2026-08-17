@@ -30,6 +30,11 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
   const [open, setOpen] = useState(!!espnSource || !!cached);
   const [leagueId, setLeagueId] = useState(espnSource);
   const [season, setSeason] = useState(cached?.season ?? CURRENT_SEASON - 1);
+  // Extra completed drafts to pull for auction price calibration. Two prior
+  // seasons on top of the keeper season is enough to test whether the league's
+  // spending habits persist at all, which one draft cannot answer.
+  const [historySeasons, setHistorySeasons] = useState(2);
+  const [draftMeta, setDraftMeta] = useState<Record<string, unknown> | null>(null);
   const [priv, setPriv] = useState(false);
   const [s2, setS2] = useState("");
   const [swid, setSwid] = useState("");
@@ -79,6 +84,9 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
         espn_s2: priv ? s2.trim() || undefined : undefined,
         swid: priv ? swid.trim() || undefined : undefined,
         my_team: myTeam.trim() || undefined,
+        // Extra completed seasons, for auction price calibration only. Keeper
+        // costs still come from `season` alone.
+        history_seasons: historySeasons,
       });
       setCands(res.candidates);
       setWaivers(res.waivers);
@@ -91,6 +99,7 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
       // needs the former, keeper eligibility the latter, so cache both.
       onCache?.({ season, fetchedAt: stamp, candidates: res.candidates,
                   draftPicks: res.draft_picks, waivers: res.waivers });
+      setDraftMeta(res.draft_meta ?? null);
       // Don't pre-select: the recommender below analyzes your roster
       // automatically (nothing committed). This list is only for directly
       // committing specific keepers you already know.
@@ -201,6 +210,22 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
               />
             </label>
           </div>
+
+          <label className="block text-2xs text-muted">
+            Also read this many EARLIER drafts (auction prices only)
+            <input
+              type="number" min={0} max={6}
+              value={historySeasons}
+              onChange={(e) => setHistorySeasons(Math.min(6, Math.max(0, Number(e.target.value) || 0)))}
+              className="mt-0.5 w-full rounded-md border border-line bg-sunken px-2 py-1 text-right font-mono text-sm text-ink focus:border-brand focus:outline-none"
+            />
+            <span className="mt-0.5 block text-faint">
+              Keepers always come from the draft season above. Extra drafts only
+              teach the price forecast what your room overpays for — and let it
+              check whether that habit actually repeats, which one draft cannot.
+              Older seasons count for less. 0 to skip.
+            </span>
+          </label>
 
           <label className="text-2xs text-muted">
             Your team name/ID <span className="text-faint">(optional — flags your keepers)</span>

@@ -294,6 +294,19 @@ def parse_draft_picks(data: dict, pos_by_id: dict[int, dict] | None = None) -> l
     return out
 
 
+def history_league_url(league_id: str, season: int) -> str:
+    """A completed season's league payload.
+
+    ESPN retires old seasons off the per-season path onto `leagueHistory`, as
+    the transactions code already discovered. Callers should try the ordinary
+    URL first and fall back here, since which one answers depends on how long
+    ago the season was and ESPN does not document the cutover.
+    """
+    q = "&".join(f"view={v}" for v in VIEWS)
+    return (f"{READ_HOST}/apis/v3/games/ffl/leagueHistory/{league_id}"
+            f"?seasonId={season}&{q}")
+
+
 def unresolved_pick_ids(picks: list[DraftPickRow]) -> list[int]:
     """Player ids from the draft that no roster could name — the dropped ones."""
     return [int(p.ext_id) for p in picks if not p.resolved and p.ext_id.isdigit()]
@@ -790,3 +803,80 @@ async def probe_activity(league_id: str, season: int, espn_s2: str | None = None
                 row["error"] = f"{type(e).__name__}: {e}"[:300]
             out.append(row)
     return out
+
+
+async def fetch_draft_history(league_id: str, seasons: list[int],
+                              espn_s2: str | None = None, swid: str | None = None,
+                              ca_bundle: str | None = None) -> dict:
+    """Draft results for several past seasons of the same league.
+
+    WHY MORE THAN ONE. Auction calibration learns how a room's money splits
+    across positions. One draft cannot separate a league's habits from one
+    year's accidents — a single injury-hit RB run looks identical to a genuine
+    RB-heavy culture. Several drafts do, and they let the premise be TESTED
+    rather than assumed (see `assessStability` on the JS side): if a league's
+    own past does not predict its own future better than the generic
+    allocation, the deviations are noise and the calibration should back off.
+    Membership turns over, so this returns per-season picks and leaves the
+    recency weighting to the caller rather than pooling them here.
+
+    Each season is independent and best-effort: a missing or private one is
+    recorded and skipped, never fatal. The current-season path is tried first
+    and `leagueHistory` second, because which answers depends on how long ago
+    the season was and ESPN documents neither.
+    """
+    cookies = {}
+    if espn_s2 and swid:
+        cookies = {"espn_s2": espn_s2, "SWID": swid if swid.startswith("{") else "{" + swid + "}"}
+    verify = ca_bundle if ca_bundle else True
+
+    out: dict[int, list[DraftPickRow]] = {}
+    diag: dict[int, str] = {}
+    async with httpx.AsyncClient(timeout=30, follow_redirects=True, trust_env=True,
+                                 verify=verify, cookies=cookies,
+                                 headers=SITE_HEADERS) as client:
+        for season in seasons:
+            data = None
+            for label, url in (("season", league_url(league_id, season)),
+                               ("history", history_league_url(league_id, season))):
+                try:
+                    r = await client.get(url)
+                except Exception as e:  # noqa: BLE001 — one bad season is not fatal
+                    diag[season] = f"{label}:{type(e).__name__}"
+                    continue
+                if r.status_code != 200:
+                    diag[season] = f"{label}:HTTP {r.status_code}"
+                    continue
+                j = r.json()
+                if isinstance(j, list):
+                    j = j[0] if j else {}
+                # leagueHistory sometimes answers 200 with no draft at all.
+                if (j.get("draftDetail", {}) or {}).get("picks"):
+                    data = j
+                    diag[season] = f"{label}:ok"
+                    break
+                diag[season] = f"{label}:no draft"
+            if data is None:
+                continue
+
+            picks = parse_draft_picks(data)
+            missing = unresolved_pick_ids(picks)
+            if missing:
+                found: dict[int, dict] = {}
+                try:
+                    for i in range(0, len(missing), 200):
+                        pr = await client.get(
+                            player_info_url(league_id, season),
+                            headers={"x-fantasy-filter": player_info_filter(missing[i:i + 200])})
+                        if pr.status_code != 200:
+                            diag[season] += f" players:HTTP {pr.status_code}"
+                            break
+                        found.update(parse_player_info(pr.json()))
+                except Exception as e:  # noqa: BLE001 — naming is optional
+                    diag[season] += f" players:{type(e).__name__}"
+                if found:
+                    picks = parse_draft_picks(data, found)
+            out[season] = picks
+            diag[season] += f" picks:{len(picks)} named:{sum(1 for p in picks if p.resolved)}"
+
+    return {"by_season": out, "diag": diag}
