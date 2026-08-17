@@ -4,14 +4,17 @@ team_change_parity.py — the shipped team-change discount must be the one
 that was backtested
 =========================================================================
 `team_context.py:apply_flag_discount()` (fed a `team_changed` flag from
-`context_flags()`) produced the numbers that justified shipping RB/WR at
-k=0.25 (roadmap 1.3): material partial-correlation gain over baseline AND a
+`context_flags()`) produced the numbers that justified shipping RB/WR
+(roadmap 1.3): material partial-correlation gain over baseline AND a
 merged-board improvement beating v2's own +0.003 bar, BOTH against the pure
 model AND re-baselined against the live board (injury discount + expert
 blend + anchor). QB passed the former but not the latter; TE/coach_change/
-qb_change/pace never cleared the merge bar at all and stay off. Those
-numbers describe the PYTHON. The browser runs
-`team-context.js:applyTeamChangeDiscount()`.
+qb_change/pace never cleared the merge bar at all and stay off. The k=0.25
+that first shipped for both RB and WR was the best of a grid that hadn't
+turned over yet — a re-sweep out to k=0.5 found RB's real peak at k=0.4;
+WR was still climbing at k=0.5 with no peak found, so it stays at 0.25
+until a further-out sweep actually locates one. Those numbers describe the
+PYTHON. The browser runs `team-context.js:applyTeamChangeDiscount()`.
 
 If the two drift, the app ships an arithmetic no one measured while the
 commit message still quotes the measurement — the same failure
@@ -55,8 +58,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NODE_SIDE = os.path.join(HERE, "team_change_parity.mjs")
 
 # Must match TEAM_CHANGE_K in frontend/src/engine/team-context.js exactly —
-# the weights the roadmap 1.3 backtest justified shipping.
-TEAM_CHANGE_K = {"QB": 0.0, "RB": 0.25, "WR": 0.25, "TE": 0.0, "K": 0.0, "DST": 0.0}
+# the weights the roadmap 1.3 backtest justified shipping. RB is a found
+# peak (0.4); WR is still climbing at 0.5 in the widened sweep, so it stays
+# at the earlier, more conservative 0.25 until a further-out sweep actually
+# locates its optimum.
+TEAM_CHANGE_K = {"QB": 0.0, "RB": 0.4, "WR": 0.25, "TE": 0.0, "K": 0.0, "DST": 0.0}
 POSITIONS = ["QB", "RB", "WR", "TE", "K", "DST"]
 TEAMS = ["MIA", "NYJ", "DAL", "SF", "KC", "DEN", "", None]
 

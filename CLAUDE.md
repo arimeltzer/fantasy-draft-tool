@@ -360,8 +360,27 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   discount + expert blend + anchor) — QB's `team_change` gain nearly
   vanished there (QB already carries an injury discount at k=0.5 AND the
   highest-trust-after-WR expert-blend weight, 0.3) but RB (+0.0038) and WR
-  (+0.0062) held up. Shipped as `TEAM_CHANGE_K = { RB: 0.25, WR: 0.25 }`
-  (QB/TE/K/DST stay 0) in `frontend/src/engine/team-context.js`.
+  (+0.0062) held up.
+- **k=0.25 was the top of a grid that hadn't turned over — re-swept, not
+  guessed at.** The first-shipped k=0.25 was the best VALUE TRIED, not a
+  found peak; re-swept out to 0.5 against the live board, RB's numbers
+  genuinely roll over past k=0.4 (a real peak, +0.0051 there vs +0.0038 at
+  0.25), while WR was STILL climbing at k=0.5 (+0.0108) with no peak found.
+  Shipped as `TEAM_CHANGE_K = { RB: 0.4, WR: 0.25 }` (QB/TE/K/DST stay 0) in
+  `frontend/src/engine/team-context.js` — RB moved to its found peak, WR
+  stays at the earlier, confirmed-safe value rather than jumping to another
+  unconfirmed edge (0.5) just because it scored higher than 0.25 did.
+- **A destination-quality nuance was tried and killed.** The natural next
+  question — does WHERE a player landed matter, not just THAT he moved —
+  was tested as `apply_team_change_quality()`: multiplier = `1 - k*(1 -
+  quality_z)`, `quality_z` the new team's offensive EPA/play (from
+  `load_team_stats`, spot-checked against 2023's real reputations: SF/BUF/
+  DAL/MIA top it, NYJ/CAR/NE bottom it) z-scored against that season's
+  league. Identical to the flat discount at `quality_z=0`. It made things
+  WORSE, not better — underperformed the flat discount at every position,
+  including RB/WR where the flat version is strongest. Not shipped in any
+  form; the binary "did you move" signal turned out to be doing real work
+  that a continuous quality read diluted rather than sharpened.
 - **A first pass at `qb_change` was a bug, not a result.** It compared
   team_now's QB using ONLY season Y-1 data on both sides — trivially
   identical to `team_changed` whenever the team didn't change (same lookup

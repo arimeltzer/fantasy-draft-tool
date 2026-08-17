@@ -19,9 +19,13 @@ const mk = (id, pos, team, vp, lastTeam) => ({
   id, pos, team, valuePoints: vp, last: lastTeam != null ? { gp: 17, team: lastTeam } : null,
 });
 
-// ── shipped weights: RB/WR only ──────────────────────────────────────────
-eq(TEAM_CHANGE_K, { QB: 0, RB: 0.25, WR: 0.25, TE: 0, K: 0, DST: 0 },
-   "shipped weights match the roadmap 1.3 RESULT — RB/WR at 0.25, everyone else 0");
+// ── shipped weights: RB/WR only, different weights per position ─────────
+// RB is a found peak (k=0.25 was still climbing at its own grid's top when
+// first shipped; re-swept to 0.5, RB turns over at 0.4). WR is still
+// climbing at k=0.5 with no peak found yet, so it stays at the earlier,
+// more conservative 0.25 rather than moving to another unconfirmed edge.
+eq(TEAM_CHANGE_K, { QB: 0, RB: 0.4, WR: 0.25, TE: 0, K: 0, DST: 0 },
+   "shipped weights match the roadmap 1.3 RESULT — RB 0.4 (found peak), WR 0.25 (still climbing), everyone else 0");
 
 {
   const pool = [
@@ -35,7 +39,7 @@ eq(TEAM_CHANGE_K, { QB: 0, RB: 0.25, WR: 0.25, TE: 0, K: 0, DST: 0 },
   const out = applyTeamChangeDiscount(pool, TEAM_CHANGE_K);
   const by = Object.fromEntries(out.map((p) => [p.id, p]));
 
-  eq(by.rb_moved.valuePoints, +(200 * 0.75).toFixed(1), "RB who changed teams is discounted 25%");
+  eq(by.rb_moved.valuePoints, +(200 * 0.6).toFixed(1), "RB who changed teams is discounted 40%");
   eq(by.rb_stayed.valuePoints, 200, "RB on the same team is untouched");
   eq(by.wr_moved.valuePoints, +(150 * 0.75).toFixed(1), "WR who changed teams is discounted 25%");
   eq(by.qb_moved.valuePoints, 300, "QB is untouched — K=0, never cleared the gate");

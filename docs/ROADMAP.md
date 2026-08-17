@@ -234,7 +234,7 @@ coach_change already uses) before it was measured for real — the corrected
 qb_change still didn't clear the gate, so the fix changed the numbers but
 not the verdict.
 
-Shipped as `TEAM_CHANGE_K = { RB: 0.25, WR: 0.25 }` (QB/TE/K/DST stay 0) in
+First shipped as `TEAM_CHANGE_K = { RB: 0.25, WR: 0.25 }` in
 `frontend/src/engine/team-context.js`, wired into `useBoard.ts` right after
 `applyOpportunityModel()` — before the injury discount, matching the order
 the backtest measured (applied to the pure model's own estimate, before
@@ -245,6 +245,53 @@ components — no migration needed, `last`/`last2` are already JSONB.
 one number that matters, `valuePoints`.
 
 > **Prompt** — "Let's move on to 1.3"
+
+**FOLLOW-UP — RB re-tuned to 0.4; a destination-quality nuance tried and
+killed.** Two questions after shipping: was k=0.25 an actual optimum, and
+does WHERE a player landed (not just THAT he moved) carry independent
+signal?
+
+*Was 0.25 a peak?* No — it was the best value in a grid `[0.0 … 0.25]` that
+was still climbing at its own top, not a found optimum (`TEAM_CHANGE_K`
+never having been swept past its shipped value). Re-swept to `[0.0 … 0.5]`
+against the live board:
+
+| pos | k=0.25 (first shipped) | best in the wider sweep | verdict |
+|---|---|---|---|
+| RB | +0.0038 | **k=0.4: +0.0051**, and the numbers genuinely roll over past it | real peak found — **shipped** |
+| WR | +0.0062 | k=0.5: +0.0108, still climbing at the grid's own top | no peak found — **stayed at 0.25** rather than jump to another unconfirmed edge |
+| QB | +0.0016 (fail) | k=0.4/0.5 tie at +0.0019 | still fails the bar everywhere — confirmed |
+
+Shipped as `TEAM_CHANGE_K = { RB: 0.4, WR: 0.25 }`. WR needs a further-out
+sweep (past 0.5) before its number can move again — updating it to 0.5 now
+would repeat the exact mistake ("ship the edge of the grid, not a peak")
+that prompted this whole re-check.
+
+*Does destination quality help?* Tested `apply_team_change_quality()`:
+multiplier = `1 - k*(1 - quality_z)`, where `quality_z` is the new team's
+offensive EPA/play (`(passing_epa + rushing_epa) / plays` from
+`load_team_stats`, spot-checked against 2023's real offenses — SF/BUF/DAL/
+MIA top the league, NYJ/CAR/NE bottom it, exactly matching that season's
+actual reputations) z-scored against that season's league distribution,
+read ONLY from the destination team's prior season (zero lookahead, same
+discipline as `pace_ratio`). Identical to the flat discount at
+`quality_z=0`, so it's a strict generalization, not a different feature.
+
+**Result: it made things worse, not better.** Against the pure model, only
+QB cleared the gate (RB/WR/TE all failed — WORSE than the flat version even
+there). Against the bar that actually matters — does it beat the flat
+discount already shipping — it failed everywhere; QB's own best k was 0.0
+(literally no adjustment), which itself lost to the live board's existing
+flat discount. Not shipped in any form. The binary "did you move" signal is
+doing real work; blending in a continuous quality read diluted it rather
+than sharpening it — at least for this construction of "quality."
+
+`team_change_parity.py`/`team-context.selftest.mjs` updated to the new
+constants (RB 0.4). Backtest run: `projection-backtest.yml` #32079414046.
+
+> **Prompt** — "how did you land at .25? is there any reason to try to
+> nuance this with information about the team they are joining?" ...
+> "Yes, do both"
 
 ### 1.4 Rookie model on draft capital
 Rookies currently get an ADP-curve fallback. NFL draft round and pick are far
