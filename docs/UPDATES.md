@@ -6,6 +6,26 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Proj hover breakdown + /methodology page
+- Hovering the "Proj" number in either room now shows the exact waterfall
+  that produced it: base model, then every later stage that actually moved
+  the number (opportunity model, injury discount, expert blend, schedule
+  strength, market anchor), with a short reason for each. A stage that was a
+  no-op for that player (e.g. injury discount on someone with no reported
+  status) leaves no line — the tooltip only ever shows what really happened.
+- Pure UI-layer instrumentation, not an engine change: `useBoard.ts`'s new
+  `trackStage()` diffs `valuePoints` by player id around each pipeline stage
+  call and appends a step on change. None of the pure, parity-tested stage
+  functions (`applyOpportunityModel`/`applyInjuryDiscount`/`blendExpertAll`/
+  `marketAnchor`) know this exists.
+- New `frontend/src/pages/Methodology.tsx` (`/methodology`, no auth —
+  static content, opened in a fresh tab) explains what each waterfall label
+  and board column (VBD, $Par/$Live, Tier, '25 pace, mkt +/-) means, linked
+  via a `?` icon in the header next to "Player" in both rooms.
+- `useBoard.test.ts` pins the diff logic directly (renderHook): an untouched
+  player gets exactly one step, each stage's step appears only for the
+  player it actually moved, and a stage disabled in settings drops its step.
+
 ## 2026-08 — Roadmap Phase 1 (1.1/1.2) shipped: opportunity model, TE only
 - `projection-opportunity.js` splits the projection into volume (next
   season's expected opportunities — targets, for TE) x a shrunk

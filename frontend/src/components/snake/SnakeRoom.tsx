@@ -1,6 +1,6 @@
 import { memo, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio, HelpCircle } from "lucide-react";
 import { myPickNumbers, rankByAdp } from "@/engine/snake-engine.js";
 import { roundsFor, currentOwners } from "@/engine/draft-order.js";
 import type { BoardPlayer, SnakeLiveState } from "@/engine/snake-engine.js";
@@ -22,6 +22,7 @@ import TeamPicker from "@/components/shared/TeamPicker";
 import DraftOrderBoard from "@/components/shared/DraftOrderBoard";
 import InjuryBadge from "@/components/shared/InjuryBadge";
 import Tip from "@/components/shared/Tip";
+import ProjTip from "@/components/shared/ProjTip";
 import PickClock from "./PickClock";
 import NeedsPanel, { computeNeeds } from "./NeedsPanel";
 import Recommendations from "./Recommendations";
@@ -341,7 +342,18 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
             <div className="grid grid-cols-[28px_1fr_auto] sm:grid-cols-[28px_44px_1fr_70px_140px] gap-2 px-3 py-2 bg-white/80 text-xs uppercase tracking-wider text-gray-500 font-mono">
               <span>#</span>
               <span className="hidden sm:block">Pos</span>
-              <span>Player</span>
+              <span className="flex items-center gap-1">
+                Player
+                <a
+                  href="/methodology"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="What do the projection and value labels mean?"
+                  className="text-gray-400 hover:text-gray-600 normal-case"
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                </a>
+              </span>
               <span className="hidden sm:block text-right">
                 <Tip tip="Value Based Drafting: projected points above a replacement-level player at the same position. The bigger the number, the more this player wins you over a waiver-wire fill-in.">VBD</Tip>
               </span>
@@ -454,7 +466,7 @@ const PlayerRow = memo(function PlayerRow({
                       </div>
                       <div className="text-xs text-gray-500 font-mono tabular-nums">
                         <span className="sm:hidden">{p.pos} · vbd {p.vbd} · </span>
-                        <span title="Projected fantasy points this season under your league's scoring">{p.valuePoints}pt</span>
+                        <ProjTip steps={p.projBreakdown} value={p.valuePoints} />
                         <span title={p.priorEquiv != null ? "Last season's scoring pace over a full 17 games — a reality check on the projection" : "No 2025 stats — rookie or missed season, so the projection leans on market rankings"}>
                           {p.priorEquiv != null ? ` · '25 pace ${p.priorEquiv}` : " · no '25"}
                         </span>

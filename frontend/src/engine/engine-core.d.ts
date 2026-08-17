@@ -71,6 +71,17 @@ export interface EngineParams {
   auction: { minBid: number };
 }
 
+/** One stage of the valuation pipeline that actually changed a player's
+ *  number — built by useBoard.ts from before/after diffs, not the engine
+ *  itself (each stage function stays a pure players-in/players-out
+ *  transform; this is purely a UI-facing trace of what happened). See
+ *  the in-app /methodology page for what each label means. */
+export interface ProjBreakdownStep {
+  label: string;
+  value: number;
+  detail?: string;
+}
+
 export interface BoardPlayer extends Player {
   projPts: number;
   priorEquiv: number | null;
@@ -85,6 +96,10 @@ export interface BoardPlayer extends Player {
   dollarValue?: number;
   paid?: number | null;
   adjValue?: number | null;
+  /** Waterfall of pipeline stages that changed valuePoints, base model
+   *  first. Only stages that actually fired for THIS player appear — a QB
+   *  with no reported injury carries no "Injury discount" step at all. */
+  projBreakdown?: ProjBreakdownStep[];
 }
 
 export declare const DEFAULT_PARAMS: EngineParams;

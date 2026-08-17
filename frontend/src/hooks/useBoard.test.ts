@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { dedupePlayers } from "./useBoard";
+import { renderHook } from "@testing-library/react";
+import { dedupePlayers, useBoard } from "./useBoard";
 import type { ApiPlayer } from "@/lib/api";
+import type { LeagueSettings } from "@/lib/api";
 
 /**
  * A duplicate on the board is not cosmetic. Drafting one copy leaves the twin
@@ -102,5 +104,107 @@ describe("dedupePlayers", () => {
     dedupePlayers(rows);
     expect(rows[0].team).toBe("AZ");
     expect(rows[0].ecr).toBeNull();
+  });
+});
+
+/**
+ * projBreakdown — the waterfall shown in the "Proj" hover.
+ *
+ * useBoard diffs valuePoints around each pipeline stage (trackStage) rather
+ * than the stage functions themselves reporting anything, so the thing worth
+ * pinning is that diff logic: every player gets an unconditional "Base
+ * model" step, and each later stage appends a step ONLY for a player it
+ * actually moved — a QB with no reported injury should carry no "Injury
+ * discount" line at all, not one that says "no change".
+ */
+describe("useBoard projBreakdown", () => {
+  const SETTINGS: LeagueSettings = {
+    teams: 10,
+    budget: 200,
+    ppr: 0.5,
+    roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 6, SF: 0 },
+    superflex: false,
+  };
+
+  const players: ApiPlayer[] = [
+    // No injury, no expert projection, no market rank — should end up with
+    // just the one unconditional step.
+    p({
+      id: 1, name: "Plain WR", pos: "WR", team: "SF",
+      last: { gp: 16, pts: 200 }, last2: { gp: 16, pts: 190 },
+    }),
+    // Reported status at a position INJURY_K actually discounts (QB).
+    p({
+      id: 2, name: "Hurt QB", pos: "QB", team: "BUF",
+      last: { gp: 16, pts: 300 }, last2: { gp: 16, pts: 280 },
+      injury: { status: "Questionable", short: "Q", type: "Ankle", severity: "questionable", chance: 75 },
+    }),
+    // Prior-season target volume at TE — the one position the opportunity
+    // model replaces the pace blend for.
+    p({
+      id: 3, name: "Volume TE", pos: "TE", team: "KC",
+      last: { gp: 16, pts: 150, targets: 100 } as ApiPlayer["last"],
+      last2: { gp: 16, pts: 140, targets: 95 } as ApiPlayer["last"],
+    }),
+    // Carries a FantasyPros expert projection to blend against.
+    p({
+      id: 4, name: "Expert WR", pos: "WR", team: "MIN",
+      last: { gp: 16, pts: 180 }, last2: { gp: 16, pts: 170 },
+      proj: { pts: 260 } as ApiPlayer["proj"],
+    }),
+    // Two ranked RBs whose market order DISAGREES with their own points, so
+    // the anchor actually has something to pull — a single ranked player at
+    // a position is its own ladder and never moves (see marketAnchor).
+    p({
+      id: 5, name: "Ranked-First RB", pos: "RB", team: "ATL",
+      last: { gp: 16, pts: 150 }, last2: { gp: 16, pts: 140 }, adp: 1, ecr: 1,
+    }),
+    p({
+      id: 6, name: "Ranked-Second RB", pos: "RB", team: "DAL",
+      last: { gp: 16, pts: 250 }, last2: { gp: 16, pts: 240 }, adp: 2, ecr: 2,
+    }),
+  ];
+
+  const byName = (rows: ReturnType<typeof useBoard>, name: string) =>
+    rows.find((r) => r.name === name)!;
+
+  it("gives an untouched player exactly one step: Base model", () => {
+    const { result } = renderHook(() => useBoard(players, SETTINGS, undefined));
+    const plain = byName(result.current, "Plain WR");
+    expect(plain.projBreakdown?.map((s) => s.label)).toEqual(["Base model"]);
+  });
+
+  it("adds Injury discount only for the player it actually discounted", () => {
+    const { result } = renderHook(() => useBoard(players, SETTINGS, undefined));
+    const hurt = byName(result.current, "Hurt QB");
+    expect(hurt.projBreakdown?.map((s) => s.label)).toEqual(["Base model", "Injury discount"]);
+    expect(hurt.projBreakdown?.[1].detail).toMatch(/questionable/i);
+  });
+
+  it("adds Opportunity model (TE) for a TE with prior-season targets", () => {
+    const { result } = renderHook(() => useBoard(players, SETTINGS, undefined));
+    const te = byName(result.current, "Volume TE");
+    expect(te.projBreakdown?.map((s) => s.label)).toEqual(["Base model", "Opportunity model (TE)"]);
+  });
+
+  it("adds Expert blend for a player with a FantasyPros projection", () => {
+    const { result } = renderHook(() => useBoard(players, SETTINGS, undefined));
+    const expert = byName(result.current, "Expert WR");
+    expect(expert.projBreakdown?.map((s) => s.label)).toEqual(["Base model", "Expert blend"]);
+  });
+
+  it("adds Market anchor for ranked players the market disagrees with", () => {
+    const { result } = renderHook(() => useBoard(players, SETTINGS, undefined));
+    const rb1 = byName(result.current, "Ranked-First RB");
+    const rb2 = byName(result.current, "Ranked-Second RB");
+    expect(rb1.projBreakdown?.map((s) => s.label)).toEqual(["Base model", "Market anchor"]);
+    expect(rb2.projBreakdown?.map((s) => s.label)).toEqual(["Base model", "Market anchor"]);
+  });
+
+  it("turning a stage off in settings removes its step", () => {
+    const { result } = renderHook(() =>
+      useBoard(players, { ...SETTINGS, expertBlend: false }, undefined));
+    const expert = byName(result.current, "Expert WR");
+    expect(expert.projBreakdown?.map((s) => s.label)).toEqual(["Base model"]);
   });
 });

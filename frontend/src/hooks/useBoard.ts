@@ -4,9 +4,28 @@ import {
   blendExpertAll, EXPERT_BLEND_W, applyInjuryDiscount, INJURY_K,
   applyOpportunityModel, OPPORTUNITY_K,
 } from "@/engine/valuation-engine.js";
-import type { BoardPlayer } from "@/engine/valuation-engine.js";
+import type { BoardPlayer, ProjBreakdownStep } from "@/engine/valuation-engine.js";
 import { ApiPlayer, LeagueSettings } from "@/lib/api";
 import { canonName, aliasName, sameTeamOrUnknown } from "@/lib/playerName";
+
+/**
+ * Appends one waterfall step to every player whose `valuePoints` actually
+ * moved between `before` and `after` — a stage that was a no-op for a given
+ * player (e.g. injury discount on someone with no reported status) leaves no
+ * trace, so the tooltip only ever shows what really happened. Pure UI
+ * bookkeeping: none of the engine's own stage functions know this exists.
+ */
+function trackStage<T extends { id: number | string; valuePoints: number; projBreakdown?: ProjBreakdownStep[] }>(
+  before: T[], after: T[], label: string, detail?: (p: T) => string | undefined,
+): T[] {
+  const prevById = new Map(before.map((p) => [p.id, p.valuePoints]));
+  return after.map((p) => {
+    const prev = prevById.get(p.id);
+    if (prev == null || prev === p.valuePoints) return p;
+    const step: ProjBreakdownStep = { label, value: p.valuePoints, detail: detail?.(p) };
+    return { ...p, projBreakdown: [...(p.projBreakdown ?? []), step] };
+  });
+}
 
 function toEnginePlayer(p: ApiPlayer) {
   return {
@@ -131,7 +150,20 @@ export function useBoard(
     // are derived last, from whatever valuePoints ended up being. Deriving
     // VBD before an adjustment (as the old SOS path did, then recomputing it
     // by hand) is how the two copies of the replacement maths drifted apart.
-    let scored = projectAll(enginePlayers, sc);
+    // The waterfall shown in the "Proj" hover (see /methodology) starts here
+    // — every player gets a "Base model" step unconditionally, so the
+    // tooltip always has at least one line even when nothing downstream
+    // touches them.
+    let scored = projectAll(enginePlayers, sc).map((p) => ({
+      ...p,
+      projBreakdown: [{
+        label: "Base model",
+        value: p.valuePoints,
+        detail: p.rookie
+          ? "No prior-season stats — projected from market rank"
+          : "Two-season pace blend, age & durability adjusted",
+      }],
+    }));
 
     // Backtested 2017-2025 against the ACTUAL live board (injury discount +
     // expert blend already applied), not just the bare model — only TE
@@ -141,7 +173,10 @@ export function useBoard(
     // (a rookie, or any non-TE position at OPPORTUNITY_K=0) passes through
     // with whatever projectAll() already gave them.
     if (settings.opportunityModel !== false) {
+      const before = scored;
       scored = applyOpportunityModel(scored, sc, OPPORTUNITY_K);
+      scored = trackStage(before, scored, "Opportunity model (TE)",
+        () => "Replaces the pace blend above: volume × league-shrunk efficiency");
     }
 
     // Backtested 2017-2025: at k=0.5, QB and RB clear the roadmap 0.3 kill
@@ -149,7 +184,10 @@ export function useBoard(
     // did not and stay at k=0 in INJURY_K, i.e. untouched. On by default —
     // a player with no reported injury status is untouched regardless.
     if (settings.injuryDiscount !== false) {
+      const before = scored;
       scored = applyInjuryDiscount(scored, INJURY_K);
+      scored = trackStage(before, scored, "Injury discount",
+        (p) => p.injury?.severity ? `Reported: ${p.injury.severity}` : undefined);
     }
 
     // Backtested 2019-2025: matched-population AND full-board merged Spearman
@@ -159,14 +197,20 @@ export function useBoard(
     // nothing (blendExpertAll leaves uncovered players untouched), and a
     // mid-draft valuation change should be reversible without a deploy.
     if (settings.expertBlend !== false) {
+      const before = scored;
       scored = blendExpertAll(scored, sc, EXPERT_BLEND_W);
+      scored = trackStage(before, scored, "Expert blend",
+        (p) => `Blended with FantasyPros' projection (weight on our model: ${EXPERT_BLEND_W[p.pos] ?? 1})`);
     }
 
     if (sos && Object.keys(sos).length > 0) {
+      const before = scored;
       scored = scored.map((p) => ({
         ...p,
         valuePoints: +(p.valuePoints * (sos[p.team]?.[p.pos] ?? 1)).toFixed(1),
       }));
+      scored = trackStage(before, scored, "Schedule strength",
+        (p) => `×${(sos[p.team]?.[p.pos] ?? 1).toFixed(2)} for ${p.team || "their"} opponents this season`);
     }
 
     // Backtested +0.05/+0.05/+0.02/+0.02 Spearman (QB/RB/TE/WR) against the
@@ -175,7 +219,10 @@ export function useBoard(
     // gains nothing from it, and because a mid-draft valuation change should
     // be reversible without a deploy.
     if (settings.marketAnchor !== false) {
+      const before = scored;
       scored = marketAnchor(scored, settings.marketAnchorWeight ?? MARKET_ANCHOR_W);
+      scored = trackStage(before, scored, "Market anchor",
+        () => "Pulled toward ADP/ECR consensus order for players the market ranks");
     }
 
     return finalizeBoard(scored, league);

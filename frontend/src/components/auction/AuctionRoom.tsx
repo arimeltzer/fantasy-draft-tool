@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
-import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock, RotateCcw, Radio } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock, RotateCcw, Radio, HelpCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   auctionValues, applyInflation, maxBid,
@@ -29,6 +29,7 @@ import DraftLogModal from "@/components/shared/DraftLogModal";
 import LiveDraftPanel from "@/components/shared/LiveDraftPanel";
 import InjuryBadge from "@/components/shared/InjuryBadge";
 import Tip from "@/components/shared/Tip";
+import ProjTip from "@/components/shared/ProjTip";
 import SettingsDrawer from "./SettingsDrawer";
 
 interface Props {
@@ -314,7 +315,19 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
 
           <div className="rounded-lg border border-gray-200 overflow-hidden">
             <div className="grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_160px] gap-2 px-3 py-2 bg-white/80 text-xs uppercase tracking-wider text-gray-500 font-mono">
-              <span>Pos</span><span>Player</span>
+              <span>Pos</span>
+              <span className="flex items-center gap-1">
+                Player
+                <a
+                  href="/methodology"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="What do the projection and value labels mean?"
+                  className="text-gray-400 hover:text-gray-600 normal-case"
+                >
+                  <HelpCircle className="w-3.5 h-3.5" />
+                </a>
+              </span>
               <span className="text-right hidden sm:block">
                 <Tip tip="Value Based Drafting: projected points above a replacement-level player at the same position. The bigger the number, the more this player wins you over a waiver-wire fill-in.">VBD</Tip>
               </span>
@@ -365,7 +378,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                         {typeof p.id === "number" && <CommonOpponentsPopover playerId={p.id} />}
                       </div>
                       <div className="text-xs text-gray-500 font-mono tabular-nums">
-                        <span title="Projected fantasy points this season under your league's scoring">{p.valuePoints}pt</span>
+                        <ProjTip steps={p.projBreakdown} value={p.valuePoints} />
                         <span title={p.priorEquiv != null ? "Last season's scoring pace over a full 17 games — a reality check on the projection" : "No 2025 stats — rookie or missed season, so the projection leans on market rankings"}>
                           {p.priorEquiv != null ? ` · '25 pace ${p.priorEquiv}` : " · no '25"}
                         </span>
