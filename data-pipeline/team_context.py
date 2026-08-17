@@ -34,13 +34,21 @@ guessing undocumented mappings applies to features, not just column names:
     a token mop-up series can't crown a third-stringer). Spot-checked
     against known rosters (2022 CLE -> Jacoby Brissett, 2023 CLE -> Joe
     Flacco, 2023 HOU -> C.J. Stroud, etc.) and matched real depth charts.
-    `qb_changed` compares each team's OWN prior-season passer only —
-    `team_now`'s attempts leader in Y-1 against `team_prev`'s attempts
-    leader in Y-1 — never season Y's own outcome, so it carries zero
-    look-ahead. The cost is that it can't see a genuinely NEW Y starter
-    (a rookie or free-agent signing) who has no Y-1 attempts for that team;
-    it under-counts real QB changes rather than inventing ones that
-    wouldn't have been knowable at draft time.
+    `qb_changed` compares the player's OWN Y-1 passer (`team_prev`'s
+    attempts leader in Y-1) against `team_now`'s attempts leader in season
+    Y itself — the SAME "season Y's own outcome as a preseason-knowable
+    proxy" reasoning as coach_changed below, and for the same underlying
+    reason: an incumbent-vs-Y-1 comparison on BOTH sides would be trivially
+    unchanged whenever team_prev == team_now (comparing a team's Y-1 QB to
+    itself), which would make qb_changed silently degenerate into
+    team_changed and be unable to see the one case the roadmap actually
+    names — a player who did NOT switch teams but whose OWN team got a new
+    starter. Starting jobs are settled before the season the large majority
+    of the time (camp battles are covered, ADP already prices in the
+    presumed Week 1 starter); the exception is a competition resolved
+    during the season itself (an injury, a rookie winning the job in
+    Week 3), which is a similar order of rarity to coach_changed's
+    in-season-firing exception.
 
   - head coach: `home_coach`/`away_coach` from nflreadpy's `load_schedules`,
     the modal name per (season, team) across that team's games — verified
@@ -128,7 +136,7 @@ def context_flags(pos: str, team_prev, team_now, season_now: int,
     qb_changed = None
     if pos in ("RB", "WR", "TE") and team_prev and team_now:
         qb_prev = qb_by_team.get((season_now - 1, team_prev))
-        qb_now = qb_by_team.get((season_now - 1, team_now))
+        qb_now = qb_by_team.get((season_now, team_now))
         if qb_prev and qb_now:
             qb_changed = qb_prev != qb_now
 

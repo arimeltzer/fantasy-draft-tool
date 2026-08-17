@@ -62,23 +62,34 @@ check("a team with 0 games played is skipped, not divide-by-zero",
       (2023, "BYE") not in team_pace_by_season([(2023, "BYE", 10, 10, 0, 0)]))
 
 print("\ncontext_flags")
-qb_by_team = {(2022, "CLE"): "brissett", (2022, "HOU"): "mills", (2023, "CLE"): "flacco"}
+# CLE: same team, but a NEW starter actually took over in Y (the case
+# team_changed structurally can't see). HOU: same team, SAME starter both
+# years -- the null case that must stay False.
+qb_by_team = {(2022, "CLE"): "brissett", (2023, "CLE"): "flacco",
+              (2022, "HOU"): "mills", (2023, "HOU"): "mills"}
 coach_by_team = {(2022, "MIA"): "old_coach", (2023, "MIA"): "new_coach",
                  (2022, "CLE"): "stefanski", (2023, "CLE"): "stefanski"}
 pace_by_team = {(2022, "CLE"): 65.0, (2022, "HOU"): 60.0, (2022, "MIA"): 62.5}
 
-f_same_team = context_flags("WR", "CLE", "CLE", 2023, qb_by_team, coach_by_team, pace_by_team)
-check("no team move -> team_changed False", f_same_team["team_changed"] is False)
-check("QB signal uses ONLY season Y-1 on both sides (zero look-ahead): "
-      "same team, same Y-1 QB -> qb_changed False", f_same_team["qb_changed"] is False)
-check("coach unchanged -> coach_changed False", f_same_team["coach_changed"] is False)
+f_same_team_new_qb = context_flags("WR", "CLE", "CLE", 2023, qb_by_team, coach_by_team, pace_by_team)
+check("no team move -> team_changed False", f_same_team_new_qb["team_changed"] is False)
+check("QB signal compares the player's OWN Y-1 QB against team_now's Y "
+      "starter (mirrors coach_changed's proxy, not a Y-1-vs-Y-1 comparison "
+      "that would trivially always read False here): same team, DIFFERENT "
+      "Y starter -> qb_changed True, the one case team_changed can't see",
+      f_same_team_new_qb["qb_changed"] is True)
+check("coach unchanged -> coach_changed False", f_same_team_new_qb["coach_changed"] is False)
 check("pace_ratio computed from team_now's Y-1 pace vs the Y-1 league mean",
-      f_same_team["pace_ratio"] is not None)
+      f_same_team_new_qb["pace_ratio"] is not None)
+
+f_same_team_same_qb = context_flags("WR", "HOU", "HOU", 2023, qb_by_team, coach_by_team, pace_by_team)
+check("same team, SAME starter both years -> qb_changed False",
+      f_same_team_same_qb["qb_changed"] is False)
 
 f_moved = context_flags("WR", "HOU", "CLE", 2023, qb_by_team, coach_by_team, pace_by_team)
 check("team move -> team_changed True", f_moved["team_changed"] is True)
-check("moved to a team with a different Y-1 QB -> qb_changed True",
-      f_moved["qb_changed"] is True)
+check("moved to a team whose Y starter differs from the player's own Y-1 QB "
+      "-> qb_changed True", f_moved["qb_changed"] is True)
 
 f_qb_pos = context_flags("QB", "HOU", "CLE", 2023, qb_by_team, coach_by_team, pace_by_team)
 check("qb_changed is only computed for RB/WR/TE, never QB itself",
