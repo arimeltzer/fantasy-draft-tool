@@ -821,6 +821,27 @@ def main():
                                          "model": "opp_stack", "variant": f"k{k}", "opp_k": k,
                                          "pos": pos, **m})
 
+                # ── re-baseline: does team_change beat what is ACTUALLY ──
+                # shipping right now? Only for team_change — the only 1.3
+                # feature that cleared the pure-model gate at all (see the
+                # ROADMAP 1.3 KILL GATE below); qb_change/coach_change/pace
+                # never beat v2's +0.003 merge bar even against the easier
+                # bare-model comparison, so the harder live-stack bar can't
+                # help them either. Same lesson roadmap 1.1/1.2 learned: a
+                # feature's apparent gain against the bare model can be
+                # signal the expert blend/injury discount were already
+                # extracting.
+                if use_team_context:
+                    for k in TEAM_CHANGE_K:
+                        tc_adj = apply_flag_discount(shipped_for_tc, pop, flags_by_player, "team_changed", k)
+                        tc_stack = apply_expert_shipped(
+                            pop, apply_injury_shipped(pop, tc_adj, injury_by_player), expert_by_player)
+                        tc_stack_merged = blend_with_market(pop, tc_stack, adp_by_player, MARKET_ANCHOR_W)
+                        for pos, m in score(pop, tc_stack_merged, sc).items():
+                            per_year.append({"year": year, "population": pop_name,
+                                             "model": "team_change_stack", "variant": f"k{k}", "ctx_k": k,
+                                             "pos": pos, **m})
+
     df = pd.DataFrame(per_year)
     for c in ("blend_w", "k", "inj_k", "opp_k", "ctx_k"):
         if c not in df.columns:
@@ -1270,6 +1291,48 @@ def main():
             print("\n  -> DO NOT SHIP any of team_change/qb_change/coach_change/pace. No")
             print("     position cleared both halves of the gate. The gate was set in advance")
             print("     precisely so this decision is not made after seeing the numbers.")
+
+        # ── re-baseline: does team_change survive against what is ACTUALLY
+        # shipping (injury discount + expert blend + anchor) rather than the
+        # pre-Phase-0 pure model above? Same lesson 1.1/1.2 learned — only
+        # run for positions team_change already passed the pure-model gate
+        # for; a position that failed the easier bar has no chance against
+        # the harder one.
+        tcsa = agg[(agg["population"] == "all") & (agg["model"] == "team_change_stack")]
+        if len(tcsa) and len(ssa):
+            print("\n=== RE-BASELINED — team_change vs THE CURRENT LIVE BOARD ===")
+            print("Same shipped_stack (project_points -> injury discount -> expert blend ->")
+            print("anchor) computed above for the opportunity model. Same +0.003 bar, now")
+            print("measured against what is actually live instead of the pre-Phase-0 model.")
+            tc_restacked = {}
+            pure_pass = {posn for (feat, posn), ok in tc_passed.items() if feat == "team_change" and ok}
+            for posn in sorted(tcsa["pos"].unique()):
+                if posn not in pure_pass:
+                    continue
+                base_row = ssa[ssa["pos"] == posn]
+                if not len(base_row):
+                    continue
+                base = float(base_row.iloc[0].spearman_total)
+                s = tcsa[tcsa["pos"] == posn].sort_values("ctx_k")
+                print(f"\n  {posn}   (current live board: {base:.4f})")
+                for _, r in s.iterrows():
+                    print(f"    k={r.ctx_k:<5} {r.spearman_total:.4f}  ({r.spearman_total - base:+.4f})")
+                best = s.loc[s.spearman_total.idxmax()]
+                tc_restacked[posn] = {"base": base, "best": float(best.spearman_total),
+                                       "best_k": float(best.ctx_k)}
+
+            print("\n  --- RE-BASELINED VERDICT (same +0.003 bar, honest baseline) ---")
+            tc_restacked_pass = {}
+            for posn in sorted(tc_restacked):
+                v = tc_restacked[posn]
+                ok = v["best"] > v["base"] + MERGE_EPS
+                tc_restacked_pass[posn] = ok
+                print(f"    {posn}  k={v['best_k']}  {v['best']:.4f} vs live {v['base']:.4f} "
+                      f"({v['best'] - v['base']:+.4f})   {'PASS' if ok else 'FAIL'}")
+            ship3 = [p for p, ok in tc_restacked_pass.items() if ok]
+            skip3 = [p for p, ok in tc_restacked_pass.items() if not ok]
+            print(f"\n  -> Against the live board: ship team_change for {', '.join(ship3) or '(none)'}"
+                  f"{'; ' + ', '.join(skip3) + ' do not clear it here' if skip3 else ''}.")
 
     print(f"\n✓ wrote {args.out}/projection_backtest_summary.csv and _by_year.csv")
 
