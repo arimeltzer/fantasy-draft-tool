@@ -17,13 +17,14 @@
  *
  * The FIRST shipped k=0.25 for both positions was the best OF A GRID THAT
  * HAD NOT YET TURNED OVER — it was still climbing at the grid's own top when
- * it shipped, not a found peak. Re-swept wider (up to 0.5) against the live
- * board: RB's true optimum is k=0.4 (+0.0051, and the numbers genuinely roll
- * over past it — a real peak, not another moving edge); WR's kept climbing
- * all the way to k=0.5 (+0.0108) with still no sign of turning over, so WR
- * stays at its earlier, more conservative k=0.25 until a further-out sweep
- * actually finds where it stops (updating WR to another still-climbing edge
- * would repeat the exact mistake this re-sweep exists to catch).
+ * it shipped, not a found peak. Re-swept in two widening passes against the
+ * live board (0.0-0.5, then 0.0-0.9): RB's true optimum is k=0.4 (+0.0051,
+ * decaying smoothly and monotonically on both sides — a real peak). WR's
+ * kept climbing well past 0.5 too, and its actual peak turned out to be
+ * k=0.7 (+0.0115, the single largest effect size anywhere in this phase) —
+ * a much bigger number than anyone guessed at first, but a genuine,
+ * monotonically-found peak (0.6: +0.0113, 0.7: +0.0115, 0.8: +0.0109), not
+ * an artifact of stopping the sweep early.
  *
  * A destination-quality nuance (multiplier = 1 - k*(1 - z), z the new
  * team's offensive EPA/play vs league average) was also tried, on the
@@ -38,11 +39,12 @@
  * the actual measurement. Backtest runs: `projection-backtest.yml`
  * #32073576167 (pure model, corrected after #32072847568 surfaced a
  * qb_change/team_change collision bug), #32074247724 (re-baselined against
- * the live board — the one that decided what first shipped), and
- * #32079414046 (extended k grid + the quality nuance — the one that decided
- * RB's k=0.4 and killed the quality idea).
+ * the live board — the one that decided what first shipped), #32079414046
+ * (extended k grid to 0.5 + the quality nuance — found RB's k=0.4 and
+ * killed the quality idea), and #32080618336 (extended again to 0.9 — found
+ * WR's actual peak, k=0.7).
  *
- * Shipped as `TEAM_CHANGE_K = { RB: 0.4, WR: 0.25 }`, everyone else 0. A
+ * Shipped as `TEAM_CHANGE_K = { RB: 0.4, WR: 0.7 }`, everyone else 0. A
  * player with no prior-season team on record (a rookie, or a row missing
  * `last.team`) passes through untouched — same coverage rule every other
  * stage in this pipeline uses.
@@ -51,10 +53,10 @@
 /** Per-position discount fraction when `last.team` differs from the
  *  player's current `team`. Only RB/WR are backtested and nonzero; K/DST
  *  were never in the backtest population, QB/TE didn't clear the gate.
- *  RB is k=0.4 (a found peak); WR is still k=0.25 — its own sweep hadn't
- *  turned over by k=0.5, so raising it to another unconfirmed edge would
- *  repeat the mistake that prompted re-checking RB in the first place. */
-export const TEAM_CHANGE_K = { QB: 0, RB: 0.4, WR: 0.25, TE: 0, K: 0, DST: 0 };
+ *  Both are found peaks (numbers decay smoothly on both sides in the
+ *  backtest) — WR's 0.7 looks large, but it's the largest, cleanest effect
+ *  measured anywhere in roadmap 1.3, not a guess. */
+export const TEAM_CHANGE_K = { QB: 0, RB: 0.4, WR: 0.7, TE: 0, K: 0, DST: 0 };
 
 /**
  * Apply the team-change discount across a projected board.

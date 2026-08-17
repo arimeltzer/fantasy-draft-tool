@@ -188,10 +188,10 @@ export function useBoard(
     // gate) and re-baselined against the live board (injury discount +
     // expert blend + anchor) — where QB's gain nearly vanished (already
     // captured by QB's injury discount + 0.3-weighted expert blend) but
-    // RB/WR held up. Shipped as TEAM_CHANGE_K = { RB: 0.4, WR: 0.25 } — RB
-    // re-swept to a found peak, WR still climbing at the widened grid's own
-    // top so it stays at the earlier, more conservative value (see
-    // team-context.js). A player with no prior-season team on record (a
+    // RB/WR held up. Shipped as TEAM_CHANGE_K = { RB: 0.4, WR: 0.7 } — both
+    // found peaks from a two-pass widened sweep (see team-context.js; WR's
+    // 0.7 looks large but is the cleanest, biggest effect measured anywhere
+    // in this phase). A player with no prior-season team on record (a
     // rookie) is untouched regardless. On by default — reversible mid-draft
     // without a deploy.
     if (settings.teamChangeDiscount !== false) {

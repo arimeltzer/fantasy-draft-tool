@@ -11,9 +11,10 @@ model AND re-baselined against the live board (injury discount + expert
 blend + anchor). QB passed the former but not the latter; TE/coach_change/
 qb_change/pace never cleared the merge bar at all and stay off. The k=0.25
 that first shipped for both RB and WR was the best of a grid that hadn't
-turned over yet — a re-sweep out to k=0.5 found RB's real peak at k=0.4;
-WR was still climbing at k=0.5 with no peak found, so it stays at 0.25
-until a further-out sweep actually locates one. Those numbers describe the
+turned over yet — a two-pass re-sweep (to 0.5, then to 0.9) found RB's real
+peak at k=0.4 and WR's much larger real peak at k=0.7 (the single largest
+effect size anywhere in this phase, decaying smoothly and monotonically on
+both sides — a found peak, not a guess). Those numbers describe the
 PYTHON. The browser runs `team-context.js:applyTeamChangeDiscount()`.
 
 If the two drift, the app ships an arithmetic no one measured while the
@@ -58,11 +59,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NODE_SIDE = os.path.join(HERE, "team_change_parity.mjs")
 
 # Must match TEAM_CHANGE_K in frontend/src/engine/team-context.js exactly —
-# the weights the roadmap 1.3 backtest justified shipping. RB is a found
-# peak (0.4); WR is still climbing at 0.5 in the widened sweep, so it stays
-# at the earlier, more conservative 0.25 until a further-out sweep actually
-# locates its optimum.
-TEAM_CHANGE_K = {"QB": 0.0, "RB": 0.4, "WR": 0.25, "TE": 0.0, "K": 0.0, "DST": 0.0}
+# the weights the roadmap 1.3 backtest justified shipping. Both are found
+# peaks: RB at 0.4, WR at 0.7 (large, but the cleanest/largest effect
+# measured anywhere in this phase).
+TEAM_CHANGE_K = {"QB": 0.0, "RB": 0.4, "WR": 0.7, "TE": 0.0, "K": 0.0, "DST": 0.0}
 POSITIONS = ["QB", "RB", "WR", "TE", "K", "DST"]
 TEAMS = ["MIA", "NYJ", "DAL", "SF", "KC", "DEN", "", None]
 

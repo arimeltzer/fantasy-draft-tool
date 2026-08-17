@@ -246,26 +246,27 @@ one number that matters, `valuePoints`.
 
 > **Prompt** — "Let's move on to 1.3"
 
-**FOLLOW-UP — RB re-tuned to 0.4; a destination-quality nuance tried and
-killed.** Two questions after shipping: was k=0.25 an actual optimum, and
-does WHERE a player landed (not just THAT he moved) carry independent
-signal?
+**FOLLOW-UP — RB/WR re-tuned to found peaks (0.4 / 0.7); a destination-
+quality nuance tried and killed.** Two questions after shipping: was
+k=0.25 an actual optimum, and does WHERE a player landed (not just THAT
+he moved) carry independent signal?
 
 *Was 0.25 a peak?* No — it was the best value in a grid `[0.0 … 0.25]` that
 was still climbing at its own top, not a found optimum (`TEAM_CHANGE_K`
-never having been swept past its shipped value). Re-swept to `[0.0 … 0.5]`
-against the live board:
+never having been swept past its shipped value). Re-swept in two widening
+passes against the live board — `[0.0 … 0.5]`, then `[0.0 … 0.9]` once WR
+was still climbing at the first pass's top:
 
-| pos | k=0.25 (first shipped) | best in the wider sweep | verdict |
-|---|---|---|---|
-| RB | +0.0038 | **k=0.4: +0.0051**, and the numbers genuinely roll over past it | real peak found — **shipped** |
-| WR | +0.0062 | k=0.5: +0.0108, still climbing at the grid's own top | no peak found — **stayed at 0.25** rather than jump to another unconfirmed edge |
-| QB | +0.0016 (fail) | k=0.4/0.5 tie at +0.0019 | still fails the bar everywhere — confirmed |
+| pos | k=0.25 (first shipped) | pass 1 best (to 0.5) | pass 2 best (to 0.9) | verdict |
+|---|---|---|---|---|
+| RB | +0.0038 | **k=0.4: +0.0051**, rolls over past it | (unchanged — already found) | real peak — **shipped at 0.4** |
+| WR | +0.0062 | k=0.5: +0.0108, still climbing | **k=0.7: +0.0115**, rolls over past it — the single largest effect measured anywhere in this phase | real peak — **shipped at 0.7** |
+| QB | +0.0016 (fail) | k=0.4/0.5 tie at +0.0019 | still fails past 0.5 too | still fails the bar everywhere — confirmed |
 
-Shipped as `TEAM_CHANGE_K = { RB: 0.4, WR: 0.25 }`. WR needs a further-out
-sweep (past 0.5) before its number can move again — updating it to 0.5 now
-would repeat the exact mistake ("ship the edge of the grid, not a peak")
-that prompted this whole re-check.
+Shipped as `TEAM_CHANGE_K = { RB: 0.4, WR: 0.7 }`. WR's 0.7 looks large,
+but both numbers now decay smoothly and monotonically on either side of
+their peak in the real backtest — found values, not the edge of whatever
+grid happened to be tried, which is exactly what the first k=0.25 was.
 
 *Does destination quality help?* Tested `apply_team_change_quality()`:
 multiplier = `1 - k*(1 - quality_z)`, where `quality_z` is the new team's
@@ -287,7 +288,9 @@ doing real work; blending in a continuous quality read diluted it rather
 than sharpening it — at least for this construction of "quality."
 
 `team_change_parity.py`/`team-context.selftest.mjs` updated to the new
-constants (RB 0.4). Backtest run: `projection-backtest.yml` #32079414046.
+constants (RB 0.4, WR 0.7). Backtest runs: `projection-backtest.yml`
+#32079414046 (k to 0.5 — RB's peak + the quality nuance) and #32080618336
+(k to 0.9 — WR's peak).
 
 > **Prompt** — "how did you land at .25? is there any reason to try to
 > nuance this with information about the team they are joining?" ...

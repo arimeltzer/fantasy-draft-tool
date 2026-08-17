@@ -6,16 +6,16 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
-## 2026-08 — Roadmap 1.3 follow-up: RB re-tuned to 0.4, quality nuance killed
+## 2026-08 — Roadmap 1.3 follow-up: RB/WR re-tuned to found peaks, quality nuance killed
 - Re-checked whether the shipped `TEAM_CHANGE_K=0.25` was an actual optimum
   or just the top of a grid that hadn't turned over yet (it was the latter).
-  Re-swept out to k=0.5 against the live board: RB's numbers roll over past
-  k=0.4 — a real, found peak (+0.0051 there vs +0.0038 at 0.25) — while WR
-  was STILL climbing at k=0.5 (+0.0108) with no peak located.
-- Shipped `TEAM_CHANGE_K = { RB: 0.4, WR: 0.25 }` — RB moved to its found
-  peak; WR intentionally left at the earlier, confirmed-safe value rather
-  than jumped to another still-climbing edge (a further-out sweep is needed
-  before touching WR's number again).
+  Two-pass re-sweep against the live board: pass 1 (to k=0.5) found RB's
+  real peak at k=0.4 (+0.0051 vs +0.0038 at 0.25) but WR was STILL climbing
+  at k=0.5 (+0.0108); pass 2 (to k=0.9) found WR's real peak at k=0.7
+  (+0.0115) — the single largest effect size measured anywhere in this
+  phase, decaying smoothly and monotonically on both sides.
+- Shipped `TEAM_CHANGE_K = { RB: 0.4, WR: 0.7 }` — both are now confirmed,
+  found peaks rather than the edge of whatever grid happened to be tried.
 - Also tried and killed a destination-quality nuance: does WHERE a player
   landed matter, not just THAT he moved? `apply_team_change_quality()`
   scaled the discount by the new team's offensive EPA/play (z-scored vs
@@ -24,7 +24,9 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   the binary team-changed signal was doing real work that a continuous
   quality read diluted. Not shipped.
 - `team_change_parity.py`/`team-context.selftest.mjs` updated to the new
-  constants. Backtest run: `projection-backtest.yml` #32079414046.
+  constants. Backtest runs: `projection-backtest.yml` #32079414046 (k to
+  0.5, RB's peak + the quality nuance) and #32080618336 (k to 0.9, WR's
+  peak).
 
 ## 2026-08 — Roadmap 1.3 shipped: team-change discount, RB/WR only
 - Swept all four candidate context signals the roadmap names — team change,
