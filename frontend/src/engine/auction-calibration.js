@@ -57,7 +57,8 @@ export function noCalibration(note = "no prior-season auction prices") {
   const posMult = {};
   for (const pos of POSITIONS) posMult[pos] = 1;
   return { usable: false, posMult, sample: {}, observedShare: {}, modelShare: {},
-           totalSpend: 0, pricedPicks: 0, topHeaviness: null, notes: [note] };
+           totalSpend: 0, pricedPicks: 0, coverage: null, topHeaviness: null,
+           notes: [note] };
 }
 
 /**
@@ -135,6 +136,26 @@ export function calibrateAuction(picks, league = {}, P = DEFAULT_AUCTION_PARAMS)
     }
   }
 
+  // SURVIVORSHIP. Every importer builds its candidate list from END-OF-SEASON
+  // ROSTERS joined to draft prices, not from the draft itself — a player who
+  // was drafted and later cut is absent, and a waiver pickup arrives with no
+  // price. So the sample is the drafted players who survived the year, which
+  // skews toward the ones that worked: expensive picks are held, cheap busts
+  // are dropped, and kickers and defenses are churned almost entirely.
+  //
+  // There is no way to recover the missing rows from this data, so the honest
+  // move is to measure how much is missing and say so. A full auction is
+  // teams x rosterSize picks; well below that means the shares below describe
+  // the survivors rather than the room's actual spending.
+  const expected = (league.teams || 0) * (league.rosterSize || 0);
+  const coverage = expected > 0 ? +(priced.length / expected).toFixed(2) : null;
+  if (coverage != null && coverage < 0.75) {
+    notes.push(
+      `only ${priced.length} of about ${expected} draft picks carry a price ` +
+      `(${Math.round(coverage * 100)}%) — the import lists end-of-season rosters, so ` +
+      `dropped players are missing and these shares lean toward picks that worked out`);
+  }
+
   return {
     usable: true,
     posMult,
@@ -143,6 +164,8 @@ export function calibrateAuction(picks, league = {}, P = DEFAULT_AUCTION_PARAMS)
     modelShare,
     totalSpend,
     pricedPicks: priced.length,
+    /** priced picks / a full draft. Below ~0.75 the sample is survivors. */
+    coverage,
     topHeaviness,
     notes,
   };

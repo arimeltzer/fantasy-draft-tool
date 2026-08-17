@@ -218,6 +218,12 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
 - **Applied to `marketPrice` only.** `dollarValues` takes no calibration
   argument at all, and a selftest asserts it — contaminating what a player is
   WORTH with what the room will PAY collapses the bargain signal.
+- **Survivorship caveat, surfaced not hidden**: every importer builds candidates
+  from END-OF-SEASON ROSTERS joined to draft prices, so players drafted and
+  later dropped are absent and waiver adds carry no price. The sample therefore
+  tilts toward picks that worked. `coverage` (priced picks / teams x rosterSize)
+  measures it, and below 0.75 the calibration adds a note and the badge turns
+  amber with a `*`. A full draft-results paste is the cleaner input.
 - `topHeaviness` is computed and shown but **not applied**; acting on it needs a
   separately validated model of the curve's shape.
 - `CalibrationBadge` states the sample and per-position effect, and reads

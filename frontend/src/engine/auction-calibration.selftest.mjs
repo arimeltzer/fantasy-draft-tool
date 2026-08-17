@@ -139,6 +139,30 @@ check("describeCalibration names the movers", /RB/.test(describeCalibration(rbHe
 check("describeCalibration explains an unusable one",
       /need|no prior/.test(describeCalibration(calibrateAuction([], LEAGUE))));
 
+// ── survivorship: the import lists rosters, not the draft ─────────────────
+// Every importer joins END-OF-SEASON ROSTERS to draft prices, so players who
+// were drafted and later cut are missing. That cannot be recovered from this
+// data, so it has to be measured and surfaced rather than assumed away.
+{
+  const full = draftMatching(ALLOC, 25);                 // 150 picks
+  const league150 = { teams: 10, budget: 200, rosterSize: 15 };
+  const complete = calibrateAuction(full, league150);
+  check("a full draft reports ~100% coverage", complete.coverage >= 0.95, String(complete.coverage));
+  check("...and raises no survivorship warning",
+        !complete.notes.some((n) => /rosters/.test(n)), JSON.stringify(complete.notes));
+
+  const survivors = full.slice(0, 70);                   // ~47% of the draft
+  const partial = calibrateAuction(survivors, league150);
+  check("a survivors-only sample still calibrates", partial.usable);
+  check("...but reports low coverage", partial.coverage < 0.6, String(partial.coverage));
+  check("...and says the sample leans toward picks that worked",
+        partial.notes.some((n) => /rosters/.test(n) && /dropped/.test(n)),
+        JSON.stringify(partial.notes));
+
+  check("coverage is null when roster size is unknown",
+        calibrateAuction(full, { teams: 10 }).coverage === null);
+}
+
 console.log();
 if (fails.length) {
   console.error(`auction-calibration.selftest: ${pass} passed, ${fails.length} FAILED — ${fails.join(", ")}`);

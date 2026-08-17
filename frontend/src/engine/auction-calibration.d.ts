@@ -11,6 +11,9 @@ export interface AuctionCalibration {
   modelShare: Record<string, number>;
   totalSpend: number;
   pricedPicks: number;
+  /** Priced picks as a fraction of a full draft (teams x rosterSize).
+   *  Below ~0.75 the import is end-of-season survivors, not the draft. */
+  coverage: number | null;
   /** Share of spend in the priciest 10% of picks. Reported, NOT applied. */
   topHeaviness: number | null;
   notes: string[];
@@ -26,7 +29,7 @@ export declare const MULT_CLAMP: [number, number];
 export declare function noCalibration(note?: string): AuctionCalibration;
 export declare function calibrateAuction(
   picks: PriorPick[],
-  league?: { teams?: number },
+  league?: { teams?: number; rosterSize?: number },
   P?: unknown,
 ): AuctionCalibration;
 export declare function picksFromKeeperImport(

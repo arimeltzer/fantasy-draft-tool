@@ -22,18 +22,28 @@ export default function CalibrationBadge({ cal }: { cal: AuctionCalibration | nu
         .slice(0, 3)
     : [];
 
+  // Surfaced, not buried: the import lists end-of-season rosters, so a low
+  // count means dropped players are missing and the shares lean toward picks
+  // that worked. Worth knowing before you trust a price.
+  const thin = on && cal!.coverage != null && cal!.coverage < 0.75;
+
   const tip = on
     ? `Market prices are adjusted for how this league actually spends, learned from ${cal!.pricedPicks} priced picks in your imported prior season. ${detail}. `
       + `Small samples are pulled toward neutral, and the adjustments cancel out across positions so the total money on the board is unchanged. `
       + `Your own $Value is deliberately NOT adjusted — the gap between value and price is the bargain signal.`
+      + (thin
+        ? ` ⚠ Only ${Math.round(cal!.coverage! * 100)}% of a full draft carries a price: the import reads end-of-season rosters, so players who were drafted and later dropped are missing and these shares tilt toward picks that worked out.`
+        : "")
     : `Market prices use the generic model curve. ${detail}. `
-      + `Import a prior season in the Keepers panel and the forecast will learn what your room overpays for.`;
+      + `Import a prior season in the Keepers panel (the Keepers button) and the forecast will learn what your room overpays for — no need to recreate the league.`;
 
   return (
     <div
       title={tip}
       className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded border font-mono text-xs cursor-help ${
-        on ? "bg-sky-50 border-sky-200 text-sky-700" : "bg-gray-50 border-gray-200 text-gray-400"
+        !on ? "bg-gray-50 border-gray-200 text-gray-400"
+        : thin ? "bg-amber-50 border-amber-200 text-amber-700"
+        : "bg-sky-50 border-sky-200 text-sky-700"
       }`}
     >
       <Scale className="w-3.5 h-3.5" />
@@ -42,6 +52,7 @@ export default function CalibrationBadge({ cal }: { cal: AuctionCalibration | nu
             ? moved.map(([pos, m]) => `${pos}${m > 1 ? "+" : ""}${Math.round((m - 1) * 100)}%`).join(" ")
             : "league-neutral")
         : "generic prices"}
+      {thin && <span title="partial draft data">*</span>}
     </div>
   );
 }
