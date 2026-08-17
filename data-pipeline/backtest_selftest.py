@@ -201,6 +201,85 @@ check("severities order the same way the games-missed table does",
 check("the multiplier never goes negative even at an absurd k",
       injury_multiplier("out", 100.0) == 0.0, f"{injury_multiplier('out', 100.0)}")
 
+# ── projection_opportunity: two-stage volume x efficiency (roadmap 1.1/1.2) ─
+print("\nprojection_opportunity (volume x shrunk efficiency)")
+from projection_model import DEFAULT_PARAMS as OPP_P, project_points  # noqa: E402
+from projection_opportunity import (                            # noqa: E402
+    league_efficiency, opportunity, project_points_opportunity, project_volume,
+)
+
+check("opportunity sums the right fields per position",
+      opportunity({"carries": 15, "targets": 5}, "RB") == 20.0 and
+      opportunity({"targets": 8, "carries": 99}, "WR") == 8.0 and
+      opportunity({"attempts": 30, "carries": 4}, "QB") == 34.0)
+check("a position with no opportunity concept reads 0",
+      opportunity({"carries": 15}, "K") == 0.0)
+check("a missing line reads 0", opportunity(None, "RB") == 0.0)
+
+vol_two = project_volume(
+    {"pos": "RB", "last": {"gp": 17, "carries": 200, "targets": 40},
+     "last2": {"gp": 17, "carries": 200, "targets": 40}}, OPP_P)
+check("flat two-season volume pace is the raw total (no trend shift)",
+      approx(vol_two, 240.0, 1e-6), f"{vol_two}")
+
+vol_none = project_volume({"pos": "RB", "last": None, "last2": None}, OPP_P)
+check("no prior-season volume -> None (rookie handling stays with the shipped model)",
+      vol_none is None)
+
+vol_k = project_volume({"pos": "K", "last": {"gp": 17, "carries": 0}, "last2": None}, OPP_P)
+check("a position with no opportunity concept -> None", vol_k is None)
+
+vol_hurt = project_volume(
+    {"pos": "RB", "last": {"gp": 5, "carries": 60, "targets": 10}, "last2": None}, OPP_P)
+vol_healthy = project_volume(
+    {"pos": "RB", "last": {"gp": 17, "carries": 204, "targets": 34}, "last2": None}, OPP_P)
+check("a short season is durability-discounted even at the same per-game pace",
+      vol_hurt < vol_healthy, f"{vol_hurt:.1f} vs {vol_healthy:.1f}")
+
+rates_rows = [("RB", {"carries": 200.0, "targets": 0.0, "rushYd": 1000.0, "rushTD": 8.0}, SC)
+              for _ in range(10)]
+rates = league_efficiency(rates_rows)
+check("league_efficiency computes points-per-opportunity",
+      approx(rates["RB"]["rate"], (1000.0 * 0.1 + 8.0 * 6) / 200.0, 1e-9),
+      str(rates.get("RB")))
+check("mean_opp is per-player, not the pooled total",
+      approx(rates["RB"]["mean_opp"], 200.0, 1e-9))
+
+lucky = {"pos": "RB", "age": 25,
+         "last": {"gp": 17, "carries": 100, "targets": 0, "rushYd": 500, "rushTD": 12},
+         "last2": None}
+p_k0 = project_points_opportunity(lucky, SC, rates, 0.0, OPP_P)
+check("k=0 uses the player's own unshrunk rate exactly",
+      approx(p_k0["efficiency"], p_k0["own_efficiency"], 1e-9), str(p_k0))
+p_k4 = project_points_opportunity(lucky, SC, rates, 4.0, OPP_P)
+check("more shrinkage pulls a lucky rate toward the league average",
+      abs(p_k4["efficiency"] - rates["RB"]["rate"]) < abs(p_k0["efficiency"] - rates["RB"]["rate"]),
+      f"k0={p_k0['efficiency']:.4f} k4={p_k4['efficiency']:.4f} league={rates['RB']['rate']:.4f}")
+check("opportunity_based is flagged true when the stage actually ran", p_k0["opportunity_based"])
+
+big_sample = {"pos": "RB", "age": 25,
+              "last": {"gp": 17, "carries": 400, "targets": 0, "rushYd": 2000, "rushTD": 40},
+              "last2": None}
+small_sample = {"pos": "RB", "age": 25,
+                "last": {"gp": 17, "carries": 25, "targets": 0, "rushYd": 125, "rushTD": 5},
+                "last2": None}
+big_k1 = project_points_opportunity(big_sample, SC, rates, 1.0, OPP_P)
+small_k1 = project_points_opportunity(small_sample, SC, rates, 1.0, OPP_P)
+big_move = abs(big_k1["efficiency"] - big_k1["own_efficiency"])
+small_move = abs(small_k1["efficiency"] - small_k1["own_efficiency"])
+check("a big sample is shrunk proportionally less than a small one",
+      big_move < small_move, f"400 carries moved {big_move:.4f}, 25 carries moved {small_move:.4f}")
+
+kicker = {"pos": "K", "age": 28, "last": {"gp": 17}, "last2": None}
+fb = project_points_opportunity(kicker, SC, rates, 1.0, OPP_P)
+check("a position with no opportunity concept falls back to the shipped model, untouched",
+      not fb["opportunity_based"] and fb["proj"] == project_points(kicker, SC, OPP_P)["proj"])
+
+no_vol_rb = {"pos": "RB", "age": 24, "last": None, "last2": None, "adp": 40}
+fb2 = project_points_opportunity(no_vol_rb, SC, rates, 1.0, OPP_P)
+check("a true rookie (no prior volume) falls back to the shipped model's rookie handling",
+      not fb2["opportunity_based"] and fb2["proj"] == project_points(no_vol_rb, SC, OPP_P)["proj"])
+
 print()
 if FAILS:
     raise SystemExit(f"backtest selftest: {len(FAILS)} FAILED — {', '.join(FAILS)}")

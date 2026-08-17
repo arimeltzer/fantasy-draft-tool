@@ -70,11 +70,18 @@ from scipy import stats
 # (and polars, and pyarrow) into a job that never touches the network.
 
 from projection_model import DEFAULT_PARAMS, default_scoring, project_points, with_overrides
+from projection_opportunity import league_efficiency, project_points_opportunity
 from projection_v2 import league_rates, stabilize_player
 
 # Prior strength for v2's touchdown shrinkage, as a multiple of a typical
 # season's workload. 0 must reproduce the shipped model exactly (checked).
 V2_K = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0]
+
+# Prior strength for the opportunity model's efficiency shrinkage (roadmap
+# 1.1/1.2), same units as V2_K. Unlike V2_K, k=0 here is NOT the shipped
+# model (see projection_opportunity.project_points_opportunity) — it's the
+# two-stage model's own unshrunk arm.
+OPP_K = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0]
 
 try:
     from adp_probe import fetch_adp          # needs FANTASYPROS_API_KEY
@@ -459,6 +466,10 @@ def main():
         # season here would leak the answer into the "prediction".
         rates = league_rates((r.pos, season_line(r))
                              for r in data[data.season < year].itertuples())
+        # Same no-lookahead discipline for the opportunity model's league
+        # efficiency rate (roadmap 1.1/1.2).
+        opp_rates = league_efficiency((r.pos, season_line(r), sc)
+                                      for r in data[data.season < year].itertuples())
 
         # ── the matched population ────────────────────────────────────
         # Comparing the model to the market is only meaningful over players
@@ -620,8 +631,30 @@ def main():
                                              "model": "v2_blend", "variant": f"k{k}_w{w}",
                                              "k": k, "blend_w": w, "pos": pos, **m})
 
+            # ── roadmap 1.1/1.2: volume x shrunk efficiency ────────────
+            # Same solo/partial/merged treatment as v2, because the phase
+            # kill gate needs exactly those three numbers: is it a better
+            # model, does it carry information the market lacks, and does
+            # merging it with the market raise the board's ceiling.
+            for k in OPP_K:
+                opp = [project_points_opportunity(p, sc, opp_rates, k, DEFAULT_PARAMS)["proj"]
+                       for p in pop]
+                for pos, m in score(pop, opp, sc).items():
+                    per_year.append({"year": year, "population": pop_name,
+                                     "model": "opp", "variant": f"k{k}", "opp_k": k,
+                                     "pos": pos, **m})
+                if pop_name == "all" and adp_by_player:
+                    for pos, m in disagreement_signal(pop, opp, adp_by_player, sc).items():
+                        dis_rows.append({"year": year, "variant": f"opp_k{k}", "opp_k": k,
+                                         "pos": pos, **m})
+                    for w in (0.2, 0.3, 0.4, 0.5):
+                        for pos, m in score(pop, blend_with_market(pop, opp, adp_by_player, w), sc).items():
+                            per_year.append({"year": year, "population": pop_name,
+                                             "model": "opp_blend", "variant": f"k{k}_w{w}",
+                                             "opp_k": k, "blend_w": w, "pos": pos, **m})
+
     df = pd.DataFrame(per_year)
-    for c in ("blend_w", "k", "inj_k"):
+    for c in ("blend_w", "k", "inj_k", "opp_k"):
         if c not in df.columns:
             df[c] = float("nan")
     os.makedirs(args.out, exist_ok=True)
@@ -635,6 +668,7 @@ def main():
                   blend_w=("blend_w", "first"),
                   k=("k", "first"),
                   inj_k=("inj_k", "first"),
+                  opp_k=("opp_k", "first"),
                   n_years=("year", "nunique"))
              .reset_index()
              .sort_values(["pos", "spearman_total"], ascending=[True, False]))
@@ -867,6 +901,83 @@ def main():
                     r = ps[ps["variant"] == v]
                     print(f"      {v:<10} partial {r['partial_model'].mean():+.4f}"
                           f"   overlap {r['rho_model_market'].mean():+.4f}")
+            ov = sorted(v for v in ps["variant"].unique() if v.startswith("opp_k"))
+            if ov:
+                print("    opportunity-model partials — the number 1.1/1.2 has to move:")
+                for v in ov:
+                    r = ps[ps["variant"] == v]
+                    print(f"      {v:<10} partial {r['partial_model'].mean():+.4f}"
+                          f"   overlap {r['rho_model_market'].mean():+.4f}")
+
+    # ── roadmap 1.1/1.2: volume x shrunk efficiency, judged against the ───
+    # phase kill gate ───────────────────────────────────────────────────
+    oppa = agg[(agg["population"] == "all") & (agg["model"] == "opp")]
+    if len(oppa) and dis_rows:
+        # Both numbers fixed here, before reading the sweep below. The
+        # roadmap only specified the SHAPE of the bar for the first one
+        # ("materially" above baseline) — not an exact number.
+        MATERIAL_EPS = 0.03   # absolute partial-correlation increase required
+        MERGE_EPS = 0.003     # the v2 attempt's own number; must be EXCEEDED, not matched
+        print("\n=== ROADMAP 1.1/1.2 — VOLUME x SHRUNK EFFICIENCY ===")
+        print("k = efficiency shrinkage strength. Unlike v2/the injury discount, k=0")
+        print("here is NOT the shipped model — it's the two-stage model's own unshrunk arm.")
+        print(f"Gate: partial correlation must clear baseline by more than {MATERIAL_EPS}, AND")
+        print(f"merged must beat the shipped model's best merge by more than {MERGE_EPS} "
+              "(v2's own bar).")
+
+        mb = agg[(agg["population"] == "all") & (agg["model"] == "blend")]
+        ob = agg[(agg["population"] == "all") & (agg["model"] == "opp_blend")]
+        dp_all = pd.DataFrame(dis_rows)
+        verdict = {}
+        for posn in sorted(oppa["pos"].unique()):
+            s = oppa[oppa["pos"] == posn].sort_values("opp_k")
+            base = s[s.opp_k == 0.0]
+            b0 = base.iloc[0].spearman_total if len(base) else float("nan")
+            print(f"\n  {posn}   (unshrunk k=0 solo {b0:.4f})")
+            for _, r in s.iterrows():
+                m = ob[(ob["pos"] == posn) & (ob["opp_k"] == r.opp_k)]
+                best = f"{m.spearman_total.max():.4f}" if len(m) else "   —  "
+                bw = (f" @w{m.loc[m.spearman_total.idxmax()].blend_w}") if len(m) else ""
+                print(f"    k={r.opp_k:<5} solo {r.spearman_total:.4f}   merged {best}{bw}")
+
+            best_merged_row = ob[ob["pos"] == posn]
+            best_merged = float(best_merged_row.spearman_total.max()) if len(best_merged_row) else float("nan")
+            shipped_merged_row = mb[mb["pos"] == posn]
+            shipped_merged = (float(shipped_merged_row.spearman_total.max())
+                              if len(shipped_merged_row) else float("nan"))
+
+            dp = dp_all[dp_all["pos"] == posn]
+            base_partial = dp[dp["variant"] == "shipped"]["partial_model"].mean()
+            opp_variants = [v for v in dp["variant"].unique() if v.startswith("opp_k")]
+            best_partial = (dp[dp["variant"].isin(opp_variants)]["partial_model"].max()
+                            if opp_variants else float("nan"))
+
+            verdict[posn] = {"base_partial": base_partial, "best_partial": best_partial,
+                             "shipped_merged": shipped_merged, "best_merged": best_merged}
+
+        print("\n  --- PHASE 1 KILL GATE (material partial gain AND merge beats v2's +0.003) ---")
+        passed = {}
+        for posn in sorted(verdict):
+            v = verdict[posn]
+            partial_ok = v["best_partial"] > v["base_partial"] + MATERIAL_EPS
+            merge_ok = v["best_merged"] > v["shipped_merged"] + MERGE_EPS
+            ok = partial_ok and merge_ok
+            passed[posn] = ok
+            print(f"    {posn}  partial {v['best_partial']:+.4f} vs {v['base_partial']:+.4f} "
+                  f"({'material' if partial_ok else 'NOT material'})   "
+                  f"merged {v['best_merged']:.4f} vs {v['shipped_merged']:.4f} "
+                  f"({'beats v2' if merge_ok else 'does NOT beat v2'})   {'PASS' if ok else 'FAIL'}")
+        if passed and all(passed.values()):
+            print("  -> SHIP IT for every position.")
+        elif any(passed.values()):
+            ship = [p for p, ok in passed.items() if ok]
+            skip = [p for p, ok in passed.items() if not ok]
+            print(f"  -> PARTIAL. Ship for {', '.join(ship)} only; {', '.join(skip)} stay on "
+                  "the shipped model rather than a replacement that didn't earn it there.")
+        else:
+            print("  -> DO NOT SHIP. No position cleared both halves of the phase gate. The")
+            print("     gate was set in advance precisely so this decision is not made after")
+            print("     seeing the numbers.")
 
     print(f"\n✓ wrote {args.out}/projection_backtest_summary.csv and _by_year.csv")
 

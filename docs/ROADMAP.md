@@ -198,6 +198,25 @@ above the current +0.036 QB / +0.047 RB / +0.107 TE / +0.098 WR, **and** the
 merged full-board number must improve by more than the v2 attempt's +0.003.
 Partial correlation alone is not enough — v2 raised it and still didn't matter.
 
+**"Materially" fixed as a number, before running**: partial correlation must
+clear baseline by **more than +0.03 absolute** (roughly doubling the QB/RB
+floor, ~30% relative on TE/WR). "More than v2's +0.003" is taken literally —
+merged Spearman must beat the shipped model's best market-merge by **more
+than +0.003**, not merely match it. Both halves required; evaluated **per
+position**, same as 0.1 and 0.3 — a position that fails stays on the shipped
+model rather than getting a replacement that didn't earn it there.
+
+**1.1/1.2 approach taken**: rather than committing to the Postgres schema
+migration + `ingest_nflverse.py` production plumbing before knowing whether
+any of this earns its place, the two-stage model (`projection_opportunity.py`)
+was built and backtested first, reusing volume columns (`carries`, `targets`,
+`attempts`) `projection_backtest.py` already loads for `projection_v2.py` —
+no migration needed to MEASURE it. `target_share`/`air_yards_share`/`wopr`
+(also named in this section) were not used this round — not verified
+available in the pulled columns, so not claimed. The real DB/pipeline work
+only happens if the gate passes, same "nothing ships without the measurement"
+discipline 0.1 and 0.3 both followed.
+
 > **Prompt** — "Start roadmap Phase 1: rebuild the projection on opportunity
 > data rather than points. Do 1.1 and 1.2 first, backtest, and report against
 > the phase kill gate before going near 1.3."
