@@ -413,22 +413,20 @@ def parse_injuries(data: dict) -> dict:
 
 
 def fetch_injuries(season: int, week: int = 0, api_key: str | None = None) -> dict:
-    """Current injury statuses. Week 0 is the preseason/current report."""
+    """Current injury statuses. Week 0 is the preseason/current report.
+
+    Routed through `_get_json` (429 backoff) like `fetch_projections` — a
+    rate-limited call here would otherwise read exactly like "no injury data
+    for this season", which is the same false negative `projection_probe.py`
+    hit before that fix existed.
+    """
     api_key = api_key or os.getenv("FANTASYPROS_API_KEY")
     if not api_key:
         raise RuntimeError("FANTASYPROS_API_KEY not set")
     url = INJURY_BASE + "?" + urlencode(
         {"year": season, "week": week, "include_probabilities": "true"})
-    req = urllib.request.Request(url, headers={
-        "x-api-key": api_key, "Accept": "application/json",
-        "User-Agent": "fantasy-draft-tool/1.0",
-    })
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = json.load(r)
-    except urllib.error.HTTPError as e:
-        body = e.read()[:200].decode("utf-8", "replace")
-        print(f"  ! injuries: HTTP {e.code} {body}")
+    data = _get_json(url, api_key, label=f"injuries {season} wk{week}")
+    if data is None:
         return {}
     got = parse_injuries(data)
     if not got:
