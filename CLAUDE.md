@@ -218,12 +218,17 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
 - **Applied to `marketPrice` only.** `dollarValues` takes no calibration
   argument at all, and a selftest asserts it — contaminating what a player is
   WORTH with what the room will PAY collapses the bargain signal.
-- **Survivorship caveat, surfaced not hidden**: every importer builds candidates
-  from END-OF-SEASON ROSTERS joined to draft prices, so players drafted and
-  later dropped are absent and waiver adds carry no price. The sample therefore
-  tilts toward picks that worked. `coverage` (priced picks / teams x rosterSize)
-  measures it, and below 0.75 the calibration adds a note and the badge turns
-  amber with a `*`. A full draft-results paste is the cleaner input.
+- **Survivorship**: `candidates` is built from END-OF-SEASON ROSTERS joined to
+  draft prices, so players drafted and later dropped are absent — a sample of
+  the picks that worked. **ESPN now also returns the full draft**
+  (`espn.parse_draft_picks` -> `draft_picks` on the keeper-candidates response
+  -> `keeperImport.draftPicks`), and `picksFromKeeperImport` prefers it.
+  `draftDetail.picks` names players by id only, so positions come from the
+  rosters where the player survived and from a `kona_player_info` lookup where
+  he didn't; that lookup is best-effort and never blocks an import, and picks
+  it can't name are skipped rather than guessed. Yahoo/paste still fall back to
+  the roster sample. `coverage` (priced picks / teams x rosterSize) measures
+  what's missing either way; below 0.75 the badge turns amber with a `*`.
 - `topHeaviness` is computed and shown but **not applied**; acting on it needs a
   separately validated model of the curve's shape.
 - `CalibrationBadge` states the sample and per-position effect, and reads

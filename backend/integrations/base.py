@@ -47,6 +47,26 @@ class NormTeam:
 
 
 @dataclass
+class DraftPickRow:
+    """One pick of a completed draft, whether or not the player is still rostered.
+
+    `pos` is the field auction calibration needs and the one the draft endpoint
+    does not supply — picks reference a platform player id only. It is resolved
+    from the rosters where the player survived, and from a player-info lookup
+    where they did not; `resolved` records which picks got an answer so a
+    partial resolution is visible rather than silently shrinking the sample.
+    """
+    ext_id: str
+    name: str = ""
+    pos: str = ""
+    team: str = ""
+    bid: int | None = None
+    round: int | None = None
+    owner: str = ""
+    resolved: bool = False
+
+
+@dataclass
 class NormLeague:
     provider: str                 # "espn" | "yahoo"
     ext_id: str                   # platform league id/key
@@ -56,6 +76,15 @@ class NormLeague:
     settings: dict                # app LeagueSettings shape
     teams: list[NormTeam] = field(default_factory=list)
     meta: dict = field(default_factory=dict)   # adapter diagnostics (non-essential)
+    # EVERY pick of the prior draft, including players later dropped.
+    #
+    # `teams` holds end-of-season ROSTERS, so a player who was drafted and then
+    # cut vanishes from it entirely. That is fine for keeper eligibility — you
+    # cannot keep someone you no longer roster — but it makes the roster list a
+    # survivorship-biased sample of what the room PAID, which is what auction
+    # price calibration learns from. This carries the draft itself, separately,
+    # so the two questions are answered from the data that actually fits them.
+    draft_picks: list[DraftPickRow] = field(default_factory=list)
 
 
 def opponent_team_ids(teams: list[NormTeam]) -> tuple[list[str], dict[str, int]]:

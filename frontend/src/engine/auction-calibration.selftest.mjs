@@ -163,6 +163,42 @@ check("describeCalibration explains an unusable one",
         calibrateAuction(full, { teams: 10 }).coverage === null);
 }
 
+// ── full draft beats the roster-derived sample ────────────────────────────
+// The whole point of pulling draft results on import: `candidates` omits
+// players who were drafted and later cut, so it under-samples cheap picks.
+{
+  const cache = {
+    candidates: [                       // survivors only, expensive-skewed
+      { pos: "RB", bid: 60 }, { pos: "WR", bid: 55 },
+    ],
+    draftPicks: [                       // the actual draft
+      { pos: "RB", bid: 60, resolved: true }, { pos: "WR", bid: 55, resolved: true },
+      { pos: "RB", bid: 2, resolved: true },  { pos: "WR", bid: 1, resolved: true },
+      { pos: "TE", bid: 3, resolved: true },
+    ],
+  };
+  const picks = picksFromKeeperImport(cache);
+  check("the full draft is preferred over end-of-season rosters",
+        picks.length === 5, `${picks.length} picks`);
+  check("...including the cheap picks the rosters dropped",
+        picks.some((p) => p.price <= 2));
+
+  check("falls back to candidates when no draft was supplied",
+        picksFromKeeperImport({ candidates: cache.candidates }).length === 2);
+  check("falls back when the draft list is empty",
+        picksFromKeeperImport({ candidates: cache.candidates, draftPicks: [] }).length === 2);
+
+  // A pick ESPN could not name has no position, so it cannot inform a
+  // positional share. Skipped, never bucketed by a guess.
+  const withUnresolved = picksFromKeeperImport({
+    candidates: [],
+    draftPicks: [{ pos: "RB", bid: 10, resolved: true },
+                 { pos: "", bid: 7, resolved: false }],
+  });
+  check("unresolved picks are skipped, not guessed at",
+        withUnresolved.length === 1 && withUnresolved[0].pos === "RB");
+}
+
 console.log();
 if (fails.length) {
   console.error(`auction-calibration.selftest: ${pass} passed, ${fails.length} FAILED — ${fails.join(", ")}`);

@@ -17,11 +17,16 @@ import json
 
 import httpx
 
-from .base import DEFAULT_ROSTER, NormLeague, NormPlayer, NormTeam, make_settings
+from .base import DEFAULT_ROSTER, DraftPickRow, NormLeague, NormPlayer, NormTeam, make_settings
 from .live import LiveDraftState, LivePick, order_picks
 
 READ_HOST = "https://lm-api-reads.fantasy.espn.com"
 VIEWS = ("mSettings", "mTeam", "mRoster", "mDraftDetail")
+
+# Player universe, used ONLY to name the draft picks whose players are no
+# longer on any roster. Returns the same `player` object the rosters carry,
+# so POS and PRO_TEAM below decode it unchanged.
+PLAYER_INFO_VIEW = "kona_player_info"
 
 # Headers ESPN's own web app sends. Some payloads (transaction/activity data in
 # particular) are gated on the client identifying itself as the fantasy web app,
@@ -238,6 +243,97 @@ def _draft_map(data: dict) -> dict[int, dict]:
     return out
 
 
+def parse_draft_picks(data: dict, pos_by_id: dict[int, dict] | None = None) -> list[DraftPickRow]:
+    """EVERY pick of the draft, including players since dropped.
+
+    `parse_teams` walks end-of-season rosters and attaches each player's draft
+    price, so a player who was drafted and later cut never appears. That is the
+    right list for keeper eligibility and the wrong one for learning what the
+    room PAYS: the survivors skew toward the picks that worked, because
+    expensive players get held and cheap busts get dropped.
+
+    `draftDetail.picks` is the draft itself. It identifies players by id only,
+    so name/pos/team are filled from the rosters where the player survived and
+    from `pos_by_id` (a player-info lookup) where they did not. Unresolved
+    picks are returned with `resolved=False` rather than dropped — the caller
+    should know the sample is partial instead of quietly getting a smaller one.
+    """
+    roster_meta: dict[int, dict] = {}
+    for t in data.get("teams", []) or []:
+        owner = _team_name(t)
+        for entry in (t.get("roster", {}) or {}).get("entries", []) or []:
+            pl = (entry.get("playerPoolEntry", {}) or {}).get("player", {}) or {}
+            pid = pl.get("id")
+            if pid is None:
+                continue
+            roster_meta[pid] = {
+                "name": pl.get("fullName", "") or "",
+                "pos": POS.get(pl.get("defaultPositionId"), ""),
+                "team": PRO_TEAM.get(pl.get("proTeamId"), ""),
+                "owner": owner,
+            }
+
+    team_names = {t.get("id"): _team_name(t) for t in (data.get("teams", []) or [])}
+    out: list[DraftPickRow] = []
+    for p in (data.get("draftDetail", {}) or {}).get("picks", []) or []:
+        pid = p.get("playerId")
+        if pid is None:
+            continue
+        meta = roster_meta.get(pid) or (pos_by_id or {}).get(pid) or {}
+        out.append(DraftPickRow(
+            ext_id=str(pid),
+            name=meta.get("name", "") or "",
+            pos=meta.get("pos", "") or "",
+            team=meta.get("team", "") or "",
+            bid=int(p["bidAmount"]) if p.get("bidAmount") is not None else None,
+            round=int(p["roundId"]) if p.get("roundId") is not None else None,
+            # Who drafted him, which is NOT who ended up rostering him.
+            owner=team_names.get(p.get("teamId"), "") or "",
+            resolved=bool(meta.get("pos")),
+        ))
+    return out
+
+
+def unresolved_pick_ids(picks: list[DraftPickRow]) -> list[int]:
+    """Player ids from the draft that no roster could name — the dropped ones."""
+    return [int(p.ext_id) for p in picks if not p.resolved and p.ext_id.isdigit()]
+
+
+def player_info_url(league_id: str, season: int) -> str:
+    """League-scoped player universe. Same `player` object shape the rosters
+    already use (fullName / defaultPositionId / proTeamId), so the existing POS
+    and PRO_TEAM maps apply unchanged — which is the reason to prefer this view
+    over any other player endpoint."""
+    return (f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{league_id}"
+            f"?view={PLAYER_INFO_VIEW}")
+
+
+def player_info_filter(ids: list[int]) -> str:
+    """`x-fantasy-filter` header value selecting just the ids we're missing."""
+    return json.dumps({"players": {"filterIds": {"value": [int(i) for i in ids]}}})
+
+
+def parse_player_info(payload: dict | list) -> dict[int, dict]:
+    """id -> {name, pos, team} from a kona_player_info response.
+
+    Accepts both shapes ESPN returns: `{"players": [{"player": {...}}]}` and a
+    bare list of the same entries.
+    """
+    entries = payload.get("players", []) if isinstance(payload, dict) else (payload or [])
+    out: dict[int, dict] = {}
+    for e in entries or []:
+        pl = (e or {}).get("player", {}) or {}
+        pid = pl.get("id", (e or {}).get("id"))
+        if pid is None:
+            continue
+        out[int(pid)] = {
+            "name": pl.get("fullName", "") or "",
+            "pos": POS.get(pl.get("defaultPositionId"), ""),
+            "team": PRO_TEAM.get(pl.get("proTeamId"), ""),
+        }
+    return out
+
+
 def _topics(data: dict) -> list:
     """Activity topics, from either response shape: the /communication/ endpoint
     returns {"topics": [...]}; the base league endpoint nests them under
@@ -396,12 +492,14 @@ def parse_live_draft(data: dict, my_team: str | None = None) -> LiveDraftState:
     return state
 
 
-def parse_league(data: dict, season: int, my_team: str | None = None) -> NormLeague:
+def parse_league(data: dict, season: int, my_team: str | None = None,
+                 pos_by_id: dict[int, dict] | None = None) -> NormLeague:
     settings, fmt = parse_settings(data)
     teams = parse_teams(data, my_team)
     name = (data.get("settings", {}) or {}).get("name") or f"ESPN League {data.get('id', '')}"
     return NormLeague(provider="espn", ext_id=str(data.get("id", "")), name=name,
-                      season=season, fmt=fmt, settings=settings, teams=teams)
+                      season=season, fmt=fmt, settings=settings, teams=teams,
+                      draft_picks=parse_draft_picks(data, pos_by_id))
 
 
 async def fetch_raw_league(league_id: str, season: int, espn_s2: str | None = None,
@@ -547,7 +645,42 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
                     txn_diag["attempts"].append(f"{label}:{len(topics)} topics total")
                     break
 
-    lg = parse_league(data, season, my_team)
+        # Name the draft picks whose players are no longer on any roster.
+        #
+        # Without this the draft list is only as complete as the rosters, which
+        # is the survivorship problem it exists to fix. Best-effort in exactly
+        # the same sense as the waiver sweep above: a failure here costs
+        # calibration accuracy and must never cost the import, so every error
+        # is recorded and swallowed.
+        draft_diag: dict = {"resolved_from_rosters": 0, "looked_up": 0, "attempts": []}
+        pos_lookup: dict[int, dict] | None = None
+        try:
+            provisional = parse_draft_picks(data)
+            draft_diag["picks"] = len(provisional)
+            draft_diag["resolved_from_rosters"] = sum(1 for p in provisional if p.resolved)
+            missing = unresolved_pick_ids(provisional)
+            if missing:
+                found: dict[int, dict] = {}
+                # Chunked: the filter goes in a header, and a whole draft's
+                # worth of ids in one header is asking to be rejected.
+                for i in range(0, len(missing), 200):
+                    chunk = missing[i:i + 200]
+                    pr = await client.get(
+                        player_info_url(league_id, season),
+                        headers={"x-fantasy-filter": player_info_filter(chunk)})
+                    if pr.status_code != 200:
+                        draft_diag["attempts"].append(f"players:HTTP {pr.status_code}")
+                        break
+                    found.update(parse_player_info(pr.json()))
+                draft_diag["looked_up"] = len(found)
+                if found:
+                    pos_lookup = found
+        except Exception as e:  # noqa: BLE001 — draft completeness is optional
+            draft_diag["attempts"].append(f"players:{type(e).__name__}")
+
+    lg = parse_league(data, season, my_team, pos_lookup)
+    draft_diag["unresolved"] = sum(1 for p in lg.draft_picks if not p.resolved)
+    lg.meta["draft"] = draft_diag
     waivers = all_waivers(data)
     lg.meta["transactions"] = {
         **txn_diag,

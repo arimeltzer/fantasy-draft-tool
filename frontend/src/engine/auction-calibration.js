@@ -179,7 +179,25 @@ export function calibrateAuction(picks, league = {}, P = DEFAULT_AUCTION_PARAMS)
  * churn rather than what the room pays at the draft table.
  */
 export function picksFromKeeperImport(cache) {
-  if (!cache || !Array.isArray(cache.candidates)) return [];
+  if (!cache) return [];
+
+  // PREFER the full draft when the importer supplied one. `candidates` is
+  // built from END-OF-SEASON ROSTERS, so a player who was drafted and later
+  // cut is missing from it entirely — a sample of the picks that worked, which
+  // is exactly the wrong thing to learn prices from. `draftPicks` is the draft
+  // itself, dropped players included.
+  //
+  // Picks whose position could not be resolved are skipped rather than
+  // bucketed somewhere: a price with no position cannot inform a positional
+  // share, and guessing would be worse than the smaller sample.
+  if (Array.isArray(cache.draftPicks) && cache.draftPicks.length) {
+    const full = cache.draftPicks
+      .filter((p) => p && Number.isFinite(p.bid) && p.bid > 0 && POSITIONS.includes(p.pos))
+      .map((p) => ({ pos: p.pos, price: p.bid }));
+    if (full.length) return full;
+  }
+
+  if (!Array.isArray(cache.candidates)) return [];
   return cache.candidates
     .filter((c) => c && Number.isFinite(c.bid) && c.bid > 0 && POSITIONS.includes(c.pos))
     .map((c) => ({ pos: c.pos, price: c.bid }));

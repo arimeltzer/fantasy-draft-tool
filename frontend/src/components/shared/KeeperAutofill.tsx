@@ -86,7 +86,11 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
       setFetchedAt(stamp);
       onCandidates?.(res.candidates);
       // Persist so reopening the planner doesn't refetch from ESPN.
-      onCache?.({ season, fetchedAt: stamp, candidates: res.candidates, waivers: res.waivers });
+      // draftPicks is the FULL prior draft (dropped players included); the
+      // candidate list above is end-of-season rosters. Auction calibration
+      // needs the former, keeper eligibility the latter, so cache both.
+      onCache?.({ season, fetchedAt: stamp, candidates: res.candidates,
+                  draftPicks: res.draft_picks, waivers: res.waivers });
       // Don't pre-select: the recommender below analyzes your roster
       // automatically (nothing committed). This list is only for directly
       // committing specific keepers you already know.

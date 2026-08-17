@@ -97,6 +97,81 @@ def test_matching_nicknames():
     assert got is None, f"ambiguous nickname should not match, got {got}"
 
 
+
+def test_espn_draft_picks():
+    """The draft, not just the survivors.
+
+    parse_teams() walks END-OF-SEASON ROSTERS and hangs each player's draft
+    price off them, so a player who was drafted and later cut disappears. That
+    is correct for keeper eligibility and wrong for learning what the room
+    PAYS: the survivors skew toward the picks that worked, because expensive
+    players get held and cheap busts get dropped. This asserts the draft list
+    keeps the dropped pick, and reports honestly when it cannot name him.
+    """
+    data = {
+        "id": 7,
+        "settings": {"name": "L", "size": 2,
+                     "draftSettings": {"type": "AUCTION", "auctionBudget": 200},
+                     "scoringSettings": {"scoringItems": []},
+                     "rosterSettings": {"lineupSlotCounts": {}}},
+        "teams": [
+            {"id": 1, "name": "Alpha", "roster": {"entries": [
+                {"playerPoolEntry": {"player": {"id": 11, "fullName": "Kept Back",
+                                                "defaultPositionId": 2, "proTeamId": 12}}},
+            ]}},
+            {"id": 2, "name": "Beta", "roster": {"entries": [
+                # Acquired on waivers: on the roster, never drafted.
+                {"playerPoolEntry": {"player": {"id": 99, "fullName": "Waiver Add",
+                                                "defaultPositionId": 3, "proTeamId": 25}}},
+            ]}},
+        ],
+        "draftDetail": {"picks": [
+            {"teamId": 1, "playerId": 11, "bidAmount": 55, "roundId": 1},
+            # Drafted for $3 by Beta and cut mid-season: on NO roster.
+            {"teamId": 2, "playerId": 42, "bidAmount": 3, "roundId": 9},
+        ]},
+    }
+
+    picks = espn.parse_draft_picks(data)
+    assert len(picks) == 2, f"draft list must keep every pick, got {len(picks)}"
+    by_id = {p.ext_id: p for p in picks}
+
+    kept = by_id["11"]
+    assert kept.pos == "RB" and kept.bid == 55 and kept.resolved
+    assert kept.owner == "Alpha"
+
+    dropped = by_id["42"]
+    assert dropped.bid == 3, "the dropped player's PRICE survives in the draft data"
+    assert dropped.pos == "" and not dropped.resolved, "…but ESPN's draft gives no position"
+    assert dropped.owner == "Beta", "owner comes from who drafted him"
+
+    # The waiver add is on a roster but was never drafted -> not a draft pick.
+    assert "99" not in by_id
+
+    # Unresolved ids are reported so the caller can go and look them up.
+    assert espn.unresolved_pick_ids(picks) == [42]
+
+    # With a player-info lookup supplied, the dropped pick is fully named.
+    lookup = espn.parse_player_info({"players": [
+        {"player": {"id": 42, "fullName": "Cut Wideout", "defaultPositionId": 3, "proTeamId": 25}},
+    ]})
+    assert lookup[42]["pos"] == "WR" and lookup[42]["team"] == "SF"
+    resolved = {p.ext_id: p for p in espn.parse_draft_picks(data, lookup)}["42"]
+    assert resolved.pos == "WR" and resolved.name == "Cut Wideout" and resolved.resolved
+
+    # parse_player_info accepts the bare-list shape ESPN also returns.
+    assert espn.parse_player_info([
+        {"player": {"id": 5, "fullName": "X", "defaultPositionId": 1, "proTeamId": 12}}
+    ])[5]["pos"] == "QB"
+
+    # And the whole league carries the draft alongside the rosters.
+    lg = espn.parse_league(data, season=2025, my_team="Alpha", pos_by_id=lookup)
+    assert len(lg.draft_picks) == 2
+    assert len(lg.teams[0].players) == 1, "rosters are unchanged by any of this"
+    priced = [p for p in lg.draft_picks if p.bid]
+    assert sum(p.bid for p in priced) == 58, "full draft spend, including the dropped $3"
+
+
 def test_espn():
     data = {
         "id": 123456,
@@ -594,6 +669,7 @@ def main():
     test_matching(); print("✓ matching")
     test_matching_nicknames(); print("✓ matching nicknames")
     test_espn(); print("✓ espn parse")
+    test_espn_draft_picks(); print("✓ espn draft picks (incl. dropped)")
     test_opponent_team_ids(); print("✓ opponent team ids")
     test_scoring_diagnostics(); print("✓ scoring diagnostics")
     test_keeper_candidates(); print("✓ keeper candidates")

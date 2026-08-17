@@ -659,6 +659,17 @@ async def espn_keeper_candidates(
         "fmt": norm.fmt,
         "season": data.season,
         "candidates": cands,
+        # The FULL prior draft, including players since dropped. `candidates`
+        # above is built from end-of-season rosters, which is right for keeper
+        # eligibility and a survivorship-biased sample of what the room PAID —
+        # the thing auction price calibration learns from. Sent separately so
+        # each question is answered from the data that fits it.
+        "draft_picks": [
+            {"ext_id": p.ext_id, "name": p.name, "pos": p.pos, "team": p.team,
+             "bid": p.bid, "round": p.round, "owner": p.owner, "resolved": p.resolved}
+            for p in norm.draft_picks
+        ],
+        "draft_meta": norm.meta.get("draft", {}),
         "matched": matched,
         "unmatched": len(cands) - matched,
         # How the waiver/FAAB pull went — surfaced in the UI so a league with no

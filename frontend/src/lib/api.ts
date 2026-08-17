@@ -95,10 +95,28 @@ export interface WaiverReport {
   attempts?: string[];      // per-strategy outcome (diagnostics)
 }
 
+/** One pick of a prior draft, whether or not the player is still rostered.
+ *  `pos` is blank when ESPN's player lookup could not name a dropped player. */
+export interface PriorDraftPick {
+  ext_id: string;
+  name: string;
+  pos: string;
+  team: string;
+  bid: number | null;
+  round: number | null;
+  owner: string;
+  resolved: boolean;
+}
+
 export interface KeeperCandidatesResult {
   fmt: "auction" | "snake";
   season: number;
   candidates: KeeperCandidate[];
+  /** The FULL prior draft. `candidates` comes from end-of-season rosters, so
+   *  it silently omits players who were drafted and later cut — fine for
+   *  keeper eligibility, biased for learning what the room pays. */
+  draft_picks?: PriorDraftPick[];
+  draft_meta?: { picks?: number; resolved_from_rosters?: number; looked_up?: number; unresolved?: number; attempts?: string[] };
   matched: number;
   unmatched: number;
   waivers?: WaiverReport;
@@ -126,6 +144,8 @@ export interface KeeperImportCache {
   season: number;
   fetchedAt: string;
   candidates: KeeperCandidate[];
+  /** Full prior draft when the importer could supply it (ESPN). */
+  draftPicks?: PriorDraftPick[];
   waivers?: WaiverReport;
   /** Which importer produced this — the planner reopens the matching panel. */
   source?: "espn" | "yahoo-paste" | "yahoo";
