@@ -5,6 +5,7 @@
 import {
   DEFAULT_SCORING, defaultScoring, resolveScoring, points, projectValue, valueBoard,
   marketAnchor, finalizeBoard, blendExpert, blendExpertAll, EXPERT_BLEND_W,
+  injuryMultiplier, applyInjuryDiscount, INJURY_K, INJURY_GAMES_MISSED,
 } from "./engine-core.js";
 
 let pass = 0, fail = 0;
@@ -171,6 +172,47 @@ ok(rookieRow.risk >= 0.2, "rookie risk is flagged, not treated as a known quanti
     [mk("lowproj", "QB", 100, 500), mk("highproj", "QB", 90, 100)], sc, EXPERT_BLEND_W
   ), league);
   ok(blended.every((p) => typeof p.vbd === "number"), "blended board still carries vbd");
+}
+
+/* ── injury-aware expected games (roadmap 0.3) ────────────────────────────
+   `injuryMultiplier`/`applyInjuryDiscount` mirror
+   data-pipeline/projection_backtest.py:injury_multiplier;
+   `injury_discount_parity.py` asserts the shipped weights stay numerically
+   identical to what was backtested. */
+{
+  eq(injuryMultiplier("QB", null, INJURY_K), 1, "no reported status -> no-op");
+  eq(injuryMultiplier("QB", "note", INJURY_K), 1, "an unrecognized severity -> no-op");
+  ok(injuryMultiplier("QB", "out", INJURY_K) < 1, "a QB reported OUT is discounted");
+  ok(injuryMultiplier("RB", "out", INJURY_K) < 1, "an RB reported OUT is discounted");
+  eq(injuryMultiplier("WR", "out", INJURY_K), 1,
+     "WR stays at k=0 — didn't clear the roadmap 0.3 gate");
+  eq(injuryMultiplier("TE", "out", INJURY_K), 1,
+     "TE stays at k=0 — didn't clear the roadmap 0.3 gate");
+  eq(injuryMultiplier("QB", "out", INJURY_K),
+     (17 - INJURY_GAMES_MISSED.out * INJURY_K.QB) / 17,
+     "exact games-missed arithmetic at the shipped k");
+  ok(injuryMultiplier("QB", "out", INJURY_K) < injuryMultiplier("QB", "doubtful", INJURY_K) &&
+     injuryMultiplier("QB", "doubtful", INJURY_K) < injuryMultiplier("QB", "questionable", INJURY_K),
+     "severities order the same way the games-missed table does");
+
+  const mk = (id, pos, vp, injury) => ({ id, pos, valuePoints: vp, injury });
+  const out = applyInjuryDiscount([
+    mk("q1", "QB", 300, { severity: "out" }),
+    mk("q2", "QB", 200, null),
+    mk("w1", "WR", 100, { severity: "out" }),
+  ], INJURY_K);
+  const by = Object.fromEntries(out.map((p) => [p.id, p.valuePoints]));
+  ok(by.q1 < 300, "a flagged QB's valuePoints drops");
+  eq(by.q2, 200, "an unflagged QB is untouched");
+  eq(by.w1, 100, "a flagged WR is untouched (k=0 for WR)");
+
+  // The whole point: VBD must be derived AFTER the discount, not before.
+  const league = { teams: 10, roster: { QB:1,RB:2,WR:2,TE:1,FLEX:1,K:0,DST:0,BENCH:5 } };
+  const board = finalizeBoard(applyInjuryDiscount(
+    [mk("healthy", "QB", 100, null), mk("hurt", "QB", 100, { severity: "out" })], INJURY_K
+  ), league);
+  ok(board.find((p) => p.id === "healthy").vbd > board.find((p) => p.id === "hurt").vbd,
+     "an equally-projected but injured QB ranks below the healthy one");
 }
 
 console.log(`\nengine-core.selftest: ${pass} passed, ${fail} failed`);

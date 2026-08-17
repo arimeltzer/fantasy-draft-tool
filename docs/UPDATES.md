@@ -6,6 +6,30 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 0.3 shipped: injury discount, for QB/RB only
+- `applyInjuryDiscount()` (`engine-core.js`) converts CURRENT reported injury
+  status into expected games missed and discounts `valuePoints` — a separate
+  post-`projectAll` stage (not baked into `projectPoints`), for the same
+  reason the expert blend lives outside it: baking it in would corrupt
+  `projection_backtest.py`'s own baseline on every future re-run.
+- `injury_probe.py` checked the precondition first: the injuries endpoint is
+  a flat URL (year as a query param, unlike the path-embedded
+  projections/rankings endpoints already verified), and the only caller
+  before this always passed the current season. Result: 6 of 7 tested seasons
+  (2019–2025) were real, dated, distinct-per-season reports.
+- **Ships per position.** Swept `k` (scales games-missed: out=6, doubtful=2,
+  questionable=0.5) 2017–2025. QB and RB clear the kill gate at k=0.5
+  (`spearman_total` +0.0096/+0.0059 without `spearman_pace` moving beyond
+  noise). TE and WR do not — every k>0 degraded their pace correlation before
+  total improved, meaning the discount there would just re-discover
+  `durabilityMult`. Shipped as `INJURY_K = {QB:0.5, RB:0.5, WR:0, TE:0, K:0,
+  DST:0}`. Wired right after `projectAll()`, before the expert blend:
+  `projectAll -> applyInjuryDiscount -> blendExpertAll -> SOS -> marketAnchor
+  -> finalizeBoard`.
+- `injury_discount_parity.py`/`.mjs` hold the shipped JS to the backtested
+  Python, same equality-not-tolerance treatment the other two blends get.
+  Backtest run: `projection-backtest.yml` #32046618135.
+
 ## 2026-08 — Roadmap 0.1 shipped: veterans now use the expert projection too
 - `blendExpertAll()` (`engine-core.js`) blends every veteran's model projection
   with FantasyPros' expert projection, in points space, at a **per-position**

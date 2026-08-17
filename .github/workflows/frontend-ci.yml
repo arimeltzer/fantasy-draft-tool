@@ -69,6 +69,10 @@ jobs:
       - name: Shipped expert-projection blend matches the backtested one
         working-directory: data-pipeline
         run: python expert_blend_parity.py
+      # Same treatment for roadmap 0.3's injury discount.
+      - name: Shipped injury discount matches the backtested one
+        working-directory: data-pipeline
+        run: python injury_discount_parity.py
       # integrations.selftest imports the ESPN adapter, which imports httpx.
       # The job had no pip install at all, so it failed on import before
       # reaching a single assertion.

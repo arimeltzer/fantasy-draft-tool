@@ -207,6 +207,11 @@ export interface LeagueSettings {
    *  position. Set false for a pool carrying no expert projections at all,
    *  or to undo it mid-draft. */
   expertBlend?: boolean;
+  /** Discount the projection for CURRENT reported injury status, expected
+   *  games missed (roadmap 0.3). Defaults to ON. QB/RB are backtested; other
+   *  positions are untouched (INJURY_K), so this only ever affects a QB or
+   *  RB with a reported status — set false to undo it mid-draft. */
+  injuryDiscount?: boolean;
   /** Adjust auction MARKET price forecasts for how this league actually spends,
    *  learned from `keeperImport` prices. Defaults to ON; inert without history.
    *  Never touches dollarValue — see engine/auction-calibration.js. */

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import {
   projectAll, finalizeBoard, marketAnchor, MARKET_ANCHOR_W, resolveScoring,
-  blendExpertAll, EXPERT_BLEND_W,
+  blendExpertAll, EXPERT_BLEND_W, applyInjuryDiscount, INJURY_K,
 } from "@/engine/valuation-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
 import { ApiPlayer, LeagueSettings } from "@/lib/api";
@@ -118,15 +118,25 @@ export function useBoard(
 
     const enginePlayers = dedupePlayers(players).map(toEnginePlayer);
 
-    // Order is load-bearing. The expert blend corrects OUR projection with
-    // FantasyPros' veteran numbers first (roadmap 0.1 — this is the model's
-    // own point estimate, same category as age/durability, not a ranking
-    // correction); schedule strength adjusts that finished projection next;
-    // the market anchor then reads it; and replacement level, VBD and tiers
-    // are derived last, from whatever valuePoints ended up being. Deriving
-    // VBD before an adjustment (as the old SOS path did, then recomputing it
-    // by hand) is how the two copies of the replacement maths drifted apart.
+    // Order is load-bearing. The injury discount corrects OUR projection for
+    // CURRENT reported status first (roadmap 0.3 — same category as
+    // durabilityMult, which it sits right beside); the expert blend corrects
+    // it again with FantasyPros' veteran numbers next (roadmap 0.1 — still
+    // the model's own point estimate, not a ranking correction); schedule
+    // strength adjusts that finished projection next; the market anchor then
+    // reads it; and replacement level, VBD and tiers are derived last, from
+    // whatever valuePoints ended up being. Deriving VBD before an adjustment
+    // (as the old SOS path did, then recomputing it by hand) is how the two
+    // copies of the replacement maths drifted apart.
     let scored = projectAll(enginePlayers, sc);
+
+    // Backtested 2017-2025: at k=0.5, QB and RB clear the roadmap 0.3 kill
+    // gate (spearman_total improves without spearman_pace degrading); TE/WR
+    // did not and stay at k=0 in INJURY_K, i.e. untouched. On by default —
+    // a player with no reported injury status is untouched regardless.
+    if (settings.injuryDiscount !== false) {
+      scored = applyInjuryDiscount(scored, INJURY_K);
+    }
 
     // Backtested 2019-2025: matched-population AND full-board merged Spearman
     // both clear the roadmap 0.1 kill gate at every position, at the weights

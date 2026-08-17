@@ -286,6 +286,57 @@ export function blendExpertAll(players, sc, W = EXPERT_BLEND_W) {
 }
 
 /**
+ * Expected games missed by injury severity, out of a full season — same
+ * shape/units as `durabilityMult` inside `projectPoints()`, but driven by
+ * the CURRENT reported status (`player.injury`) rather than last season's
+ * games played (roadmap 0.3).
+ */
+export const INJURY_GAMES_MISSED = { out: 6, doubtful: 2, questionable: 0.5 };
+
+/**
+ * Per-position weight (K, scales INJURY_GAMES_MISSED) on the injury
+ * discount. Backtested 2017-2025: at k=0.5, QB and RB both clear the kill
+ * gate in docs/ROADMAP.md 0.3 — `spearman_total` improves by more than the
+ * noise floor without `spearman_pace` degrading past it. TE and WR do not:
+ * at every k>0 tested, their pace correlation degraded past the gate before
+ * total improved past it, meaning the discount there was re-discovering
+ * `durabilityMult` rather than adding new information. K/DST were never in
+ * the backtest population (score() only covers QB/RB/TE/WR). Ships PER
+ * POSITION: TE/WR/K/DST stay at k=0 (durabilityMult alone) rather than a
+ * discount that didn't earn its place there.
+ */
+export const INJURY_K = { QB: 0.5, RB: 0.5, WR: 0, TE: 0, K: 0, DST: 0 };
+
+/** Multiplier for one player's injury status. 1 (no-op) if the position's K
+ *  is 0, the player has no reported status, or the status isn't in the
+ *  games-missed table (e.g. severity "note"). */
+export function injuryMultiplier(pos, severity, K = INJURY_K, G = DEFAULT_PARAMS.projectedGames) {
+  const k = K[pos];
+  if (!severity || !k) return 1;
+  const missed = (INJURY_GAMES_MISSED[severity] || 0) * k;
+  return Math.max(0, (G - missed) / G);
+}
+
+/**
+ * Apply the injury discount across a projected board.
+ *
+ * Runs right after `projectAll()`, before the expert blend/SOS/marketAnchor:
+ * this corrects the model's OWN estimate of the player's production, the
+ * same category `durabilityMult` already occupies, so it belongs upstream of
+ * signals blended in from elsewhere. Not tested in combination with the
+ * expert blend (0.1) — the backtest scored it against the pure model alone
+ * — so keeping it first, untangled from that blend, matches what was
+ * measured.
+ */
+export function applyInjuryDiscount(players, K = INJURY_K, G = DEFAULT_PARAMS.projectedGames) {
+  return players.map((p) => {
+    const mult = injuryMultiplier(p.pos, p.injury?.severity, K, G);
+    if (mult === 1) return p;
+    return { ...p, valuePoints: +(p.valuePoints * mult).toFixed(1) };
+  });
+}
+
+/**
  * Rank players by market position: ADP when present, ECR as the fallback
  * (FantasyPros pulls sometimes carry rankings but no ADP — ECR order is a
  * close proxy, and without a fallback every market-rank signal goes dead).
@@ -422,14 +473,16 @@ export function finalizeBoard(scored, league, P = DEFAULT_PARAMS) {
 /**
  * Projection -> VBD in one call.
  *
- * The expert blend and market anchor are OFF here and opted into by the app
- * (see useBoard), not because they are optional in spirit but because order
- * matters: schedule strength has to land on valuePoints before the anchor
- * reads them, so the app composes
- * projectAll -> blendExpertAll -> SOS -> marketAnchor -> finalizeBoard itself.
+ * The injury discount, expert blend and market anchor are OFF here and
+ * opted into by the app (see useBoard), not because they are optional in
+ * spirit but because order matters: schedule strength has to land on
+ * valuePoints before the anchor reads them, so the app composes
+ * projectAll -> applyInjuryDiscount -> blendExpertAll -> SOS -> marketAnchor
+ * -> finalizeBoard itself.
  */
 export function valueBoard(players, league, sc, P = DEFAULT_PARAMS, opts = {}) {
   let scored = projectAll(players, sc, P);
+  if (opts.injuryDiscount) scored = applyInjuryDiscount(scored, opts.injuryK ?? INJURY_K);
   if (opts.expertBlend) scored = blendExpertAll(scored, sc, opts.expertBlendW ?? EXPERT_BLEND_W);
   if (opts.anchor) scored = marketAnchor(scored, opts.anchorW ?? MARKET_ANCHOR_W);
   return finalizeBoard(scored, league, P);

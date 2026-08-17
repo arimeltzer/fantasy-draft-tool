@@ -117,6 +117,18 @@ export declare function blendExpert(modelPts: number, expertPts: number | null |
 export declare function blendExpertAll<T extends { pos: string; rookie?: boolean; valuePoints: number; proj?: StatLine }>(
   players: T[], sc: Scoring, W?: Record<string, number>,
 ): T[];
+/** Expected games missed by injury severity, out of a full season (roadmap 0.3). */
+export declare const INJURY_GAMES_MISSED: Record<string, number>;
+/** Per-position K (scales INJURY_GAMES_MISSED). QB/RB are backtested at 0.5;
+ *  WR/TE/K/DST stay at 0 (durabilityMult alone — didn't clear the gate). */
+export declare const INJURY_K: Record<string, number>;
+export declare function injuryMultiplier(
+  pos: string, severity: string | null | undefined, K?: Record<string, number>, G?: number,
+): number;
+/** Apply injuryMultiplier() across a projected board, keyed by player.injury.severity. */
+export declare function applyInjuryDiscount<T extends { pos: string; valuePoints: number; injury?: { severity: string } | null }>(
+  players: T[], K?: Record<string, number>, G?: number,
+): T[];
 export declare function rankByAdp(players: { id: number | string; adp?: number | null; ecr?: number | null }[]): Record<number, number>;
 export declare function replacementRanks(league: League, P?: EngineParams): Record<string, number>;
 /** Default weight on OUR model when anchoring to the market (0.3). */
@@ -138,5 +150,9 @@ export declare function finalizeBoard(
 ): BoardPlayer[];
 export declare function valueBoard(
   players: Player[], league: League, sc: Scoring, P?: EngineParams,
-  opts?: { anchor?: boolean; anchorW?: number; expertBlend?: boolean; expertBlendW?: Record<string, number> },
+  opts?: {
+    anchor?: boolean; anchorW?: number;
+    expertBlend?: boolean; expertBlendW?: Record<string, number>;
+    injuryDiscount?: boolean; injuryK?: Record<string, number>;
+  },
 ): BoardPlayer[];

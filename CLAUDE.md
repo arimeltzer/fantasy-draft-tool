@@ -94,6 +94,8 @@ cd data-pipeline && python name_parity.py
 cd data-pipeline && python anchor_parity.py
 # the SHIPPED expert-projection blend must equal the Python that was backtested
 cd data-pipeline && python expert_blend_parity.py
+# the SHIPPED injury discount must equal the Python that was backtested
+cd data-pipeline && python injury_discount_parity.py
 # projection model: port parity, then backtest (both pull from nflverse)
 cd data-pipeline && python projection_parity.py && python projection_backtest.py
 # SOS tuning (pulls 10 seasons from nflverse)
@@ -199,8 +201,8 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   (0.2–0.5) sit on a flat curve and a single 0.3 is within 0.001 of the best
   everywhere. Four constants fit on their own evaluation data would generalize
   worse. `settings.marketAnchor` / `marketAnchorWeight` override it.
-- **Pipeline order is load-bearing**: `projectAll` → `blendExpertAll` → SOS →
-  `marketAnchor` → `finalizeBoard`. VBD/tiers/replacement must be derived LAST,
+- **Pipeline order is load-bearing**: `projectAll` → `applyInjuryDiscount` →
+  `blendExpertAll` → SOS → `marketAnchor` → `finalizeBoard`. VBD/tiers/replacement must be derived LAST,
   from whatever valuePoints ended up as. useBoard previously had its own
   duplicate copy of the replacement maths (with its own FLEX_SHARE) used only
   on the SOS path; that is gone.
@@ -237,6 +239,47 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   numerically identical to `blend_expert`** — same equality-not-tolerance
   treatment as `anchor_parity.py`, 1,080+ values over a coverage × weight
   sweep plus the rookie-skip and zero-as-no-opinion edge cases.
+
+## Injury-aware expected games (shipped for QB/RB only; roadmap 0.3)
+
+- `InjuryBadge` used to report status without touching valuation at all.
+  `engine-core.js applyInjuryDiscount()` converts CURRENT reported status
+  (`player.injury.severity`) into expected games missed and discounts
+  `valuePoints` accordingly — same shape/units as `durabilityMult` inside
+  `projectPoints()` (which reacts to LAST season's games played; this reacts
+  to what's reported for THIS one), but built as a separate post-`projectAll`
+  stage rather than baked into `projectPoints`/`project_points()` — baking it
+  in would corrupt `projection_backtest.py`'s own `base_projs`/`shipped_projs`
+  baseline on every future re-run, the same reason the expert blend lives
+  outside `projectPoints()` too.
+- **Precondition checked first, not assumed**: `injury_probe.py` — the
+  injuries endpoint is a flat URL (year as a query param, unlike the
+  path-embedded projections/rankings endpoints already verified genuine), and
+  the only caller before this always passed the current season, so a
+  historical `year` had never been exercised. Result: 6 of 7 tested seasons
+  (2019–2025) were a real, dated, distinct-per-season report — precondition
+  cleared. Also routed `fetch_injuries()` through the existing `_get_json` 429
+  backoff for the same reason `fetch_projections` needed it.
+- **Ships per position, not all-or-nothing.** Swept `k` (scales
+  `INJURY_GAMES_MISSED`: out=6, doubtful=2, questionable=0.5 games) 2017–2025.
+  QB and RB clear the kill gate at k=0.5 (`spearman_total` improves >0.002
+  without `spearman_pace` degrading >0.002). TE and WR do not — every k>0
+  tried degraded their pace correlation past the gate before total improved
+  past it, meaning the discount there would be re-discovering
+  `durabilityMult` rather than adding information. Shipped as
+  `INJURY_K = { QB: 0.5, RB: 0.5, WR: 0, TE: 0, K: 0, DST: 0 }`; K/DST were
+  never in the backtest population at all.
+- **Pipeline placement**: right after `projectAll()`, BEFORE the expert blend
+  — this corrects the model's own estimate of the player's production, the
+  same category durability already occupies, so it belongs upstream of
+  signals blended in from elsewhere. Not tested in combination with the
+  expert blend (the backtest scored it against the pure model alone), so
+  keeping it untangled from that blend matches what was measured.
+- `settings.injuryDiscount` overrides it off (mirrors `settings.expertBlend`).
+- **`data-pipeline/injury_discount_parity.py` asserts the shipped JS is
+  numerically identical to `injury_multiplier`** — same equality-not-tolerance
+  treatment as the other two parity checks, 1,350+ values over a coverage × K
+  sweep plus the no-severity/unrecognized-severity/floor-at-zero edge cases.
 
 ## Auction calibration (shipped, on by default, inert without history)
 

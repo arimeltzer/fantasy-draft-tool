@@ -138,8 +138,30 @@ repeated runs elsewhere in this file — so smaller moves in either direction
 don't count. Ships **per position**: a position that fails is left on
 `durabilityMult` alone rather than given a discount that didn't earn it there.
 
-> **Prompt** — "Do roadmap step 0.3: make injury status affect the projection
-> via expected games missed. Check it against the kill gate."
+**RESULT — DONE, shipped for QB/RB only.** Swept 2017–2025
+(`projection-backtest.yml` #32046618135), k scales `INJURY_GAMES_MISSED`
+(out=6, doubtful=2, questionable=0.5 games):
+
+| pos | best k | total (vs k=0) | pace (vs k=0) | verdict |
+|---|---|---|---|---|
+| QB | 0.5 | 0.7046 vs 0.6950 (better) | 0.6560 vs 0.6572 (held) | **PASS** |
+| RB | 0.5 | 0.6975 vs 0.6916 (better) | 0.7212 vs 0.7220 (held) | **PASS** |
+| TE | — | 0.7113 vs 0.7113 (no k cleared) | 0.7172 vs 0.7172 | FAIL |
+| WR | — | 0.7380 vs 0.7380 (no k cleared) | 0.7589 vs 0.7589 | FAIL |
+
+At every k>0 tried, TE and WR's `spearman_pace` degraded past the 0.002 gate
+before `spearman_total` improved past it — the discount there would have been
+re-discovering `durabilityMult`, exactly the failure mode the gate was
+written to catch. QB and RB clear both halves cleanly at k=0.5. Shipped as
+`INJURY_K = { QB: 0.5, RB: 0.5, WR: 0, TE: 0, K: 0, DST: 0 }` in
+`engine-core.js`, applied right after `projectAll()` (same pipeline stage
+`durabilityMult` already occupies), before the expert blend / SOS / anchor.
+`injury_discount_parity.py` holds the shipped JS to the backtested Python.
+
+Precondition itself is worth restating: this only worked because
+`injury_probe.py` was run FIRST, given the injuries endpoint's URL shape
+(flat, year as a query param) gave real reason to suspect it might not serve
+real historical data the way projections/rankings do. It did.
 
 ---
 
@@ -276,15 +298,17 @@ decided after the draft. Everything here reuses the Phase 2 objective.
 
 | Phase | Effort | Payoff | Risk |
 |---|---|---|---|
-| 0 | Days | Moderate, near-certain | Low — 0.1 and 0.2 are done; see their results above |
+| 0 | Days | Moderate, near-certain | Low — 0.1, 0.2 and 0.3 are all done; see their results above |
 | 1 | Weeks | Large | Moderate — could still fail its gate like v2 |
 | 2 | Weeks | Largest conceptual | **Highest** — calibration is hard and unglamorous |
 | 3 | Weeks | Large, format-specific | Moderate — depends entirely on Phase 2 |
 | 4 | Ongoing | Large over a season | Low technically, wide in scope |
 
-**Do Phase 0 first regardless.** 0.1 and 0.2 are done (0.3 — injury-aware
-expected games — is the one step left); it was cheap and 0.1 shipped a real
-gain (+0.02 to +0.04 Spearman merged, per position).
+**Do Phase 0 first regardless.** All three steps are done. It was cheap: 0.1
+shipped a real gain (+0.02 to +0.04 Spearman merged, per position), 0.2
+removed ~100 numbers nobody could show still earned their place, and 0.3
+shipped a real, positionally-honest gain for QB/RB while correctly declining
+to ship one for TE/WR.
 
 **If time is short before a draft**, do Phase 0, then 3.1 (snake) or 3.3/3.4
 (auction) using the *current* projection. Survival probability and budget paths
