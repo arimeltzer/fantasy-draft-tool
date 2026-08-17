@@ -78,10 +78,17 @@ V2_K = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0]
 
 try:
     from adp_probe import fetch_adp          # needs FANTASYPROS_API_KEY
+    from fantasypros import fetch_projections
     from fantasypros import norm as fp_norm
 except Exception:                             # probe/key absent -> ADP skipped
     fetch_adp = None
+    fetch_projections = None
     fp_norm = None
+
+# Blend weights on OUR model when mixing in the experts' projection (0.1).
+EXPERT_W = [round(x / 10, 1) for x in range(0, 11)]
+# The weight the app actually ships (engine-core.js MARKET_ANCHOR_W).
+MARKET_ANCHOR_W = 0.3
 
 FANTASY_POS = {"QB", "RB", "WR", "TE"}
 PPR = 0.5
@@ -289,6 +296,31 @@ def _partial_spearman(x, y, z):
     return (rxy - rxz * ryz) / denom
 
 
+
+def blend_expert(model_pts, expert_pts, w):
+    """Blend our projection with the experts', in POINTS space.
+
+    Deliberately NOT rank transfer. `marketAnchor` already borrows an ORDER
+    from the market, and re-borrowing an order from a second market source
+    would mostly re-learn what anchoring already knows. What an expert
+    projection carries that a rank does not is MAGNITUDE — how much better, not
+    merely better — and that only survives a blend done on the numbers.
+
+    Both sides are scored through the same `points()` with the same scoring, so
+    they are already on one scale; no rescaling is applied, because rescaling
+    the experts onto our mean would throw away the part of their estimate most
+    likely to be better than ours.
+
+    w = 1.0 is our model; w = 0.0 is the experts. Players the experts do not
+    cover keep our projection untouched — the same coverage rule the market
+    anchor uses, and for the same reason.
+    """
+    return [
+        w * m + (1 - w) * e if (e is not None and e > 0) else m
+        for m, e in zip(model_pts, expert_pts)
+    ]
+
+
 def disagreement_signal(pop, model_pts, adp_by_player, sc):
     """Does the model know anything the market does not?
 
@@ -361,6 +393,8 @@ def main():
     ap.add_argument("--out", default="./backtest_results")
     ap.add_argument("--first", type=int, default=2017, help="first TEST season")
     ap.add_argument("--last", type=int, default=2025, help="last TEST season")
+    ap.add_argument("--no-expert", action="store_true",
+                    help="skip the expert-projection blend (roadmap 0.1)")
     ap.add_argument("--no-adp", action="store_true",
                     help="skip the ADP baseline even when a FantasyPros key is present")
     args = ap.parse_args()
@@ -386,6 +420,7 @@ def main():
     combos = [dict(zip(GRID, v)) for v in product(*GRID.values())]
 
     use_adp = bool(fetch_adp) and not args.no_adp and os.getenv("FANTASYPROS_API_KEY")
+    use_expert = bool(fetch_projections) and not args.no_expert and os.getenv("FANTASYPROS_API_KEY")
     if not use_adp:
         print("\n! ADP baseline SKIPPED (no FANTASYPROS_API_KEY or --no-adp). "
               "The model-vs-market comparison is the point; run this where the key lives.")
@@ -409,6 +444,25 @@ def main():
         # BOTH can rank. ADP covers different (fewer) players than nflverse
         # history does, so scoring each on its own population would compare
         # two different exams and call it a result.
+        # The experts' own projection for this season, matched onto our players
+        # the same way ADP is. `projection_probe.py` established these are real
+        # per-season preseason numbers rather than hindsight; without that check
+        # this would be the most flattering and most worthless input available.
+        expert_by_player = {}
+        if use_expert:
+            try:
+                ep = fetch_projections(year, scoring="HALF")
+            except Exception as e:  # noqa: BLE001 — a dead season is not fatal
+                print(f"  ! expert projections {year}: {type(e).__name__}: {e}")
+                ep = {}
+            for p in players:
+                line = ep.get((fp_norm(p["name"]), p["pos"]))
+                if line:
+                    v = _points(line, sc)
+                    if v > 0:
+                        expert_by_player[p["player_id"]] = v
+            print(f"  {year}: {len(expert_by_player)} players with an expert projection")
+
         adp_by_player = {}
         if use_adp:
             adp = fetch_adp(year, rank_type="ADP") or fetch_adp(year, rank_type="DRAFT")
@@ -465,6 +519,27 @@ def main():
                         per_year.append({"year": year, "population": pop_name,
                                          "model": "blend", "variant": f"w{w}",
                                          "blend_w": w, "pos": pos, **m})
+
+                # ── roadmap 0.1: OUR model (x) the EXPERTS' projection ────
+                # Two numbers are reported per weight. `expert` is the blend on
+                # its own, which answers "is this a better projection". `+mkt`
+                # is that blend then market-anchored exactly as the app ships,
+                # which answers the only question that matters — whether the
+                # BOARD improves. v2 taught the difference: it moved the first
+                # and not the second, and was correctly not shipped.
+                if expert_by_player:
+                    ex = [expert_by_player.get(p["player_id"]) for p in pop]
+                    for w in EXPERT_W:
+                        eb = blend_expert(base_projs, ex, w)
+                        for pos, m in score(pop, eb, sc).items():
+                            per_year.append({"year": year, "population": pop_name,
+                                             "model": "expert", "variant": f"w{w}",
+                                             "blend_w": w, "pos": pos, **m})
+                        merged = blend_with_market(pop, eb, adp_by_player, MARKET_ANCHOR_W)
+                        for pos, m in score(pop, merged, sc).items():
+                            per_year.append({"year": year, "population": pop_name,
+                                             "model": "expert_mkt", "variant": f"w{w}",
+                                             "blend_w": w, "pos": pos, **m})
 
                 if pop_name == "all":
                     for pos, m in disagreement_signal(pop, base_projs, adp_by_player, sc).items():
@@ -571,6 +646,58 @@ def main():
                     print(f"      w={r.blend_w:<4} {r.spearman_total:.4f}"
                           f"  (vs {ref_label} {r.spearman_total - ref_s:+.4f})"
                           f"  top24 {r.hit24_total:.3f}{star}")
+
+    # ── roadmap 0.1: the experts' projection, judged against its gate ─────
+    ex_all = agg[(agg["population"] == "all") & (agg["model"] == "expert")]
+    ex_mkt = agg[(agg["population"] == "all") & (agg["model"] == "expert_mkt")]
+    ex_matched = agg[(agg["population"] == "matched_adp") & (agg["model"] == "expert")]
+    if len(ex_all):
+        # The bar, fixed in docs/ROADMAP.md BEFORE this was run.
+        GATE_MATCHED = {"QB": 0.497, "RB": 0.551, "TE": 0.472, "WR": 0.594}
+        GATE_MERGED = {"QB": 0.7554, "RB": 0.7364, "TE": 0.7240, "WR": 0.7564}
+
+        print("\n=== ROADMAP 0.1 — OUR MODEL (x) THE EXPERTS' PROJECTION ===")
+        print("w = weight on OUR model. w=1.0 is today's board; w=0.0 is the experts.")
+        print("`solo` = the blend alone. `merged` = that blend market-anchored at "
+              f"w={MARKET_ANCHOR_W}, i.e. what would actually ship.")
+        verdict = {}
+        for posn in sorted(ex_all["pos"].unique()):
+            sa = ex_all[ex_all["pos"] == posn].sort_values("blend_w")
+            sm = ex_mkt[ex_mkt["pos"] == posn].sort_values("blend_w")
+            base_solo = sa[sa.blend_w == 1.0].iloc[0].spearman_total if len(sa[sa.blend_w == 1.0]) else float("nan")
+            print(f"\n  {posn}   (today: solo {base_solo:.4f}, merged {GATE_MERGED.get(posn, float('nan')):.4f})")
+            for _, r in sa.iterrows():
+                m = sm[sm.blend_w == r.blend_w]
+                mv = m.iloc[0].spearman_total if len(m) else float("nan")
+                print(f"    w={r.blend_w:<4} solo {r.spearman_total:.4f}   merged {mv:.4f}")
+            best = sm.loc[sm.spearman_total.idxmax()] if len(sm) else None
+            mt = ex_matched[ex_matched["pos"] == posn]
+            best_matched = mt.spearman_total.max() if len(mt) else float("nan")
+            verdict[posn] = {
+                "best_merged": float(best.spearman_total) if best is not None else float("nan"),
+                "best_merged_w": float(best.blend_w) if best is not None else float("nan"),
+                "best_matched": float(best_matched),
+            }
+
+        print("\n  --- KILL GATE (set in docs/ROADMAP.md before this ran) ---")
+        pass_matched = pass_merged = True
+        for posn in sorted(verdict):
+            v = verdict[posn]
+            gm, gg = GATE_MATCHED.get(posn), GATE_MERGED.get(posn)
+            okm = v["best_matched"] > gm if gm else False
+            okg = v["best_merged"] > gg if gg else False
+            pass_matched &= okm
+            pass_merged &= okg
+            print(f"    {posn}  matched {v['best_matched']:.4f} vs {gm:.4f} "
+                  f"{'PASS' if okm else 'FAIL'}   |   merged {v['best_merged']:.4f} "
+                  f"vs {gg:.4f} {'PASS' if okg else 'FAIL'} (at w={v['best_merged_w']})")
+        print(f"\n  matched-population gate: {'PASS' if pass_matched else 'FAIL'}")
+        print(f"  full-board merged gate : {'PASS' if pass_merged else 'FAIL'}")
+        if pass_matched and pass_merged:
+            print("  -> SHIP IT. Both halves of the gate cleared.")
+        else:
+            print("  -> DO NOT SHIP on these numbers. The gate was set in advance")
+            print("     precisely so this decision is not made after seeing them.")
 
     # ── v2: did shrinking touchdowns help, and did it help the BLEND? ─────
     v2a = agg[(agg["population"] == "all") & (agg["model"] == "v2")]

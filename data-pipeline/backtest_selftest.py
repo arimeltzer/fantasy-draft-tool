@@ -157,6 +157,32 @@ check("stabilize_player does not mutate the caller's line", orig["rushTD"] == 20
 check("stabilize_player handles a missing prior season", out["last2"] is None)
 check("stabilize_player rewrites the season it does have", out["last"]["rushTD"] < 20.0)
 
+
+# ── blend_expert: our projection x the experts' ────────────────────────────
+# Roadmap 0.1. The coverage rule is the one that matters: a player the experts
+# do not cover must keep OUR number untouched, or the blend quietly rewrites
+# half the board toward zero.
+print("\nblend_expert (roadmap 0.1)")
+from projection_backtest import blend_expert   # noqa: E402
+
+model = [100.0, 200.0, 300.0, 400.0]
+expert = [200.0, None, 0.0, 500.0]   # covered, absent, zero-as-absent, covered
+
+check("w=1.0 is our model, exactly", blend_expert(model, expert, 1.0) == model)
+check("w=0.0 takes the experts where they have an opinion",
+      blend_expert(model, expert, 0.0)[0] == 200.0)
+check("...and keeps ours where they do not",
+      blend_expert(model, expert, 0.0)[1] == 200.0)
+check("a zero expert projection counts as no opinion, not as zero points",
+      blend_expert(model, expert, 0.0)[2] == 300.0)
+half = blend_expert(model, expert, 0.5)
+check("w=0.5 is the midpoint on covered players", half[0] == 150.0, str(half[0]))
+check("...and unchanged on uncovered ones", half[1] == 200.0 and half[2] == 300.0)
+check("magnitude is preserved, not just order",
+      blend_expert([100.0], [900.0], 0.5)[0] == 500.0,
+      "a rank transfer would have returned 100.0 here")
+check("empty input is handled", blend_expert([], [], 0.5) == [])
+
 print()
 if FAILS:
     raise SystemExit(f"backtest selftest: {len(FAILS)} FAILED — {', '.join(FAILS)}")
