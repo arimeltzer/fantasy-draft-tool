@@ -1,9 +1,10 @@
 """
 projection_opportunity.py — two-stage projection: volume x shrunk efficiency
 ==============================================================================
-Roadmap Phase 1, steps 1.1/1.2. NOT shipped. An experiment
-`projection_backtest.py` scores against the real thing, same status
-`projection_v2.py` had before its gate killed it.
+Roadmap Phase 1, steps 1.1/1.2. SHIPPED FOR TE ONLY — see the kill gate
+result at the bottom of this docstring. QB/RB/WR were also swept and did not
+clear the gate once measured against the ACTUAL live board (injury discount +
+expert blend already shipped there); they stay on the points-pace model.
 
 THE PROBLEM IT TARGETS
 The shipped model reads last season's fantasy POINTS and blends them forward.
@@ -49,10 +50,27 @@ than being forced through a stage that has nothing to work with.
 
 NO LOOKAHEAD: `league_efficiency()` pools seasons strictly before the test
 year, same discipline `projection_v2.league_rates()` already follows.
+
+RESULT (docs/ROADMAP.md Phase 1). Swept 2017-2025, measured two ways:
+against the pre-Phase-0 pure model (every other gate in this file's own
+sweeps) AND against what is actually live (injury discount + expert blend +
+anchor, at their shipped weights) — the question that decides what ships.
+QB and WR passed the first measure and failed the second: their apparent
+gain was mostly signal the expert blend (weighted 0.3/0.4 there, the two
+highest) was already extracting, not something new. RB failed both,
+landing within 0.0003 of v2's already-rejected RB result both times. TE
+passed both — lowest expert-blend trust (0.2), no injury discount at all,
+genuine room left. Shipped as `OPPORTUNITY_K = {"TE": 2.0}`, everything else
+0 (see `frontend/src/engine/projection-opportunity.js`).
+
+`_round1` (not plain `round()`) on the final `proj`, matching `toFixed(1)`
+exactly — this function is now parity-tested
+(`data-pipeline/opportunity_parity.py`) the same way `blend_expert`/
+`injury_multiplier` are, so the rounding convention has to match theirs.
 """
 from __future__ import annotations
 
-from projection_model import age_multiplier, durability_mult, points, project_points
+from projection_model import _round1, age_multiplier, durability_mult, points, project_points
 
 # Which season-line fields sum to "opportunities" for a position. Positions
 # absent here (K, DST) have no clean volume concept and fall back untouched.
@@ -62,6 +80,12 @@ OPPORTUNITY_FIELDS = {
     "WR": ("targets",),
     "TE": ("targets",),
 }
+
+# Shipped efficiency-shrinkage strength, per position — must match
+# OPPORTUNITY_K in frontend/src/engine/projection-opportunity.js exactly.
+# Only TE cleared the Phase 1 kill gate against the live board; everyone
+# else is 0 (inert -- always falls back to the shipped points-pace model).
+OPPORTUNITY_K = {"QB": 0.0, "RB": 0.0, "WR": 0.0, "TE": 2.0, "K": 0.0, "DST": 0.0}
 
 
 def opportunity(line: dict | None, pos: str) -> float:
@@ -178,7 +202,11 @@ def project_points_opportunity(player: dict, sc: dict, rates: dict, k: float, P:
     n0 = k * r["mean_opp"]
     shrunk_rate = (own_pts + n0 * r["rate"]) / (own_opp + n0)
     age_mult = age_multiplier(pos, player.get("age"), P)
-    proj = round(vol * shrunk_rate * age_mult, 1)
+    # _round1, not plain round() — matches JS toFixed(1) exactly (half away
+    # from zero on the true binary value), the same fix documented on
+    # projection_model._round1 itself. Only `proj` needs this: it is the
+    # only field the parity test (and the app) actually consumes.
+    proj = _round1(vol * shrunk_rate * age_mult)
     return {
         "proj": proj, "volume": round(vol, 1), "efficiency": round(shrunk_rate, 4),
         "own_efficiency": round(own_pts / own_opp, 4), "ageMult": age_mult,

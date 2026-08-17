@@ -3,6 +3,9 @@ export interface StatLine {
   rushYd?: number; rushTD?: number;
   rec?: number; recYd?: number; recTD?: number;
   fumbles?: number; pts?: number; gp?: number;
+  /** Opportunity counts (roadmap 1.1/1.2) — not worth points on their own,
+   *  carried for the opportunity model (projection-opportunity.js). */
+  carries?: number; targets?: number; attempts?: number;
 }
 
 export interface Player {

@@ -212,6 +212,13 @@ export interface LeagueSettings {
    *  positions are untouched (INJURY_K), so this only ever affects a QB or
    *  RB with a reported status — set false to undo it mid-draft. */
   injuryDiscount?: boolean;
+  /** Project TEs from volume x shrunk efficiency instead of the points-pace
+   *  blend (roadmap Phase 1). Defaults to ON. TE is the only position
+   *  shipped (OPPORTUNITY_K) — QB/RB/WR were swept and did not clear the
+   *  kill gate against the live board, so they're always untouched. A TE
+   *  with no usable volume data (a rookie) falls back to the points-pace
+   *  model regardless — set false to undo the whole thing mid-draft. */
+  opportunityModel?: boolean;
   /** Adjust auction MARKET price forecasts for how this league actually spends,
    *  learned from `keeperImport` prices. Defaults to ON; inert without history.
    *  Never touches dollarValue — see engine/auction-calibration.js. */

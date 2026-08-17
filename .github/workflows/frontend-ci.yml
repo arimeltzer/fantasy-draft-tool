@@ -73,6 +73,10 @@ jobs:
       - name: Shipped injury discount matches the backtested one
         working-directory: data-pipeline
         run: python injury_discount_parity.py
+      # Same treatment for roadmap Phase 1's opportunity model (TE only).
+      - name: Shipped opportunity model matches the backtested one
+        working-directory: data-pipeline
+        run: python opportunity_parity.py
       # integrations.selftest imports the ESPN adapter, which imports httpx.
       # The job had no pip install at all, so it failed on import before
       # reaching a single assertion.

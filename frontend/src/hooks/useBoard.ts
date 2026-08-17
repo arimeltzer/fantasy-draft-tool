@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import {
   projectAll, finalizeBoard, marketAnchor, MARKET_ANCHOR_W, resolveScoring,
   blendExpertAll, EXPERT_BLEND_W, applyInjuryDiscount, INJURY_K,
+  applyOpportunityModel, OPPORTUNITY_K,
 } from "@/engine/valuation-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
 import { ApiPlayer, LeagueSettings } from "@/lib/api";
@@ -118,17 +119,30 @@ export function useBoard(
 
     const enginePlayers = dedupePlayers(players).map(toEnginePlayer);
 
-    // Order is load-bearing. The injury discount corrects OUR projection for
-    // CURRENT reported status first (roadmap 0.3 — same category as
-    // durabilityMult, which it sits right beside); the expert blend corrects
-    // it again with FantasyPros' veteran numbers next (roadmap 0.1 — still
-    // the model's own point estimate, not a ranking correction); schedule
-    // strength adjusts that finished projection next; the market anchor then
-    // reads it; and replacement level, VBD and tiers are derived last, from
-    // whatever valuePoints ended up being. Deriving VBD before an adjustment
-    // (as the old SOS path did, then recomputing it by hand) is how the two
-    // copies of the replacement maths drifted apart.
+    // Order is load-bearing. The opportunity model (TE only) REPLACES OUR
+    // projection first (roadmap Phase 1 — volume x shrunk efficiency instead
+    // of the points-pace blend); the injury discount corrects whatever that
+    // left with for CURRENT reported status next (roadmap 0.3 — same
+    // category as durabilityMult, which it sits right beside); the expert
+    // blend corrects it again with FantasyPros' veteran numbers next
+    // (roadmap 0.1 — still the model's own point estimate, not a ranking
+    // correction); schedule strength adjusts that finished projection next;
+    // the market anchor then reads it; and replacement level, VBD and tiers
+    // are derived last, from whatever valuePoints ended up being. Deriving
+    // VBD before an adjustment (as the old SOS path did, then recomputing it
+    // by hand) is how the two copies of the replacement maths drifted apart.
     let scored = projectAll(enginePlayers, sc);
+
+    // Backtested 2017-2025 against the ACTUAL live board (injury discount +
+    // expert blend already applied), not just the bare model — only TE
+    // cleared the Phase 1 kill gate there; QB/WR's apparent gain against the
+    // bare model turned out to be signal the expert blend was already
+    // extracting, and RB never had anything. A player with no usable volume
+    // (a rookie, or any non-TE position at OPPORTUNITY_K=0) passes through
+    // with whatever projectAll() already gave them.
+    if (settings.opportunityModel !== false) {
+      scored = applyOpportunityModel(scored, sc, OPPORTUNITY_K);
+    }
 
     // Backtested 2017-2025: at k=0.5, QB and RB clear the roadmap 0.3 kill
     // gate (spearman_total improves without spearman_pace degrading); TE/WR

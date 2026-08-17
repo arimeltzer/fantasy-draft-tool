@@ -46,6 +46,16 @@ COMP = {
     "receptions": "rec", "receiving_yards": "recYd", "receiving_tds": "recTD",
 }
 
+# Opportunity counts (roadmap 1.1) -- not worth points on their own
+# (fantasy_points() ignores them), carried alongside COMP for the opportunity
+# model (projection_opportunity.py / engine's projection-opportunity.js,
+# shipped for TE only). No schema change needed: `last`/`last2` are JSONB,
+# so these just ride along as extra keys, same as projection_backtest.py's
+# own VOLUME dict already does for the backtest's copy of this data.
+VOLUME = {
+    "carries": "carries", "targets": "targets", "attempts": "attempts",
+}
+
 # ---------- helpers ----------
 def _pd(df):
     """nflreadpy returns Polars; give back a pandas frame."""
@@ -119,31 +129,34 @@ def build_schedule(upcoming):
     return out
 
 def _agg_season(df):
-    """{player_id: {components + fumbles + gp}} — season totals for one completed season."""
+    """{player_id: {components + volume + fumbles + gp}} — season totals for one completed season."""
     if df is None:
         return {}
     have = [c for c in COMP if c in df.columns]
+    have_vol = [c for c in VOLUME if c in df.columns]
     agg = (df.groupby(["player_id", "player_display_name", "position"])
            .agg(gp=("week", "nunique"),
                 fum=("rushing_fumbles_lost", "sum"),
-                **{c: (c, "sum") for c in have})
+                **{c: (c, "sum") for c in have}, **{c: (c, "sum") for c in have_vol})
            .reset_index())
     out = {}
     for g in agg.itertuples():
         gp = int(g.gp) or 1
         d = {COMP[c]: round(float(getattr(g, c)), 1) for c in have}
+        d.update({VOLUME[c]: round(float(getattr(g, c)), 1) for c in have_vol})
         d["fumbles"] = round(float(getattr(g, "fum", 0) or 0), 1)
         d["gp"] = gp
         out[g.player_id] = d
     return out
 
 def build_players_base(df_last, df_last2, upcoming, baseline_proj):
-    """Engine rows: name, pos, team(upcoming), age, last{components+gp}, last2{...}, proj{} or baseline."""
+    """Engine rows: name, pos, team(upcoming), age, last{components+volume+gp}, last2{...}, proj{} or baseline."""
     have = [c for c in COMP if c in df_last.columns]
+    have_vol = [c for c in VOLUME if c in df_last.columns]
     agg = (df_last.groupby(["player_id", "player_display_name", "position"])
            .agg(gp=("week", "nunique"),
                 fum=("rushing_fumbles_lost", "sum"),
-                **{c: (c, "sum") for c in have})
+                **{c: (c, "sum") for c in have}, **{c: (c, "sum") for c in have_vol})
            .reset_index())
     last2_by_id = _agg_season(df_last2)   # 2-years-ago season, keyed by player_id
 
@@ -168,6 +181,7 @@ def build_players_base(df_last, df_last2, upcoming, baseline_proj):
     for g in agg.itertuples():
         gp = int(g.gp) or 1
         last = {COMP[c]: round(float(getattr(g, c)), 1) for c in have}
+        last.update({VOLUME[c]: round(float(getattr(g, c)), 1) for c in have_vol})
         last["fumbles"] = round(float(getattr(g, "fum", 0) or 0), 1)
         last["gp"] = gp
         proj = None

@@ -36,6 +36,8 @@ frontend/           React + TS + Vite + Tailwind (light design system)
                       snake-engine.js (pickScore; per-slot configs COLLAPSED,
                       see roadmap 0.2) ·
                       valuation-engine.js (back-compat re-export shim) ·
+                      projection-opportunity.js (volume x shrunk efficiency,
+                      TE only, roadmap Phase 1) ·
                       strength-of-schedule.js ·
                       keeper.js (keeper-cost rule engine, node fixture-tested) ·
                       keeperReco.js (keeper selection recommender, node-tested) ·
@@ -96,6 +98,8 @@ cd data-pipeline && python anchor_parity.py
 cd data-pipeline && python expert_blend_parity.py
 # the SHIPPED injury discount must equal the Python that was backtested
 cd data-pipeline && python injury_discount_parity.py
+# the SHIPPED opportunity model (TE only) must equal the Python that was backtested
+cd data-pipeline && python opportunity_parity.py
 # projection model: port parity, then backtest (both pull from nflverse)
 cd data-pipeline && python projection_parity.py && python projection_backtest.py
 # SOS tuning (pulls 10 seasons from nflverse)
@@ -201,8 +205,9 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   (0.2–0.5) sit on a flat curve and a single 0.3 is within 0.001 of the best
   everywhere. Four constants fit on their own evaluation data would generalize
   worse. `settings.marketAnchor` / `marketAnchorWeight` override it.
-- **Pipeline order is load-bearing**: `projectAll` → `applyInjuryDiscount` →
-  `blendExpertAll` → SOS → `marketAnchor` → `finalizeBoard`. VBD/tiers/replacement must be derived LAST,
+- **Pipeline order is load-bearing**: `projectAll` → `applyOpportunityModel` →
+  `applyInjuryDiscount` → `blendExpertAll` → SOS → `marketAnchor` → `finalizeBoard`.
+  VBD/tiers/replacement must be derived LAST,
   from whatever valuePoints ended up as. useBoard previously had its own
   duplicate copy of the replacement maths (with its own FLEX_SHARE) used only
   on the SOS path; that is gone.
@@ -280,6 +285,58 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   numerically identical to `injury_multiplier`** — same equality-not-tolerance
   treatment as the other two parity checks, 1,350+ values over a coverage × K
   sweep plus the no-severity/unrecognized-severity/floor-at-zero edge cases.
+
+## Opportunity projection (shipped for TE only; roadmap Phase 1)
+
+- Points are volume × efficiency, and only one of those repeats: `projection_v2.js`
+  already established touchdown RATE is close to random year over year while
+  touchdown VOLUME is not. `frontend/src/engine/projection-opportunity.js`
+  generalizes that one level further — instead of patching shrunk touchdowns
+  onto the points-pace blend, it splits the projection into two independent
+  stages: `projectVolume` (next season's opportunities — targets, for the
+  one position shipped — blended the same trend-weighted, durability-
+  discounted way `projectPoints()` blends points pace) then a shrunk
+  points-per-opportunity RATE (`computeLeagueEfficiency` +
+  `projectPointsOpportunity`, same empirical-Bayes construction
+  `projection_v2.js` uses for touchdown rate, generalized from touchdowns-only
+  to the whole rate — v2 left yardage alone on the assumption it's stable
+  "over hundreds of events", not true for a 40-target committee receiver).
+- **Measured TWO ways, and the second one changed the answer.** Swept
+  2017–2025 against the pre-Phase-0 pure model (same isolation every other
+  gate in this file uses) — QB/TE/WR all passed. Re-swept against what is
+  ACTUALLY live (injury discount + expert blend already applied, at their
+  shipped weights) — only TE still passed. QB and WR's gains nearly vanished:
+  both are the positions `EXPERT_BLEND_W` trusts experts most (0.3, 0.4), so
+  the opportunity model's signal there was mostly what the expert blend was
+  already extracting. RB failed both measures, landing within 0.0003 of v2's
+  already-rejected RB result each time. See `docs/ROADMAP.md` Phase 1 for the
+  full table.
+- **Ships as one number**, `OPPORTUNITY_K = { TE: 2.0 }`, everyone else 0
+  (inert — always falls back to the points-pace model). K/DST have no clean
+  "opportunity" concept; a TE with no prior-season volume (a rookie) also
+  falls back — same coverage rule 0.1/0.3 use.
+- **Pipeline placement**: right after `projectAll()`, BEFORE the injury
+  discount / expert blend — it REPLACES the model's own point estimate for
+  TE (not an adjustment like the other two), so it has to run first; the
+  backtest that validated `OPPORTUNITY_K` measured exactly that order.
+- **No parity required on `computeLeagueEfficiency`'s input data.** The
+  Python backtest pools opportunity across every prior NFL season it can
+  load; the browser pools across whatever the current board carries (each
+  TE's `last` + `last2`) — a client-side engine has no multi-season
+  historical dataset to reach for. That's a necessary difference in what
+  data FEEDS the formula, not in the formula itself, which is what
+  `opportunity_parity.py` actually checks (same rates table fed to both
+  sides directly, same as `anchor_parity.py` supplies ranks directly).
+- `settings.opportunityModel` overrides it off (mirrors `settings.expertBlend`).
+- **The real 1.1 needed no migration.** `fantasy_players.last`/`last2` are
+  already JSONB; `ingest_nflverse.py` carries `carries`/`targets`/`attempts`
+  as plain extra keys (`VOLUME` dict, mirroring `projection_backtest.py`'s
+  own), and `load_to_db.py` already writes `last`/`last2` through untouched
+  — confirmed by reading the insert, not assumed.
+- **`data-pipeline/opportunity_parity.py` asserts the shipped JS is
+  numerically identical to `project_points_opportunity`** — same
+  equality-not-tolerance treatment as the other three parity checks, on the
+  one number that matters, `proj`.
 
 ## Auction calibration (shipped, on by default, inert without history)
 

@@ -122,8 +122,10 @@ export function ageMultiplier(pos, age, P = DEFAULT_PARAMS) {
   return Math.min(P.ageClamp[1], Math.max(P.ageClamp[0], m));
 }
 
-/** Games-played durability discount: first threshold gp falls under wins. */
-function durabilityMult(gp, table) {
+/** Games-played durability discount: first threshold gp falls under wins.
+ *  Exported for projection-opportunity.js — its volume blend uses the same
+ *  discount shape, applied to opportunities instead of points. */
+export function durabilityMult(gp, table) {
   for (const [thresh, mult] of table) if (gp < thresh) return mult;
   return 1.0;
 }

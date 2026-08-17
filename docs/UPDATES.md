@@ -6,6 +6,32 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap Phase 1 (1.1/1.2) shipped: opportunity model, TE only
+- `projection-opportunity.js` splits the projection into volume (next
+  season's expected opportunities — targets, for TE) x a shrunk
+  points-per-opportunity rate, instead of extrapolating last season's
+  points directly. Same two-stage idea v2 gestured at with touchdowns,
+  generalized to the whole rate.
+- Swept 2017–2025 TWO ways. Against the pre-Phase-0 pure model (how every
+  other gate here is scored) QB/TE/WR all passed. Re-swept against what is
+  ACTUALLY live (injury discount + expert blend already applied) — only TE
+  still passed. QB and WR's gains nearly vanished: both are the positions
+  the expert blend trusts most (weight 0.3/0.4), so the "new" signal there
+  was mostly already captured. RB failed both measures, landing within
+  0.0003 of v2's own already-rejected RB result each time.
+- Shipped as `OPPORTUNITY_K = { TE: 2.0 }`, everyone else 0. Wired right
+  after `projectAll()`, before the injury discount/expert blend (it REPLACES
+  the model's own estimate for TE, not an adjustment):
+  `projectAll -> applyOpportunityModel -> applyInjuryDiscount ->
+  blendExpertAll -> SOS -> marketAnchor -> finalizeBoard`.
+- The real 1.1 needed no migration — `last`/`last2` are JSONB, so
+  `ingest_nflverse.py` just carries `carries`/`targets`/`attempts` as extra
+  keys now; `load_to_db.py` already writes them through untouched.
+- `opportunity_parity.py`/`.mjs` hold the shipped JS to the backtested
+  Python on the one number that matters, `proj`. Backtest runs:
+  `projection-backtest.yml` #32048231675 (vs pure model) and #32058062329
+  (vs the live board — the one that decided what shipped).
+
 ## 2026-08 — Roadmap 0.3 shipped: injury discount, for QB/RB only
 - `applyInjuryDiscount()` (`engine-core.js`) converts CURRENT reported injury
   status into expected games missed and discounts `valuePoints` — a separate

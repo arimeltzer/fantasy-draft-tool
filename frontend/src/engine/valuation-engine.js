@@ -6,6 +6,7 @@
      engine-core.js    shared VBD pipeline (scoring, projectValue, valueBoard)
      auction-engine.js auctionValues, applyInflation, maxBid, DEFAULT_AUCTION_PARAMS
      snake-engine.js   snakePicks, DEFAULT_SNAKE_PARAMS
+     projection-opportunity.js  applyOpportunityModel, OPPORTUNITY_K (roadmap Phase 1, TE only)
 
    All existing imports from this file continue to work unchanged.
    For new code, import directly from the format-specific engine.
@@ -13,3 +14,4 @@
 export * from "./engine-core.js";
 export { DEFAULT_AUCTION_PARAMS, auctionValues, applyInflation, maxBid } from "./auction-engine.js";
 export { DEFAULT_SNAKE_PARAMS, snakePicks, myPickNumbers } from "./snake-engine.js";
+export { OPPORTUNITY_K, applyOpportunityModel } from "./projection-opportunity.js";

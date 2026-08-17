@@ -175,11 +175,12 @@ nflverse already serves what is needed and `projection_backtest.py` already
 loads some of it: `targets`, `carries`, `attempts`, `target_share`,
 `air_yards_share`, `wopr`, plus snap counts from a separate endpoint.
 
-### 1.1 Carry opportunity through the pipeline
+### 1.1 Carry opportunity through the pipeline — DONE
 Extend `ingest_nflverse.py` and the `fantasy_players` schema (migration
 required — `create_all` does not ALTER) to store volume alongside points.
+Turned out no migration was needed — see the RESULT block below.
 
-### 1.2 Two-stage projection
+### 1.2 Two-stage projection — DONE, shipped for TE only
 Project volume first, then apply a shrunk efficiency rate. The v2 experiment
 already built the shrinkage machinery (`projection_v2.py`) — this reuses it at
 the right level instead of patching touchdowns onto a points model.
@@ -216,6 +217,53 @@ no migration needed to MEASURE it. `target_share`/`air_yards_share`/`wopr`
 available in the pulled columns, so not claimed. The real DB/pipeline work
 only happens if the gate passes, same "nothing ships without the measurement"
 discipline 0.1 and 0.3 both followed.
+
+**RESULT — DONE, shipped for TE only.** Swept 2017–2025, measured TWO ways:
+
+| pos | vs the pure model (`projection-backtest.yml` #32048231675) | vs the ACTUAL live board — injury discount + expert blend already applied (#32058062329) |
+|---|---|---|
+| QB | partial +0.3038 (material), merged +0.0043 → **PASS** | merged +0.0001 → **FAIL** |
+| RB | partial +0.2809 (material), merged +0.0023 → FAIL | merged +0.0000 → FAIL |
+| TE | partial +0.4000 (material), merged +0.0071 → **PASS** | merged +0.0040 → **PASS** |
+| WR | partial +0.3083 (material), merged +0.0034 → **PASS** | merged +0.0016 → **FAIL** |
+
+The first measure is the same one every other gate in this file uses (v2, 0.1,
+0.3): isolate the idea's own marginal contribution against the bare model.
+QB/TE/WR all passed it. But that measure doesn't say whether a NEW idea helps
+on top of what's ALREADY shipped — so it was re-run with `shipped_stack =
+project_points -> injury discount -> expert blend -> anchor`, at the EXACT
+weights live in `engine-core.js`, as the baseline instead. Against that
+honest bar, QB and WR's gains nearly vanish: both are the positions
+`EXPERT_BLEND_W` trusts the experts most (0.3, 0.4 — the two highest), so the
+opportunity model's signal there turned out to be mostly what the expert
+blend was already extracting, not something new. RB failed both measures,
+landing within 0.0003 of v2's already-rejected RB result (+0.0020) each
+time — three separate comparisons, same conclusion. TE — lowest expert-blend
+trust (0.2), no injury discount at all — is the only position with genuine
+room left, and it held up on the honest baseline too (+0.0040, still clears
+the same +0.003 bar).
+
+Shipped as `OPPORTUNITY_K = { TE: 2.0 }` (everyone else 0) in
+`frontend/src/engine/projection-opportunity.js`, wired into `useBoard.ts`
+right after `projectAll()` — before the injury discount / expert blend / SOS
+/ anchor, matching the order the backtest actually measured:
+`projectAll -> applyOpportunityModel -> applyInjuryDiscount -> blendExpertAll
+-> SOS -> marketAnchor -> finalizeBoard`. A TE with no usable volume (a
+rookie) falls straight through to the points-pace model, same coverage rule
+0.1/0.3 use. `opportunity_parity.py` holds the shipped JS to the backtested
+Python on the one number that matters, `proj`.
+
+**The real 1.1 turned out to need no migration.** `fantasy_players.last`/
+`last2` are already JSONB — `ingest_nflverse.py` now carries `carries`/
+`targets`/`attempts` alongside the scoring components as plain extra keys
+(`VOLUME` dict, mirroring `projection_backtest.py`'s own), and
+`load_to_db.py` already writes `last`/`last2` through untouched
+(`json.dumps(p.get("last"))::jsonb`, no fixed-column handling anywhere in
+the chain — confirmed by reading it, not assumed). The client-side engine
+pools league efficiency from whatever's on the current board (each TE's
+`last`+`last2`) rather than the backtest's multi-season pool — a necessary,
+documented difference in what data FEEDS the formula, not in the formula
+itself, which is exactly what `opportunity_parity.py` isolates and checks.
 
 > **Prompt** — "Start roadmap Phase 1: rebuild the projection on opportunity
 > data rather than points. Do 1.1 and 1.2 first, backtest, and report against
@@ -318,7 +366,7 @@ decided after the draft. Everything here reuses the Phase 2 objective.
 | Phase | Effort | Payoff | Risk |
 |---|---|---|---|
 | 0 | Days | Moderate, near-certain | Low — 0.1, 0.2 and 0.3 are all done; see their results above |
-| 1 | Weeks | Large | Moderate — could still fail its gate like v2 |
+| 1 | Weeks | Real, but position-specific | Moderate — 1.1/1.2 done, TE only (QB/RB/WR failed their gate, RB like v2 exactly) |
 | 2 | Weeks | Largest conceptual | **Highest** — calibration is hard and unglamorous |
 | 3 | Weeks | Large, format-specific | Moderate — depends entirely on Phase 2 |
 | 4 | Ongoing | Large over a season | Low technically, wide in scope |
