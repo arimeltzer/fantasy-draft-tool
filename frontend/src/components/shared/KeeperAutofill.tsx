@@ -137,7 +137,11 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
     const fa = base == null;
     const alreadyKept = c.player_id != null && takenIds.has(c.player_id);
     const cost = keeperCost({ base: fa ? null : base, waiver, fa, kept: 0 }, rule);
-    const selectable = c.matched && c.player_id != null && !alreadyKept;
+    // ESPN reports keeper_ineligible when a player has already been kept the
+    // max number of consecutive/total times the league's rule allows —
+    // committing him again here would be an illegal keep, the same reason
+    // KeeperRecommendations excludes these from its own suggestions.
+    const selectable = c.matched && c.player_id != null && !alreadyKept && !c.keeper_ineligible;
     return { c, i, base, waiver, fa, alreadyKept, cost, selectable };
   }), [cands, rule, takenIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -331,6 +335,7 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
                   return (
                     <label
                       key={i}
+                      title={c.keeper_ineligible ? "ESPN reports this player already used up their keeper eligibility — keeping him again would be an illegal keep" : undefined}
                       className={`flex items-center gap-2 border-b border-l-[3px] border-b-hair px-2.5 py-1.5 text-xs last:border-b-0 ${st.accent} ${selectable ? "cursor-pointer hover:bg-hover" : "opacity-50"}`}
                     >
                       <input
@@ -352,7 +357,7 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
                         {waiver != null ? `w$${waiver}` : ""}
                       </span>
                       <span className="w-14 text-right font-mono text-2xs text-muted">
-                        {!c.matched ? "no match" : alreadyKept ? "added" :
+                        {!c.matched ? "no match" : c.keeper_ineligible ? "ineligible" : alreadyKept ? "added" :
                           cost.basis === "price" ? `$${cost.price}` :
                           fa ? "FA" : `R${cost.round}`}
                       </span>
