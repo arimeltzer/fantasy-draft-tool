@@ -1,3 +1,5 @@
+import type { StatLine } from "@/engine/engine-core.js";
+
 const BASE = import.meta.env.VITE_API_URL || "";
 
 export interface ApiPlayer {
@@ -8,8 +10,12 @@ export interface ApiPlayer {
   team: string;
   age: number | null;
   proj: Record<string, number> | null;
-  last: Record<string, number> | null;
-  last2: Record<string, number> | null;
+  /** Scoring/volume components, StatLine-shaped. `last` also carries a
+   *  `team` string — the team this player was on for that season's last
+   *  game (roadmap 1.3), added so the team-change discount doesn't need a
+   *  second lookup. */
+  last: StatLine | null;
+  last2: StatLine | null;
   ecr: number | null;
   adp: number | null;
   aav: number | null;
@@ -219,6 +225,15 @@ export interface LeagueSettings {
    *  with no usable volume data (a rookie) falls back to the points-pace
    *  model regardless — set false to undo the whole thing mid-draft. */
   opportunityModel?: boolean;
+  /** Discount the projection when a player changed teams this offseason
+   *  (roadmap 1.3). Defaults to ON. RB/WR are backtested (against both the
+   *  pure model and the live board); QB passed the former but not the
+   *  latter, TE/qb_change/coach_change/pace never cleared the merge bar at
+   *  all — so this only ever affects an RB or WR whose `last.team` differs
+   *  from their current `team`. A player with no prior-season team on
+   *  record (a rookie) is untouched regardless — set false to undo it
+   *  mid-draft. */
+  teamChangeDiscount?: boolean;
   /** Adjust auction MARKET price forecasts for how this league actually spends,
    *  learned from `keeperImport` prices. Defaults to ON; inert without history.
    *  Never touches dollarValue — see engine/auction-calibration.js. */

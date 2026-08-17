@@ -6,6 +6,11 @@ export interface StatLine {
   /** Opportunity counts (roadmap 1.1/1.2) — not worth points on their own,
    *  carried for the opportunity model (projection-opportunity.js). */
   carries?: number; targets?: number; attempts?: number;
+  /** Team the player was on for this season's LAST game (roadmap 1.3) —
+   *  not a scoring field; carried for the team-change discount
+   *  (team-context.js), which compares it against the player's CURRENT
+   *  `team`. */
+  team?: string;
 }
 
 export interface Player {

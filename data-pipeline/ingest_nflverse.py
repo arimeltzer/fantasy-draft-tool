@@ -149,8 +149,23 @@ def _agg_season(df):
         out[g.player_id] = d
     return out
 
+def _last_team_by_id(df):
+    """{player_id: team} — the team a player was on for their LAST game of that
+    season (max week), i.e. the team a mid-season trade left them on. Same
+    "team entering the following season" proxy projection_backtest.py's
+    load_seasons()/team_context.py use (recent_team, effectively) — carried
+    here as `last.team` (roadmap 1.3: team_change discount, RB/WR only) so
+    the frontend can compare it against the player's CURRENT `team` without
+    a second network call or a DB column migration; `last`/`last2` are
+    already JSONB, so this is one more extra key, same as VOLUME's."""
+    if df is None or "off_team" not in df.columns:
+        return {}
+    idx = df.groupby("player_id")["week"].idxmax()
+    return dict(zip(df.loc[idx, "player_id"], df.loc[idx, "off_team"]))
+
+
 def build_players_base(df_last, df_last2, upcoming, baseline_proj):
-    """Engine rows: name, pos, team(upcoming), age, last{components+volume+gp}, last2{...}, proj{} or baseline."""
+    """Engine rows: name, pos, team(upcoming), age, last{components+volume+gp+team}, last2{...}, proj{} or baseline."""
     have = [c for c in COMP if c in df_last.columns]
     have_vol = [c for c in VOLUME if c in df_last.columns]
     agg = (df_last.groupby(["player_id", "player_display_name", "position"])
@@ -159,6 +174,7 @@ def build_players_base(df_last, df_last2, upcoming, baseline_proj):
                 **{c: (c, "sum") for c in have}, **{c: (c, "sum") for c in have_vol})
            .reset_index())
     last2_by_id = _agg_season(df_last2)   # 2-years-ago season, keyed by player_id
+    last_team_by_id = _last_team_by_id(df_last)
 
     # 2026 team + age from rosters (offseason rosters exist by summer)
     team_by_id, age_by_id = {}, {}
@@ -184,6 +200,8 @@ def build_players_base(df_last, df_last2, upcoming, baseline_proj):
         last.update({VOLUME[c]: round(float(getattr(g, c)), 1) for c in have_vol})
         last["fumbles"] = round(float(getattr(g, "fum", 0) or 0), 1)
         last["gp"] = gp
+        if g.player_id in last_team_by_id:
+            last["team"] = last_team_by_id[g.player_id]
         proj = None
         if baseline_proj:
             scale = PROJECTED_GAMES / gp

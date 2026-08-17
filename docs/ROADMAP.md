@@ -185,10 +185,66 @@ Project volume first, then apply a shrunk efficiency rate. The v2 experiment
 already built the shrinkage machinery (`projection_v2.py`) — this reuses it at
 the right level instead of patching touchdowns onto a points model.
 
-### 1.3 Team context
+### 1.3 Team context — DONE, shipped: team change, RB/WR only
 Team change, quarterback change, coaching change, pace. **Evidence-driven
 only**: measure each feature's incremental contribution before adding it. This
 project's rule about not guessing undocumented mappings applies to features too.
+
+**Data, each independently verified before use** (`data-pipeline/team_context.py`):
+team via nflverse `recent_team`; starting QB as the attempts leader on a team
+that season (min 20 attempts, spot-checked against known rosters — 2022 CLE ->
+Brissett, 2023 CLE -> Flacco, 2023 HOU -> Stroud); head coach as the modal
+`home_coach`/`away_coach` per team-season from `load_schedules` (0% null,
+matched real coaching history 2015-2024); pace as (pass attempts + rush
+carries + sacks suffered) / games from `load_team_stats` (55-71 plays/game, a
+realistic band). Each of the four is swept and judged **INDEPENDENTLY** — the
+roadmap's own instruction — as a discount/scale on the PURE model, same
+solo/partial/merged treatment v2 and 1.1/1.2 get.
+
+**RESULT — DONE, shipped for team_change, RB/WR only.** Swept 2017-2025,
+measured TWO ways like 1.1/1.2 taught to:
+
+| feature | pos | vs the pure model | vs the ACTUAL live board (injury discount + expert blend + anchor) |
+|---|---|---|---|
+| team_change | QB | partial +0.2841 (material), merged +0.0070 → **PASS** | merged +0.0016 → FAIL |
+| team_change | RB | partial +0.3083 (material), merged +0.0037 → **PASS** | merged +0.0038 → **PASS** |
+| team_change | WR | partial +0.2912 (material), merged +0.0055 → **PASS** | merged +0.0062 → **PASS** |
+| team_change | TE | partial +0.4156 (material), merged +0.0028 → FAIL | — |
+| qb_change | RB/WR/TE | material partial at all three, merged never beat +0.003 | — |
+| coach_change | QB/RB/TE/WR | material partial at all four, merged never beat +0.003 | — |
+| pace | QB/RB/TE/WR | material partial at all four, merged never beat +0.003 | — |
+
+Only `team_change` cleared the merge bar against the pure model at all, and
+only for QB/RB/WR. Re-baselined against the live board exactly the way
+1.1/1.2 was — QB's gain nearly vanished (QB already carries an injury
+discount at k=0.5 AND the highest-trust-after-WR expert-blend weight, 0.3,
+so team_change's signal there was mostly what those two were already
+extracting); RB (+0.0038) and WR (+0.0062) held up. qb_change, coach_change
+and pace never beat the merge bar even against the easier pure-model
+comparison, so a harder bar couldn't help them either — not run against the
+live board at all.
+
+A first pass at qb_change produced numbers **byte-identical** to team_change
+at every RB/WR/TE k — not a coincidence: it compared team_now's QB using
+ONLY season Y-1 data on both sides, which collapses to team_changed exactly
+whenever team_prev == team_now (same lookup key). Fixed to compare the
+player's own Y-1 QB against team_now's Y-season attempts leader (the same
+"season Y's own outcome as a preseason-knowable proxy" reasoning
+coach_change already uses) before it was measured for real — the corrected
+qb_change still didn't clear the gate, so the fix changed the numbers but
+not the verdict.
+
+Shipped as `TEAM_CHANGE_K = { RB: 0.25, WR: 0.25 }` (QB/TE/K/DST stay 0) in
+`frontend/src/engine/team-context.js`, wired into `useBoard.ts` right after
+`applyOpportunityModel()` — before the injury discount, matching the order
+the backtest measured (applied to the pure model's own estimate, before
+injury/expert/anchor touch it). `ingest_nflverse.py` now carries `last.team`
+(the team a player finished last season on) alongside the scoring
+components — no migration needed, `last`/`last2` are already JSONB.
+`team_change_parity.py` holds the shipped JS to the backtested Python on the
+one number that matters, `valuePoints`.
+
+> **Prompt** — "Let's move on to 1.3"
 
 ### 1.4 Rookie model on draft capital
 Rookies currently get an ADP-curve fallback. NFL draft round and pick are far
@@ -366,7 +422,7 @@ decided after the draft. Everything here reuses the Phase 2 objective.
 | Phase | Effort | Payoff | Risk |
 |---|---|---|---|
 | 0 | Days | Moderate, near-certain | Low — 0.1, 0.2 and 0.3 are all done; see their results above |
-| 1 | Weeks | Real, but position-specific | Moderate — 1.1/1.2 done, TE only (QB/RB/WR failed their gate, RB like v2 exactly) |
+| 1 | Weeks | Real, but position-specific | Moderate — 1.1/1.2 done, TE only; 1.3 done, team_change RB/WR only (qb_change/coach_change/pace failed) |
 | 2 | Weeks | Largest conceptual | **Highest** — calibration is hard and unglamorous |
 | 3 | Weeks | Large, format-specific | Moderate — depends entirely on Phase 2 |
 | 4 | Ongoing | Large over a season | Low technically, wide in scope |

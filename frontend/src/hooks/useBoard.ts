@@ -3,6 +3,7 @@ import {
   projectAll, finalizeBoard, marketAnchor, MARKET_ANCHOR_W, resolveScoring,
   blendExpertAll, EXPERT_BLEND_W, applyInjuryDiscount, INJURY_K,
   applyOpportunityModel, OPPORTUNITY_K,
+  applyTeamChangeDiscount, TEAM_CHANGE_K,
 } from "@/engine/valuation-engine.js";
 import type { BoardPlayer, ProjBreakdownStep } from "@/engine/valuation-engine.js";
 import { ApiPlayer, LeagueSettings } from "@/lib/api";
@@ -140,14 +141,17 @@ export function useBoard(
 
     // Order is load-bearing. The opportunity model (TE only) REPLACES OUR
     // projection first (roadmap Phase 1 — volume x shrunk efficiency instead
-    // of the points-pace blend); the injury discount corrects whatever that
-    // left with for CURRENT reported status next (roadmap 0.3 — same
-    // category as durabilityMult, which it sits right beside); the expert
-    // blend corrects it again with FantasyPros' veteran numbers next
-    // (roadmap 0.1 — still the model's own point estimate, not a ranking
-    // correction); schedule strength adjusts that finished projection next;
-    // the market anchor then reads it; and replacement level, VBD and tiers
-    // are derived last, from whatever valuePoints ended up being. Deriving
+    // of the points-pace blend); the team-change discount corrects that for
+    // an RB/WR who switched teams next (roadmap 1.3 — measured applied to
+    // the pure model's own estimate, before injury/expert/anchor touch it);
+    // the injury discount corrects whatever that left with for CURRENT
+    // reported status next (roadmap 0.3 — same category as durabilityMult,
+    // which it sits right beside); the expert blend corrects it again with
+    // FantasyPros' veteran numbers next (roadmap 0.1 — still the model's own
+    // point estimate, not a ranking correction); schedule strength adjusts
+    // that finished projection next; the market anchor then reads it; and
+    // replacement level, VBD and tiers are derived last, from whatever
+    // valuePoints ended up being. Deriving
     // VBD before an adjustment (as the old SOS path did, then recomputing it
     // by hand) is how the two copies of the replacement maths drifted apart.
     // The waterfall shown in the "Proj" hover (see /methodology) starts here
@@ -177,6 +181,21 @@ export function useBoard(
       scored = applyOpportunityModel(scored, sc, OPPORTUNITY_K);
       scored = trackStage(before, scored, "Opportunity model (TE)",
         () => "Replaces the pace blend above: volume × league-shrunk efficiency");
+    }
+
+    // Backtested 2017-2025, measured TWO ways like the opportunity model
+    // taught to: against the pure model (QB/RB/WR cleared the phase kill
+    // gate) and re-baselined against the live board (injury discount +
+    // expert blend + anchor) — where QB's gain nearly vanished (already
+    // captured by QB's injury discount + 0.3-weighted expert blend) but
+    // RB/WR held up. Shipped as TEAM_CHANGE_K = { RB: 0.25, WR: 0.25 }.
+    // A player with no prior-season team on record (a rookie) is untouched
+    // regardless. On by default — reversible mid-draft without a deploy.
+    if (settings.teamChangeDiscount !== false) {
+      const before = scored;
+      scored = applyTeamChangeDiscount(scored, TEAM_CHANGE_K);
+      scored = trackStage(before, scored, "Team change",
+        (p) => `Changed teams: ${p.last?.team ?? "?"} → ${p.team}`);
     }
 
     // Backtested 2017-2025: at k=0.5, QB and RB clear the roadmap 0.3 kill

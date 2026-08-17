@@ -5,3 +5,4 @@ export * from "./engine-core.js";
 export * from "./auction-engine.js";
 export * from "./snake-engine.js";
 export * from "./projection-opportunity.js";
+export * from "./team-context.js";

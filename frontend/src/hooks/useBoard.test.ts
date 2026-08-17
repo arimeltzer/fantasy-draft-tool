@@ -163,6 +163,13 @@ describe("useBoard projBreakdown", () => {
       id: 6, name: "Ranked-Second RB", pos: "RB", team: "DAL",
       last: { gp: 16, pts: 250 }, last2: { gp: 16, pts: 240 }, adp: 2, ecr: 2,
     }),
+    // Switched teams this offseason (last.team != team) at a position
+    // TEAM_CHANGE_K actually discounts (RB).
+    p({
+      id: 7, name: "Moved RB", pos: "RB", team: "LAR",
+      last: { gp: 16, pts: 220, team: "SEA" } as ApiPlayer["last"],
+      last2: { gp: 16, pts: 210 },
+    }),
   ];
 
   const byName = (rows: ReturnType<typeof useBoard>, name: string) =>
@@ -206,5 +213,20 @@ describe("useBoard projBreakdown", () => {
       useBoard(players, { ...SETTINGS, expertBlend: false }, undefined));
     const expert = byName(result.current, "Expert WR");
     expect(expert.projBreakdown?.map((s) => s.label)).toEqual(["Base model"]);
+  });
+
+  it("adds Team change only for the RB/WR whose last.team differs from team", () => {
+    const { result } = renderHook(() => useBoard(players, SETTINGS, undefined));
+    const moved = byName(result.current, "Moved RB");
+    expect(moved.projBreakdown?.map((s) => s.label)).toEqual(["Base model", "Team change"]);
+    const stayed = byName(result.current, "Plain WR");
+    expect(stayed.projBreakdown?.map((s) => s.label)).toEqual(["Base model"]);
+  });
+
+  it("turning team change off in settings removes its step", () => {
+    const { result } = renderHook(() =>
+      useBoard(players, { ...SETTINGS, teamChangeDiscount: false }, undefined));
+    const moved = byName(result.current, "Moved RB");
+    expect(moved.projBreakdown?.map((s) => s.label)).toEqual(["Base model"]);
   });
 });

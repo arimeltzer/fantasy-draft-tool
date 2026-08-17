@@ -19,6 +19,11 @@ const STAGES: Stage[] = [
     what: "Replaces the pace blend above. Points are volume × efficiency, and only one of those repeats year to year — touchdown rate is close to random, but target share is not. This stage projects next season's targets the same trend-weighted way the base model projects points, then applies a league-wide, empirically shrunk points-per-target rate on top. Backtested 2017–2025 against the live pipeline; only TE cleared the bar (QB/WR's apparent gains turned out to be signal the expert blend below was already extracting; RB never had any).",
   },
   {
+    label: "Team change",
+    when: "RB and WR who switched teams this offseason (their team this year differs from the team they finished last season on).",
+    what: "Discounts the projection 25% — a new situation (offensive scheme, target competition, blocking, quarterback) is a real reset that last year's pace doesn't capture. Backtested 2017–2025, measured two ways like the opportunity model above: against the pure model (QB/RB/WR all cleared the bar) and re-baselined against the live board — QB's gain nearly vanished there (already captured by QB's own injury discount and expert-blend weight), but RB and WR held up. Coaching changes, QB changes and team pace were also tested as separate signals and none of them cleared the bar, so only this one shipped. A player with no recorded team from last season (a rookie) is untouched.",
+  },
+  {
     label: "Injury discount",
     when: "QB and RB with a currently reported injury status (out / doubtful / questionable).",
     what: "Converts the CURRENT reported status into expected games missed and discounts the projection proportionally. This is separate from the durability adjustment in the base model, which reacts to LAST season's games played — this reacts to what's reported for the upcoming one. Backtested 2017–2025; WR/TE did not show a clean signal here (the base model's durability adjustment was already capturing it) so they're left untouched.",

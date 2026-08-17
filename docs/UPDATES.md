@@ -6,6 +6,39 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 1.3 shipped: team-change discount, RB/WR only
+- Swept all four candidate context signals the roadmap names — team change,
+  QB change, coaching change, pace — each INDEPENDENTLY (per the roadmap's
+  own instruction), as a discount/scale on the pure model. `team_context.py`:
+  team from nflverse `recent_team`; starting QB as the attempts leader on a
+  team that season (spot-checked against known rosters); head coach as the
+  modal `home_coach`/`away_coach` per team-season; pace as (attempts +
+  carries + sacks) / games — all independently verified real before use.
+- Only `team_change` cleared the merge bar, and only QB/RB/WR against the
+  pure model. Re-baselined against the live board (injury discount + expert
+  blend + anchor) the same way 1.1/1.2 taught to — QB's gain nearly
+  vanished (already captured by QB's own injury discount + 0.3-weighted
+  expert blend); RB (+0.0038) and WR (+0.0062) held up. qb_change,
+  coach_change and pace never beat the merge bar even against the easier
+  pure-model comparison.
+- A first pass at qb_change was a bug, not a result: it compared team_now's
+  QB using only season Y-1 data on both sides, which is trivially identical
+  to team_changed whenever the team didn't change (same lookup key) —
+  caught because its numbers were byte-identical to team_change's at every
+  k. Fixed before it was measured for real; the corrected version still
+  didn't clear the gate.
+- Shipped as `TEAM_CHANGE_K = { RB: 0.25, WR: 0.25 }` in
+  `frontend/src/engine/team-context.js`, wired right after
+  `applyOpportunityModel()`, before the injury discount:
+  `projectAll -> applyOpportunityModel -> applyTeamChangeDiscount ->
+  applyInjuryDiscount -> blendExpertAll -> SOS -> marketAnchor ->
+  finalizeBoard`. `ingest_nflverse.py` now carries `last.team` (the team a
+  player finished last season on) — no migration, `last`/`last2` are
+  already JSONB. `team_change_parity.py` holds the shipped JS to the
+  backtested Python. Backtest runs: `projection-backtest.yml` #32073576167
+  (pure model, post-fix) and #32074247724 (re-baselined — the one that
+  decided what shipped).
+
 ## 2026-08 — Proj hover breakdown + /methodology page
 - Hovering the "Proj" number in either room now shows the exact waterfall
   that produced it: base model, then every later stage that actually moved

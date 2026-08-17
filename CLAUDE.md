@@ -100,6 +100,8 @@ cd data-pipeline && python expert_blend_parity.py
 cd data-pipeline && python injury_discount_parity.py
 # the SHIPPED opportunity model (TE only) must equal the Python that was backtested
 cd data-pipeline && python opportunity_parity.py
+# the SHIPPED team-change discount (RB/WR only) must equal the Python that was backtested
+cd data-pipeline && python team_change_parity.py
 # projection model: port parity, then backtest (both pull from nflverse)
 cd data-pipeline && python projection_parity.py && python projection_backtest.py
 # SOS tuning (pulls 10 seasons from nflverse)
@@ -337,6 +339,56 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   numerically identical to `project_points_opportunity`** — same
   equality-not-tolerance treatment as the other three parity checks, on the
   one number that matters, `proj`.
+
+## Team-change discount (shipped for RB/WR only; roadmap 1.3)
+
+- Four candidate context signals — team change, QB change, coaching change,
+  pace — swept **INDEPENDENTLY** (the roadmap's own instruction: measure
+  each feature's incremental contribution before adding it, so one real
+  signal can't hide behind three noise ones). `data-pipeline/team_context.py`:
+  team via nflverse `recent_team`; starting QB as the attempts leader on a
+  team that season (spot-checked against known rosters — 2022 CLE ->
+  Brissett, 2023 CLE -> Flacco); head coach as the modal `home_coach`/
+  `away_coach` per team-season (0% null, matched real coaching history);
+  pace as (pass attempts + rush carries + sacks suffered) / games — all
+  independently verified real before use, same discipline as the injury
+  endpoint check in `injury_probe.py`.
+- **Ships per position, one feature only.** Swept 2017-2025, measured TWO
+  ways like 1.1/1.2 taught to: against the pure model (`team_change` cleared
+  the merge bar at QB/RB/WR; `qb_change`/`coach_change`/`pace` never did, at
+  any position) and re-baselined against the ACTUAL live board (injury
+  discount + expert blend + anchor) — QB's `team_change` gain nearly
+  vanished there (QB already carries an injury discount at k=0.5 AND the
+  highest-trust-after-WR expert-blend weight, 0.3) but RB (+0.0038) and WR
+  (+0.0062) held up. Shipped as `TEAM_CHANGE_K = { RB: 0.25, WR: 0.25 }`
+  (QB/TE/K/DST stay 0) in `frontend/src/engine/team-context.js`.
+- **A first pass at `qb_change` was a bug, not a result.** It compared
+  team_now's QB using ONLY season Y-1 data on both sides — trivially
+  identical to `team_changed` whenever the team didn't change (same lookup
+  key), which is why its first-run numbers were byte-identical to
+  `team_change`'s at every k. Caught by that tell, fixed to compare the
+  player's own Y-1 QB against team_now's Y-season attempts leader (the same
+  "season Y's own outcome as a preseason-knowable proxy" reasoning
+  `coach_change` already uses) before being measured for real — the
+  corrected version still didn't clear the gate, so the fix changed the
+  numbers, not the ship decision.
+- **Pipeline placement**: right after `applyOpportunityModel()`, before the
+  injury discount — the backtest measured it applied to the pure model's own
+  point estimate, before injury/expert/anchor touch it. Disjoint from the
+  opportunity model in practice (TE only there, RB/WR only here), so their
+  relative order doesn't change either one's result.
+- **No migration needed.** `ingest_nflverse.py` now writes `last.team` — the
+  team a player finished LAST season on (their off_team in their final week
+  of that season, i.e. a mid-season trade lands them on the team they ended
+  with) — as one more extra key in the already-JSONB `last` blob, compared
+  against the player's CURRENT `team` column. A player with no `last.team`
+  on record (a rookie) is untouched, same coverage rule every other stage
+  here uses.
+- `settings.teamChangeDiscount` overrides it off (mirrors `settings.opportunityModel`).
+- **`data-pipeline/team_change_parity.py` asserts the shipped JS is
+  numerically identical to `apply_flag_discount`** — same
+  equality-not-tolerance treatment as the other four parity checks, on the
+  one number that matters, `valuePoints`.
 
 ## Auction calibration (shipped, on by default, inert without history)
 

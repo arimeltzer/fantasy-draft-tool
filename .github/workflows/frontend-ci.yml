@@ -77,6 +77,10 @@ jobs:
       - name: Shipped opportunity model matches the backtested one
         working-directory: data-pipeline
         run: python opportunity_parity.py
+      # Same treatment for roadmap 1.3's team-change discount (RB/WR only).
+      - name: Shipped team-change discount matches the backtested one
+        working-directory: data-pipeline
+        run: python team_change_parity.py
       # integrations.selftest imports the ESPN adapter, which imports httpx.
       # The job had no pip install at all, so it failed on import before
       # reaching a single assertion.
