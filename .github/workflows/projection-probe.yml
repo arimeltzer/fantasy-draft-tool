@@ -1,0 +1,37 @@
+name: Projection probe (roadmap 0.1)
+
+# Manual. Answers whether FantasyPros serves REAL, PRESEASON projections for
+# past seasons — the precondition for backtesting roadmap step 0.1. Needs the
+# FANTASYPROS_API_KEY secret, which is why it cannot run locally.
+#
+# Three failure modes, none of which raise: nothing there, contaminated with
+# hindsight, or the same payload echoed for every season. See the script header.
+
+on:
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: "Seasons to probe (space separated)"
+        required: false
+        default: "2021 2022 2023 2024 2025"
+        type: string
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+      - name: Probe historical projections
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python projection_probe.py --seasons ${{ inputs.seasons }} --out ./results
+      - uses: actions/upload-artifact@v4
+        with:
+          name: projection-probe
+          path: data-pipeline/results/
