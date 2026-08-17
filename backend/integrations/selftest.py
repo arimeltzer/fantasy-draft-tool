@@ -48,6 +48,55 @@ def test_matching():
         assert got == exp, f"match {np.name}/{np.pos}/{np.team}: got {got}, expected {exp}"
 
 
+def test_matching_nicknames():
+    """The platform prints a nickname where the pool holds the legal name.
+
+    Previously imported as an unmatched player, which is how a roster comes
+    back with holes in it. The alias tier is deliberately the weakest one: it
+    resolves a unique candidate or an outright team agreement, and gives up
+    rather than guessing when two real players collide.
+    """
+    rows = [
+        {"id": 1, "name": "Joshua Palmer", "pos": "WR", "team": "LAC"},
+        {"id": 2, "name": "Chigoziem Okonkwo", "pos": "TE", "team": "TEN"},
+        {"id": 3, "name": "Cameron Ward", "pos": "QB", "team": "TEN"},
+        # Two real players a nickname fold alone cannot separate.
+        {"id": 4, "name": "Michael Thomas", "pos": "WR", "team": "NO"},
+        {"id": 5, "name": "Mike Thomas", "pos": "WR", "team": "LAR"},
+        # An exact name must still win over any alias reasoning.
+        {"id": 6, "name": "Mike Williams", "pos": "WR", "team": "NYJ"},
+    ]
+    idx = build_index(rows)
+    cases = [
+        (NormPlayer("Josh Palmer", "WR", "LAC"), 1),
+        (NormPlayer("Josh Palmer", "WR", ""), 1),        # unique alias, no team needed
+        (NormPlayer("Chig Okonkwo", "TE", "TEN"), 2),
+        (NormPlayer("Cam Ward", "QB", "TEN"), 3),
+        (NormPlayer("Michael Thomas", "WR", "NO"), 4),   # exact match, unaffected
+        (NormPlayer("Mike Thomas", "WR", "LAR"), 5),     # exact match, unaffected
+        (NormPlayer("Mike Thomas", "WR", ""), 5),        # exact beats the alias tier
+        (NormPlayer("Mike Williams", "WR", "NYJ"), 6),
+        (NormPlayer("Michael Williams", "WR", ""), 6),   # alias resolves uniquely
+        # A nickname AND a wrong position is two inferences stacked, and the
+        # alias tier is deliberately position-scoped so it does not resolve.
+        # Conservative on purpose: an unmatched player is reported, a wrongly
+        # matched one is not.
+        (NormPlayer("Josh Palmer", "RB", "LAC"), None),
+    ]
+    for np, exp in cases:
+        got = match_player(idx, np)
+        assert got == exp, f"match {np.name}/{np.pos}/{np.team}: got {got}, expected {exp}"
+
+    # Ambiguity must NOT resolve: two aliasable rows, and the caller names a
+    # team belonging to neither. A wrong id here silently drafts the wrong man.
+    amb = build_index([
+        {"id": 10, "name": "Michael Thomas", "pos": "WR", "team": "NO"},
+        {"id": 11, "name": "Mike Thomas", "pos": "WR", "team": "LAR"},
+    ])
+    got = match_player(amb, NormPlayer("Mikey Thomas", "WR", "ZZZ"))
+    assert got is None, f"ambiguous nickname should not match, got {got}"
+
+
 def test_espn():
     data = {
         "id": 123456,
@@ -543,6 +592,7 @@ def test_yahoo_leagues():
 
 def main():
     test_matching(); print("✓ matching")
+    test_matching_nicknames(); print("✓ matching nicknames")
     test_espn(); print("✓ espn parse")
     test_opponent_team_ids(); print("✓ opponent team ids")
     test_scoring_diagnostics(); print("✓ scoring diagnostics")

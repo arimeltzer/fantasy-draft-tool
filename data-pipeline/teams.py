@@ -54,6 +54,14 @@ def normalize_team(team: str | None) -> str:
 _SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 
+# The nickname table lives with the backend matcher so there is one copy to
+# edit; `name_parity.py` checks it against the TypeScript copy too.
+import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "backend"))
+from integrations.name_aliases import alias_name, same_team_or_unknown  # noqa: E402
+
+
 def normalize_name(name: str | None) -> str:
     """Match `backend/integrations/matching.py:normalize_name` — accents, case,
     punctuation and Jr/III suffixes all folded away, whitespace collapsed."""
@@ -106,4 +114,41 @@ def merge_player_rows(players: list[dict]) -> tuple[list[dict], list[str]]:
             + (f" [{before_team or 'blank'} + {p.get('team') or 'blank'} -> {after}]"
                if before_team != p.get("team") else ""))
 
-    return [by_key[k] for k in order], notes
+    rows = [by_key[k] for k in order]
+
+    # SECOND PASS — the same player under a nickname in one feed and the legal
+    # name in the other ("Josh Palmer" / "Joshua Palmer"). The pass above cannot
+    # see these: the normalized names genuinely differ.
+    #
+    # This is an inference, not a normalization, so it demands more evidence.
+    # Folding given names alone would also merge Michael Thomas (NO) into Mike
+    # Thomas (LAR), who overlapped at the same position, so a row pair that
+    # names two DIFFERENT teams is left alone. A split feed agrees on team or
+    # leaves it blank; two different players usually do not. Getting this wrong
+    # is worse than the duplicate it fixes — a duplicate is visible on the
+    # board, a bad merge silently deletes a player — hence the extra gate.
+    by_alias: dict[tuple[str, str], dict] = {}
+    merged: list[dict] = []
+    for p in rows:
+        key = (alias_name(normalize_name(p.get("name"))), p.get("pos", ""))
+        kept = by_alias.get(key)
+        if kept is not None and same_team_or_unknown(kept.get("team"), p.get("team")):
+            for field, value in p.items():
+                if value in (None, "", {}, []):
+                    continue
+                if kept.get(field) in (None, "", {}, []):
+                    kept[field] = value
+            notes.append(
+                f"{kept.get('name')} ({kept.get('pos')}) — merged nickname row "
+                f"'{p.get('name')}'")
+            continue
+        if kept is None:
+            by_alias[key] = p
+        else:
+            notes.append(
+                f"{p.get('name')} ({p.get('pos')}) — NOT merged with "
+                f"'{kept.get('name')}': different teams "
+                f"({kept.get('team') or 'blank'} vs {p.get('team') or 'blank'})")
+        merged.append(p)
+
+    return merged, notes

@@ -25,6 +25,8 @@ export interface SnakeLiveState {
   teams: number;
   slot?: number;
   counts: Record<string, number>;
+  /** Two QB-ish starting spots, so more quarterbacks are worth rostering. */
+  superflex?: boolean;
   roster: Record<string, number>;
   needs: Record<string, number>;
   bestVbd: number;
@@ -46,6 +48,10 @@ export declare function resolveSlotConfig(P: SnakeParams, teams: number, slot?: 
 export declare function pickScore(
   player: BoardPlayer, liveState: SnakeLiveState, P?: SnakeParams
 ): PickScoreResult;
+/** How many of a position are worth rostering, given starters + FLEX. */
+export declare function maxUseful(
+  pos: string, roster?: Record<string, number>, superflex?: boolean,
+): number;
 export declare function snakePicks(slot: number, teams: number, rounds?: number): number[];
 /** Overall pick numbers you own: `settings.myPicks` when set (traded picks),
  *  otherwise serpentine from `draftSlot`. */

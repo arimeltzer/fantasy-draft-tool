@@ -14,14 +14,42 @@ interface Props {
 export default function Recommendations({ board, draftedIds, live, onDraft }: Props) {
   const avail = board.filter((p) => !draftedIds.has(p.id as number));
 
-  const recs = avail
+  const SLOTS = 6;
+  const MAX_PER_POS = 2;
+
+  const scored = avail
     .map((p) => {
       const { score, reasons, blocked } = pickScore(p, live);
       return { ...p, score, reasons, blocked };
     })
-    .filter((p) => !p.blocked && Number.isFinite(p.score))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 6);
+    .filter((p) => Number.isFinite(p.score))
+    .sort((a, b) => b.score - a.score);
+
+  // Cap how many of one position can fill the panel. You make ONE pick here, so
+  // the 3rd- and 4th-best quarterback are not choices — they are the same
+  // choice repeated, crowding out the best available at every other position.
+  // Before this, the round a position's gate opened could fill four of six
+  // slots with it, which reads as advice to draft four of them.
+  const open = scored.filter((p) => !p.blocked);
+  const perPos: Record<string, number> = {};
+  const recs = open.filter((p) => {
+    if ((perPos[p.pos] ?? 0) >= MAX_PER_POS) return false;
+    perPos[p.pos] = (perPos[p.pos] ?? 0) + 1;
+    return true;
+  }).slice(0, SLOTS);
+
+  // Backfill rather than show a short panel: with the cap in place a thin pool
+  // can leave gaps, and dropping to the next-best repeat beats empty slots.
+  if (recs.length < SLOTS) {
+    const shown = new Set(recs.map((p) => p.id));
+    recs.push(...open.filter((p) => !shown.has(p.id)).slice(0, SLOTS - recs.length));
+  }
+  // Last resort: every candidate is gated (roster full, or all too early).
+  // Falling back to raw value keeps the panel useful instead of blank.
+  if (recs.length === 0) {
+    recs.push(...scored.slice().sort((a, b) => b.vbd - a.vbd).slice(0, SLOTS)
+      .map((p) => ({ ...p, reasons: [p.blocked ? `${p.blocked} — shown on value` : "best available"] })));
+  }
 
   return (
     <div className="mb-4 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.04] p-3">

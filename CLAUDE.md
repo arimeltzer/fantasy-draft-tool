@@ -82,6 +82,8 @@ npm --prefix frontend test                        # vitest: mounts the draft roo
 cd backend && uvicorn main:app --reload
 # integration parsers (no net/db) — regression guard
 cd backend && python -m integrations.selftest
+# nickname alias tables (playerName.ts vs name_aliases.py) must not drift
+cd data-pipeline && python name_parity.py
 # projection model: port parity, then backtest (both pull from nflverse)
 cd data-pipeline && python projection_parity.py && python projection_backtest.py
 # SOS tuning (pulls 10 seasons from nflverse)
@@ -172,6 +174,45 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   September. Needs two GitHub repo secrets: `FANTASYPROS_API_KEY` and
   `DATABASE_PUBLIC_URL` (Settings → Secrets and variables → Actions). Can also
   be triggered manually from the Actions tab (`workflow_dispatch`).
+
+## Duplicate players & name matching
+
+- A duplicate board row is not cosmetic: drafting one copy leaves the twin
+  looking available, so the pool and every scarcity/tier/replacement number
+  drawn from it stay wrong for the rest of the draft.
+- **Two causes, two passes.** (1) Team spellings — `fantasy_players` is unique
+  on `(season,name,pos,team)`, so ARI vs AZ (or a blank team from a load without
+  roster data) splits a player. Merged on `(canonical name, pos)`, ignoring team.
+  (2) **Nicknames** — one feed says "Josh Palmer", the other "Joshua Palmer".
+  Merged on the given name folded through `GIVEN_NAME_ALIASES`, but ONLY when
+  the rows don't name different teams: folding alone would merge Michael Thomas
+  (NO) into Mike Thomas (LAR). A visible duplicate is recoverable; a silent
+  merge of two players deletes one.
+- The alias table is curated, never algorithmic. "Same surname + same first
+  initial" would fold every diminutive for free and also merge real players.
+  Missing entries stay visible duplicates — the safe failure.
+- It lives twice: `frontend/src/lib/playerName.ts` (board) and
+  `backend/integrations/name_aliases.py` (importer + pipeline, imported by
+  `data-pipeline/teams.py`). **`data-pipeline/name_parity.py` asserts they
+  match** — add an entry to one only and CI fails.
+- Import matching (`matching.py`) has the alias as its WEAKEST tier: unique
+  candidate or outright team agreement, position-scoped, gives up on ambiguity.
+
+## Roster discipline in the snake recommender
+
+- `needMult` once gave every position a two-deep bench allowance
+  (`have < starter + 2`). In a one-QB league that scored a THIRD quarterback at
+  0.88 — the same depth credit as a third RB — and no gate blocked a fourth. A
+  mock draft surfaced it: three QBs and three TEs recommended ahead of startable
+  skill players.
+- `maxUseful(pos, roster, superflex)` now caps it: QB `starters + 1` (`+2` in
+  superflex), TE `starters + 1`, K/DST `starters`, and RB/WR bounded by the
+  BENCH itself so deep leagues aren't blocked from a sixth back. Exceeding the
+  cap is a hard gate; a one-starter backup also drops to 0.60 so it can't
+  outrank a startable RB/WR. `snake-engine.selftest.mjs` pins both directions.
+- Separately, `Recommendations.tsx` caps one position at 2 of the 6 panel slots.
+  You make one pick, so the 3rd-best QB isn't a choice — it's the same choice
+  repeated, and it used to fill four slots the round a gate opened.
 
 ## Gotchas
 

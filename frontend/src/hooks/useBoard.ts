@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { valueBoard, resolveScoring } from "@/engine/valuation-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
 import { ApiPlayer, LeagueSettings } from "@/lib/api";
+import { canonName, aliasName, sameTeamOrUnknown } from "@/lib/playerName";
 
 function toEnginePlayer(p: ApiPlayer) {
   return {
@@ -34,60 +35,66 @@ const TEAM_ALIASES: Record<string, string> = {
 
 const canonTeam = (t: string) => TEAM_ALIASES[(t || "").toUpperCase()] ?? (t || "").toUpperCase();
 
-const NAME_SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv", "v"]);
-
-/** Mirrors backend `matching.normalize_name` / pipeline `teams.normalize_name`:
- *  accents, case, punctuation and Jr/III all folded, whitespace collapsed. */
-function canonName(name: string): string {
-  return (name || "")
-    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[.'`\u2019]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .split(" ")
-    .filter((w) => w && !NAME_SUFFIXES.has(w))
-    .join(" ");
+/** Fold `src` into `kept`, keeping whichever value is actually present. The
+ *  split usually means one row has the projection and the other the ADP/AAV. */
+function absorb(kept: ApiPlayer, src: ApiPlayer): void {
+  if (!kept.team && src.team) kept.team = src.team;
+  kept.proj ??= src.proj;
+  kept.last ??= src.last;
+  kept.last2 ??= src.last2;
+  kept.ecr ??= src.ecr;
+  kept.adp ??= src.adp;
+  kept.aav ??= src.aav;
+  kept.age ??= src.age;
+  kept.injury ??= src.injury;
 }
 
 /**
- * Collapse the same player appearing twice under different team spellings.
+ * Collapse the same player appearing twice across disagreeing feeds.
  *
- * The database keys players on `(season, name, pos, team)`, so a feed calling
- * Arizona "AZ" while another calls it "ARI" yields two rows. A duplicate on the
- * board is not cosmetic: drafting one copy leaves the twin looking available,
- * so the remaining pool — and every scarcity, tier and replacement-level number
- * derived from it — is wrong for the rest of the draft.
+ * The database keys players on `(season, name, pos, team)`, so any field the
+ * sources spell differently yields two rows. A duplicate on the board is not
+ * cosmetic: drafting one copy leaves the twin looking available, so the
+ * remaining pool -- and every scarcity, tier and replacement-level number drawn
+ * from it -- is wrong for the rest of the draft.
  *
- * The pipeline now canonicalizes at load time and a migration cleans existing
- * rows; this stays as a guard so a stale database can't corrupt a live draft.
- * Fields are unioned rather than picking a winner, since the split usually
- * means one row has the projection and the other the ADP/AAV.
+ * TWO PASSES, because the two causes carry different risk.
+ *
+ * Pass 1 -- same canonical name, same position. Team is ignored: it is the
+ * field the sources disagree about (ARI vs AZ) and it is blank whenever a load
+ * ran without roster data, so a blank-vs-ARI pair splits exactly like an alias
+ * pair. Agreement on name+position within one season is proof of identity.
+ *
+ * Pass 2 -- same name once the GIVEN name is folded through the nickname table,
+ * so "Josh Palmer" meets "Joshua Palmer". This is an inference, not a
+ * normalization, and it can be wrong (Michael Thomas of NO and Mike Thomas of
+ * LAR were contemporaries), so it additionally requires the two rows not to
+ * name different teams. That is the evidence pass 1 can afford to throw away
+ * and this pass cannot.
  */
-function dedupePlayers(players: ApiPlayer[]): ApiPlayer[] {
-  const byKey = new Map<string, ApiPlayer>();
-  const out: ApiPlayer[] = [];
+export function dedupePlayers(players: ApiPlayer[]): ApiPlayer[] {
+  const byExact = new Map<string, ApiPlayer>();
+  const firstPass: ApiPlayer[] = [];
   for (const raw of players) {
     const p = { ...raw, team: canonTeam(raw.team) };
-    // Keyed on name+position, NOT team. Team is the field the sources disagree
-    // about — and it is blank whenever a load ran without roster data, so a
-    // blank-vs-ARI pair splits exactly like an ARI-vs-AZ pair does.
     const key = `${canonName(p.name)}|${p.pos}`;
-    const kept = byKey.get(key);
-    if (!kept) {
-      byKey.set(key, p);
-      out.push(p);
-      continue;
-    }
-    // Same player, two rows — keep whichever value is actually present.
-    if (!kept.team && p.team) kept.team = p.team;
-    kept.proj ??= p.proj;
-    kept.last ??= p.last;
-    kept.last2 ??= p.last2;
-    kept.ecr ??= p.ecr;
-    kept.adp ??= p.adp;
-    kept.aav ??= p.aav;
-    kept.age ??= p.age;
-    kept.injury ??= p.injury;
+    const kept = byExact.get(key);
+    if (kept) { absorb(kept, p); continue; }
+    byExact.set(key, p);
+    firstPass.push(p);
+  }
+
+  const byAlias = new Map<string, ApiPlayer>();
+  const out: ApiPlayer[] = [];
+  for (const p of firstPass) {
+    const key = `${aliasName(p.name)}|${p.pos}`;
+    const kept = byAlias.get(key);
+    // A positive team disagreement means these are two different people who
+    // happen to share a surname and a nickname. Leave both on the board: a
+    // visible duplicate is recoverable, a silent merge of two players is not.
+    if (kept && sameTeamOrUnknown(kept.team, p.team)) { absorb(kept, p); continue; }
+    if (!kept) byAlias.set(key, p);
+    out.push(p);
   }
   return out;
 }

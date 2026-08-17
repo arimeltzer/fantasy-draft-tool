@@ -103,6 +103,9 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
       teams: settings.teams,
       slot: settings.draftSlot,
       counts,
+      // Superflex changes how many QBs are worth rostering, so the engine's
+      // roster-capacity gate needs it rather than assuming a one-QB league.
+      superflex: !!settings.superflex,
       roster: settings.roster as unknown as Record<string, number>,
       needs,
       bestVbd,

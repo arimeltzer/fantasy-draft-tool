@@ -14,6 +14,7 @@ import re
 import unicodedata
 
 from .base import NormPlayer
+from .name_aliases import alias_name
 
 # Suffixes and noise stripped before comparing names.
 _SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
@@ -61,6 +62,7 @@ def build_index(rows):
         return r[k] if isinstance(r, dict) else getattr(r, k)
 
     by_name_pos: dict[tuple, list] = {}   # (norm_name, pos) -> [(id, team)]
+    by_alias_pos: dict[tuple, list] = {}  # (alias_name, pos) -> [(id, team)]
     by_name: dict[str, list] = {}          # norm_name -> [(id, pos, team)]
     dst_by_team: dict[str, int] = {}       # team -> id (defenses)
     for r in rows:
@@ -68,12 +70,14 @@ def build_index(rows):
         nn = normalize_name(name)
         nt = normalize_team(team)
         by_name_pos.setdefault((nn, pos), []).append((pid, nt))
+        by_alias_pos.setdefault((alias_name(nn), pos), []).append((pid, nt))
         by_name.setdefault(nn, []).append((pid, pos, nt))
         if pos == "DST":
             # Team abbreviation is the reliable key for defenses (names vary too
             # much across platforms to risk fuzzy matching).
             dst_by_team[nt] = pid
-    return {"by_name_pos": by_name_pos, "by_name": by_name, "dst_by_team": dst_by_team}
+    return {"by_name_pos": by_name_pos, "by_alias_pos": by_alias_pos,
+            "by_name": by_name, "dst_by_team": dst_by_team}
 
 
 def match_player(index, np: NormPlayer) -> int | None:
@@ -104,6 +108,19 @@ def match_player(index, np: NormPlayer) -> int | None:
     if len(loose) == 1:
         return loose[0][0]
     for pid, p, t in loose:
+        if t and t == team:
+            return pid
+
+    # Last tier: the platform printed a nickname where the pool has the legal
+    # name ("Josh Palmer" vs "Joshua Palmer"), which otherwise imports as an
+    # unmatched player. This is an inference rather than a normalization, so it
+    # is deliberately the weakest tier and demands more: a unique candidate, or
+    # an outright team agreement. Ambiguity gives up rather than guessing.
+    an = alias_name(nn)
+    alias_cands = index["by_alias_pos"].get((an, pos), [])
+    if len(alias_cands) == 1:
+        return alias_cands[0][0]
+    for pid, t in alias_cands:
         if t and t == team:
             return pid
     return None

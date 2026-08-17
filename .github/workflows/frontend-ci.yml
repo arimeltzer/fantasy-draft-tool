@@ -12,9 +12,9 @@ name: Frontend CI
 on:
   push:
     branches: [main, "claude/**"]
-    paths: ["frontend/**", ".github/workflows/frontend-ci.yml"]
+    paths: ["frontend/**", "backend/**", "data-pipeline/**", ".github/workflows/frontend-ci.yml"]
   pull_request:
-    paths: ["frontend/**", ".github/workflows/frontend-ci.yml"]
+    paths: ["frontend/**", "backend/**", "data-pipeline/**", ".github/workflows/frontend-ci.yml"]
   workflow_dispatch:
 
 jobs:
@@ -38,3 +38,21 @@ jobs:
         run: npm run selftest
       - name: Render tests (vitest + testing-library)
         run: npm test
+
+  # The nickname table exists in TypeScript and in Python. Drift between them is
+  # silent — the pipeline stops producing a duplicate while an older board still
+  # shows one — so it gets checked on the same push that can cause it.
+  name-parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Alias tables agree across TS and Python
+        working-directory: data-pipeline
+        run: python name_parity.py
+      - name: Integration parsers + matcher
+        working-directory: backend
+        run: python -m integrations.selftest

@@ -63,13 +63,42 @@ export function resolveSlotConfig(P, teams, slot) {
   return P.SLOT_DEFAULT;
 }
 
-function needMult(pos, have, roster, needs, flexEligible) {
+/**
+ * How many of a position are worth rostering at all.
+ *
+ * The old rule gave EVERY position a two-deep bench allowance (`starter + 2`),
+ * which is right for the positions you actually carry depth at and nonsense for
+ * the ones you don't. In a one-QB league that made a third quarterback score
+ * 0.88 — identical "worth drafting for depth" credit to a third running back —
+ * and nothing ever blocked a fourth. Watching the recommender hand out three
+ * QBs and three TEs ahead of startable skill players is what surfaced it.
+ *
+ * A backup at a one-starter position only plays when the starter is hurt, and a
+ * third never plays at all. Depth is worth real points at RB/WR, where byes and
+ * injuries are covered every week and the FLEX gives a fourth or fifth body
+ * somewhere to start.
+ */
+export function maxUseful(pos, roster = {}, superflex = false) {
+  const starters = roster[pos] || 0;
+  if (pos === "K" || pos === "DST") return Math.max(1, starters);   // never benched
+  if (pos === "QB") return starters + (superflex ? 2 : 1);
+  if (pos === "TE") return starters + 1;
+  // RB/WR are bounded only by the bench itself. A fixed allowance here would
+  // block a perfectly sensible sixth running back in a deep-bench league, and
+  // the runaway this cap exists to stop is a one-starter position, not these.
+  return starters + (roster.FLEX || 0) + Math.max(2, roster.BENCH || 6);
+}
+
+function needMult(pos, have, roster, needs, flexEligible, superflex) {
   if (have === 0) return 1.30;
   const belowStarter = (needs?.[pos] || 0) > 0 || (flexEligible && (needs?.FLEX || 0) > 0);
   if (belowStarter) return 1.15;
-  const starter = roster?.[pos] || 0;
-  if (have < starter + 2) return 0.88;   // filling bench
-  return 0.65;                            // full
+  if (have >= maxUseful(pos, roster, superflex)) return 0.65;   // full
+  // Past the starters but still useful. Kept at the tuned 0.88 for the
+  // positions that genuinely bank depth; a one-starter position's backup is
+  // insurance, not depth, so it should not outrank a startable RB or WR.
+  const insuranceOnly = (pos === "QB" && !superflex) || pos === "TE";
+  return insuranceOnly ? 0.60 : 0.88;
 }
 
 /**
@@ -98,9 +127,15 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
   const have = (s.counts && s.counts[pos]) || 0;
   const flexEligible = pos === "RB" || pos === "WR" || pos === "TE";
   const adpRank = (s.adpRankById && s.adpRankById[player.id]) || (s.poolSize + 1);
+  const superflex = !!s.superflex;
   const reasons = [];
 
   // 2. Hard gates (positional discipline)
+  // Roster capacity first: no round makes an unrosterable body the right pick.
+  // Without this the only thing discouraging a third QB was a soft multiplier,
+  // which a high-VBD quarterback simply out-scored.
+  const cap = maxUseful(pos, s.roster || {}, superflex);
+  if (have >= cap) return { score: -Infinity, blocked: `enough ${pos} (${have})` };
   if (pos === "QB" && have === 0 && round < cfg.QB_MIN) return { score: -Infinity, blocked: "QB too early" };
   if (pos === "QB" && have >= 1 && round < cfg.QB2_MIN) return { score: -Infinity, blocked: "QB2 too early" };
   if (pos === "TE" && have === 0 && round < P.teMinRound) return { score: -Infinity, blocked: "TE too early" };
@@ -109,7 +144,7 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
     return { score: -Infinity, blocked: "high risk early" };
 
   // 1. Base = vbd × need_mult
-  const nm = needMult(pos, have, s.roster || {}, s.needs, flexEligible);
+  const nm = needMult(pos, have, s.roster || {}, s.needs, flexEligible, superflex);
   let base = player.vbd * nm;
   if (nm >= 1.30) reasons.push(`no ${pos} yet`);
   else if (nm >= 1.15) reasons.push(`fills ${pos}`);
