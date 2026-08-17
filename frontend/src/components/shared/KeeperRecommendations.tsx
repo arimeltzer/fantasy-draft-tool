@@ -27,6 +27,13 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
   const [predictOn, setPredictOn] = useState(true);
   // Predicted opponent keepers the user has overridden back to "available".
   const [predictOverrides, setPredictOverrides] = useState<Set<number>>(new Set());
+  // Manual eligibility corrections, by player id: true = force ELIGIBLE
+  // (undoes an import's keeper_ineligible), false = force INELIGIBLE (you
+  // caught one the import missed). Needed because the import's "was kept"
+  // signal is a best-effort read of a badge that copy-paste reduces to
+  // whitespace (see yahoo_paste.py's fragility note) — it can miss a player
+  // entirely, and the app has no way to know that on its own.
+  const [manualEligibility, setManualEligibility] = useState<Map<number, boolean>>(new Map());
 
   // Auction market value lives on par values, which are computed off the raw
   // board — so price it here before scoring surplus. Snake scores off VBD.
@@ -116,12 +123,18 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
   // Candidate pool for analysis = your committed keepers PLUS your imported
   // (uncommitted) roster players. Nothing here is treated as drafted/kept until
   // you explicitly commit — imports are hypothetical candidates.
+  //
+  // Ineligible candidates are kept in this list (not dropped) so the "kept
+  // last year" list below can show and undo them — a player the import missed
+  // still needs a row to mark ineligible from, and dropping them here would
+  // remove that row along with the (wrong) recommendation.
   const myCandidates = useMemo(() => {
     const out = new Map<number, {
       id: number; player: BoardPlayer; base: number | null; waiver: number | null; kept: number;
       cost: ReturnType<typeof keeperCost>; committed: boolean; pickId?: number;
+      ineligible: boolean; ineligibleReason: "import" | "manual" | null;
     }>();
-    // committed "Me" keepers first
+    // committed "Me" keepers first — already committed, eligibility no longer applies
     for (const pick of picks) {
       const meta = decodeKeeper(pick.slot);
       if (!meta || meta.owner !== "Me" || pick.playerId == null) continue;
@@ -130,38 +143,50 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
       out.set(pick.playerId, {
         id: pick.playerId, player, base: meta.base, waiver: meta.waiver ?? null, kept: meta.kept ?? 0,
         cost: keeperCost({ base: meta.base, waiver: meta.waiver ?? null, fa: meta.base == null, kept: meta.kept ?? 0 }, rule),
-        committed: true, pickId: pick.pickId,
+        committed: true, pickId: pick.pickId, ineligible: false, ineligibleReason: null,
       });
     }
     // imported roster players (hypothetical, not committed)
     for (const c of importedCandidates) {
       if (!c.is_mine || c.player_id == null || out.has(c.player_id)) continue;
-      // The platform says this player was already kept and can't be kept again
-      // (Yahoo's no-consecutive-years badge). Recommending him would be an
-      // illegal keep — exclude rather than surface a suggestion you can't use.
-      if (c.keeper_ineligible) continue;
       const player = playerById.get(c.player_id);
       if (!player) continue;
+      // The platform's "was kept" signal (Yahoo's no-consecutive-years badge,
+      // ESPN's kept-max-times flag) is the default, overridable by the user
+      // when they know better than the import — see manualEligibility above.
+      const override = manualEligibility.get(c.player_id);
+      const ineligible = override != null ? !override : !!c.keeper_ineligible;
       const base = priceBasis ? c.bid : c.round;
       const waiver = priceBasis ? c.waiver : null;
       out.set(c.player_id, {
         id: c.player_id, player, base, waiver, kept: 0,
         cost: keeperCost({ base: base == null ? null : base, waiver, fa: base == null, kept: 0 }, rule),
-        committed: false,
+        committed: false, ineligible,
+        ineligibleReason: ineligible ? (override === false ? "manual" : "import") : null,
       });
     }
     return [...out.values()];
-  }, [picks, importedCandidates, playerById, rule, priceBasis]);
+  }, [picks, importedCandidates, playerById, rule, priceBasis, manualEligibility]);
+
+  // Recommending an illegal keep is worse than recommending nothing — only
+  // eligible candidates ever reach the scorer.
+  const eligibleCandidates = useMemo(() => myCandidates.filter((c) => !c.ineligible), [myCandidates]);
+  const ineligibleCandidates = useMemo(() => myCandidates.filter((c) => c.ineligible), [myCandidates]);
+
+  const setEligible = (id: number, eligible: boolean) =>
+    setManualEligibility((m) => { const n = new Map(m); n.set(id, eligible); return n; });
+  const clearOverride = (id: number) =>
+    setManualEligibility((m) => { const n = new Map(m); n.delete(id); return n; });
 
   const reco = useMemo(() => {
-    if (myCandidates.length === 0) return null;
-    const candidates = myCandidates.map((k) => ({ id: k.id, player: k.player, cost: k.cost }));
+    if (eligibleCandidates.length === 0) return null;
+    const candidates = eligibleCandidates.map((k) => ({ id: k.id, player: k.player, cost: k.cost }));
     return recommendKeepers(candidates, {
       format, board: pricedBoard, marketBoard,
       settings: { teams: settings.teams, draftSlot: settings.draftSlot ?? 1, budget: settings.budget, roster: settings.roster as unknown as Record<string, number> },
       allKeptIds, maxKeepers: rule.maxKeepers, flexFloor,
     });
-  }, [myCandidates, format, pricedBoard, marketBoard, settings, allKeptIds, rule.maxKeepers, flexFloor]);
+  }, [eligibleCandidates, format, pricedBoard, marketBoard, settings, allKeptIds, rule.maxKeepers, flexFloor]);
 
   const impact = useMemo(
     () => (reco ? draftImpact(reco.best, { format, settings: { teams: settings.teams, draftSlot: settings.draftSlot ?? 1, budget: settings.budget, roster: settings.roster as unknown as Record<string, number> } }) : null),
@@ -221,21 +246,27 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
               Auto-fill from ESPN (or add candidates above) and this will analyze your roster and recommend
               which to keep — nothing is committed until you click Commit. It's fine to keep fewer than the max, or none.
             </p>
-          ) : !reco ? null : (
+          ) : (
             <div className="space-y-3">
+              {!reco && (
+                <p className="text-xs italic text-faint">
+                  Every candidate is marked ineligible below — undo one if that's wrong.
+                </p>
+              )}
+              {reco && (<>
               {/* headline */}
               <div className="rounded-lg border border-brand/30 bg-brand/5 px-3 py-2.5">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="font-semibold text-ink">
                     {reco.best.ids.length === 0
                       ? "Keep none"
-                      : `Keep ${reco.best.ids.length} of ${myCandidates.length}`}
+                      : `Keep ${reco.best.ids.length} of ${eligibleCandidates.length}`}
                   </span>
                   <span className="text-muted">
                     {reco.best.ids.length > 0 && `· ${reco.best.items.map((it) => it.cand.player.name).join(", ")}`}
                   </span>
                 </div>
-                {reco.best.ids.length < Math.min(myCandidates.length, rule.maxKeepers) && topExcluded && (
+                {reco.best.ids.length < Math.min(eligibleCandidates.length, rule.maxKeepers) && topExcluded && (
                   <p className="mt-1 flex items-start gap-1.5 text-2xs text-muted">
                     <Info className="mt-0.5 h-3 w-3 shrink-0 text-faint" />
                     Fewer than the max of {rule.maxKeepers}: {topExcluded.cand.player.name} adds only KV {topExcluded.kv} —
@@ -266,6 +297,15 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                         <span className="truncate text-ink">{it.cand.player.name}</span>
                         {committedIds.has(it.cand.id) && (
                           <span className="chip border-line bg-raised text-2xs text-faint" title="Committed as a keeper (out of the pool)">kept</span>
+                        )}
+                        {!committedIds.has(it.cand.id) && (
+                          <button
+                            onClick={() => setEligible(it.cand.id, false)}
+                            className="shrink-0 text-2xs text-faint hover:text-rose-600"
+                            title="The import missed this — he was actually kept last year and is ineligible under your league's rule"
+                          >
+                            kept last year?
+                          </button>
                         )}
                       </span>
                       <span className="text-right font-mono text-2xs text-muted">
@@ -394,6 +434,47 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                     Predictions assume each team keeps its best-value players (up to {rule.maxKeepers}). Click <span className="text-brand">confirm</span> to lock one in,
                     or add a specific one via “Add a keeper” above with that team as the owner. Confirmed keepers replace predictions for that team.
                   </p>
+                </div>
+              )}
+              </>)}
+
+              {/* excluded as ineligible: import-detected + manual corrections.
+                  Shown even when reco is null (every candidate excluded) so a
+                  wrong exclusion is always recoverable. */}
+              {ineligibleCandidates.length > 0 && (
+                <div className="rounded-lg border border-amber-200">
+                  <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50/50 px-3 py-1.5">
+                    <span className="text-2xs font-semibold uppercase tracking-wider text-amber-800">
+                      Kept last year — not eligible
+                    </span>
+                    <span className="font-mono text-2xs text-amber-700">{ineligibleCandidates.length}</span>
+                  </div>
+                  <div className="px-1 py-1">
+                    {ineligibleCandidates.map((c) => {
+                      const st = posStyle(c.player.pos);
+                      return (
+                        <div key={c.id} className="flex items-center gap-2 px-2 py-1 text-2xs">
+                          <span className={`font-mono font-semibold ${st.text}`}>{c.player.pos}</span>
+                          <span className="min-w-0 flex-1 truncate text-ink">{c.player.name}</span>
+                          <span
+                            className="chip border-amber-200 bg-amber-50 text-amber-800"
+                            title={c.ineligibleReason === "import"
+                              ? "Detected from a badge that copy-paste reduces to whitespace — could be wrong"
+                              : "You marked this one"}
+                          >
+                            {c.ineligibleReason === "import" ? "detected" : "you marked"}
+                          </span>
+                          <button
+                            onClick={() => c.ineligibleReason === "manual" ? clearOverride(c.id) : setEligible(c.id, true)}
+                            className="w-20 shrink-0 rounded px-1 py-0.5 text-right font-mono text-brand hover:underline"
+                            title="Not actually kept last year — put back in the pool"
+                          >
+                            eligible after all
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
