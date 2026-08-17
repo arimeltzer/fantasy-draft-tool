@@ -69,6 +69,21 @@ guessing undocumented mappings applies to features, not just column names:
     season is exactly the thing being predicted, so using it directly would
     be the same look-ahead `league_rates`/`league_efficiency` are built to
     avoid; last year's pace is the honest, draft-time-knowable proxy.
+
+  - offensive quality (roadmap 1.3 follow-up — nuancing team_change with
+    WHERE a player landed, not just THAT he moved): (passing_epa +
+    rushing_epa) / plays, per (season, team), from the same `load_team_stats`
+    pull pace already uses. Spot-checked against 2023's known offenses —
+    SF/BUF/DAL/MIA top the list, NYJ (Rodgers' Achilles in Q1)/CAR (Bryce
+    Young's rookie year)/NE bottom it, matching real 2023 reputations exactly
+    — so this is a real signal, not sourcing noise. `receiving_epa` is NOT
+    added in — it's the same passing plays' EPA re-attributed to the
+    receiver, not a separate category, and summing it in would double-count
+    the passing game. Same zero-lookahead discipline as pace: read ONLY from
+    team_now's prior season, expressed as a z-score against that season's
+    league distribution (not a plain ratio — EPA straddles zero, so
+    value/average is ill-defined near a near-zero league mean the way it
+    isn't for pace, which is always positive).
 """
 from __future__ import annotations
 
@@ -124,10 +139,43 @@ def league_avg_pace(pace_by_team: dict, season: int):
     return sum(vals) / len(vals) if vals else None
 
 
+def team_quality_by_season(rows) -> dict:
+    """rows: iterable of (season, team, passing_epa, rushing_epa, attempts,
+    carries, sacks_suffered, games). Returns {(season, team): offensive EPA
+    per play} — passing_epa + rushing_epa only (receiving_epa is the same
+    passing plays re-attributed to the receiver, not additional offense)."""
+    out = {}
+    for season, team, passing_epa, rushing_epa, attempts, carries, sacks, games in rows:
+        if not team or not games:
+            continue
+        plays = (attempts or 0) + (carries or 0) + (sacks or 0)
+        if not plays:
+            continue
+        out[(season, team)] = ((passing_epa or 0.0) + (rushing_epa or 0.0)) / plays
+    return out
+
+
+def league_quality_stats(quality_by_team: dict, season: int):
+    """(mean, stdev) of offensive EPA/play across the league that season,
+    for z-scoring one team against its actual peers — None, None when there
+    is nothing to compute a spread from."""
+    vals = [v for (s, _t), v in quality_by_team.items() if s == season]
+    if len(vals) < 2:
+        return None, None
+    mean = sum(vals) / len(vals)
+    var = sum((v - mean) ** 2 for v in vals) / (len(vals) - 1)
+    return mean, var ** 0.5
+
+
+QUALITY_Z_CLAMP = 2.0  # a team more than 2 sd from the mean is rare enough
+                       # that the raw z shouldn't extrapolate further un-clamped
+
+
 def context_flags(pos: str, team_prev, team_now, season_now: int,
-                   qb_by_team: dict, coach_by_team: dict, pace_by_team: dict) -> dict:
-    """One player-season's four raw signals. Each is None when not
-    computable (a true rookie's team_prev is unknown, a team/QB pair below
+                   qb_by_team: dict, coach_by_team: dict, pace_by_team: dict,
+                   quality_by_team: dict | None = None) -> dict:
+    """One player-season's raw signals. Each is None when not computable (a
+    true rookie's team_prev is unknown, a team/QB pair below
     MIN_QB_ATTEMPTS, etc.) — the caller treats None as "no adjustment",
     the same coverage rule the rest of this pipeline uses throughout.
     """
@@ -154,8 +202,17 @@ def context_flags(pos: str, team_prev, team_now, season_now: int,
         if p and avg:
             pace_ratio = p / avg
 
+    quality_z = None
+    if team_now and quality_by_team is not None:
+        q = quality_by_team.get((season_now - 1, team_now))
+        mean, sd = league_quality_stats(quality_by_team, season_now - 1)
+        if q is not None and mean is not None and sd:
+            z = (q - mean) / sd
+            quality_z = max(-QUALITY_Z_CLAMP, min(QUALITY_Z_CLAMP, z))
+
     return {"team_changed": team_changed, "qb_changed": qb_changed,
-            "coach_changed": coach_changed, "pace_ratio": pace_ratio}
+            "coach_changed": coach_changed, "pace_ratio": pace_ratio,
+            "quality_z": quality_z}
 
 
 def apply_flag_discount(projs, players, flags_by_id: dict, key: str, k: float):
@@ -174,4 +231,42 @@ def apply_pace(projs, players, flags_by_id: dict, k: float):
     for p, proj in zip(players, projs):
         r = flags_by_id.get(p["player_id"], {}).get("pace_ratio")
         out.append(proj * (1 + k * (r - 1)) if r is not None else proj)
+    return out
+
+
+# Bounds on the quality-nuanced multiplier itself, separate from the z clamp
+# above — a defensive floor/ceiling so a large k can't invert a projection to
+# near-zero or inflate it past what any k this small should plausibly do.
+QUALITY_MULT_FLOOR = 0.4
+QUALITY_MULT_CEIL = 1.3
+
+
+def apply_team_change_quality(projs, players, flags_by_id: dict, k: float):
+    """Nuances the flat team_changed discount with WHERE a player landed,
+    not just THAT he moved: multiplier = 1 - k*(1 - quality_z). At
+    quality_z=0 (a league-average destination) this is IDENTICAL to
+    apply_flag_discount's flat (1-k) — a strict generalization, not a
+    different feature. A below-average destination (negative z) pushes the
+    discount deeper than flat; an above-average one shrinks it, and a
+    strongly above-average one can flip it into a bonus (multiplier > 1).
+
+    Only applies to a player who actually changed teams (team_changed is
+    True) — untouched otherwise, same as apply_flag_discount. A mover with
+    no quality_z available (destination quality couldn't be computed) falls
+    back to quality_z=0, i.e. the flat discount — the move itself is still
+    real signal even without a quality read on it, so this must not un-flag
+    a player who apply_flag_discount would have discounted.
+    """
+    out = []
+    for p, proj in zip(players, projs):
+        flags = flags_by_id.get(p["player_id"], {})
+        if not flags.get("team_changed"):
+            out.append(proj)
+            continue
+        z = flags.get("quality_z")
+        if z is None:
+            z = 0.0
+        mult = 1 - k * (1 - z)
+        mult = max(QUALITY_MULT_FLOOR, min(QUALITY_MULT_CEIL, mult))
+        out.append(proj * mult)
     return out

@@ -72,7 +72,9 @@ from scipy import stats
 from projection_model import DEFAULT_PARAMS, default_scoring, project_points, with_overrides
 from projection_opportunity import league_efficiency, project_points_opportunity
 from projection_v2 import league_rates, stabilize_player
-from team_context import apply_flag_discount, apply_pace, context_flags, team_qb_by_season
+from team_context import (
+    apply_flag_discount, apply_pace, apply_team_change_quality, context_flags, team_qb_by_season,
+)
 
 # Prior strength for v2's touchdown shrinkage, as a multiple of a typical
 # season's workload. 0 must reproduce the shipped model exactly (checked).
@@ -84,10 +86,24 @@ V2_K = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0]
 # shipped model exactly, same as every other sweep here. pace_ratio is
 # already a ratio to league average, so its k scales how much of that ratio
 # passes through (k=1 is a full linear pass-through).
-TEAM_CHANGE_K = [0.0, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25]
+# Extended past the originally-shipped grid's top (0.25) — that sweep was
+# still climbing at 0.25 when TEAM_CHANGE_K shipped, so 0.25 was the best OF
+# WHAT WAS TRIED, not a found optimum. This re-run checks whether it keeps
+# climbing, or actually turns over somewhere past it.
+TEAM_CHANGE_K = [0.0, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25, 0.3, 0.4, 0.5]
 QB_CHANGE_K = [0.0, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25]
 COACH_CHANGE_K = [0.0, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25]
 PACE_K = [0.0, 0.25, 0.5, 1.0, 1.5, 2.0]
+
+# Follow-up to the shipped flat TEAM_CHANGE_K: does nuancing the discount
+# with WHERE a player landed (destination offensive quality, z-scored) beat
+# the flat version? At quality_z=0 this reproduces the flat discount exactly
+# (see apply_team_change_quality), so k=0 in THIS grid is the pure model
+# with no team-change adjustment at all, same convention as TEAM_CHANGE_K.
+# Extended past 0.25 on purpose — the original TEAM_CHANGE_K sweep was still
+# climbing at its top value (0.25) when it was shipped, so the true optimum
+# was never actually found; this grid checks whether it's out past there.
+TEAM_CHANGE_QUALITY_K = [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5]
 
 # Prior strength for the opportunity model's efficiency shrinkage (roadmap
 # 1.1/1.2), same units as V2_K. Unlike V2_K, k=0 here is NOT the shipped
@@ -255,10 +271,11 @@ def load_ages(years) -> dict:
 
 
 def load_team_context(years):
-    """(coach_by_team, pace_by_team) for roadmap 1.3 — see team_context.py
-    for what each is and why it's read the way it is. Both loaders are
-    independent of load_seasons()/load_ages(); the QB-starter signal reuses
-    load_seasons()'s own player rows instead of a third network call."""
+    """(coach_by_team, pace_by_team, quality_by_team) for roadmap 1.3 — see
+    team_context.py for what each is and why it's read the way it is. All
+    three are independent of load_seasons()/load_ages(); the QB-starter
+    signal reuses load_seasons()'s own player rows instead of a fourth
+    network call."""
     import nflreadpy as nfl
     import team_context as tc
 
@@ -276,7 +293,14 @@ def load_team_context(years):
         for r in ts.itertuples()
     )
     pace_by_team = tc.team_pace_by_season(pace_rows)
-    return coach_by_team, pace_by_team
+
+    quality_rows = (
+        (int(r.season), r.team, r.passing_epa, r.rushing_epa, r.attempts,
+         r.carries, getattr(r, "sacks_suffered", 0), r.games)
+        for r in ts.itertuples()
+    )
+    quality_by_team = tc.team_quality_by_season(quality_rows)
+    return coach_by_team, pace_by_team, quality_by_team
 
 
 def season_line(row) -> dict:
@@ -523,15 +547,16 @@ def main():
     print(f"  {len(ages)} player-ages")
 
     use_team_context = not args.no_team_context
-    qb_by_team = coach_by_team = pace_by_team = {}
+    qb_by_team = coach_by_team = pace_by_team = quality_by_team = {}
     team_by_ps = {}
     if use_team_context:
-        print("Loading team context (coaches + pace) from schedules/team stats…")
-        coach_by_team, pace_by_team = load_team_context(need)
+        print("Loading team context (coaches + pace + quality) from schedules/team stats…")
+        coach_by_team, pace_by_team, quality_by_team = load_team_context(need)
         qb_by_team = team_qb_by_season(data.itertuples())
         team_by_ps = {(r.season, r.player_id): r.team for r in data.itertuples()}
         print(f"  {len(coach_by_team)} team-seasons with a coach, "
-              f"{len(pace_by_team)} with a pace, {len(qb_by_team)} with a starting QB")
+              f"{len(pace_by_team)} with a pace, {len(quality_by_team)} with an offensive "
+              f"quality reading, {len(qb_by_team)} with a starting QB")
 
     sc = default_scoring(PPR)
 
@@ -765,7 +790,7 @@ def main():
                     p["player_id"]: context_flags(
                         p["pos"], team_by_ps.get((year - 1, p["player_id"])),
                         team_by_ps.get((year, p["player_id"])), year,
-                        qb_by_team, coach_by_team, pace_by_team)
+                        qb_by_team, coach_by_team, pace_by_team, quality_by_team)
                     for p in pop
                 }
                 tc_features = (
@@ -777,6 +802,12 @@ def main():
                      lambda projs, k: apply_flag_discount(projs, pop, flags_by_player, "coach_changed", k)),
                     ("pace", PACE_K,
                      lambda projs, k: apply_pace(projs, pop, flags_by_player, k)),
+                    # Follow-up: does nuancing the flat team_change discount
+                    # with destination offensive quality beat the flat
+                    # version? k=0 here is the pure model (no adjustment at
+                    # all), same convention as the other four.
+                    ("team_change_quality", TEAM_CHANGE_QUALITY_K,
+                     lambda projs, k: apply_team_change_quality(projs, pop, flags_by_player, k)),
                 )
                 for feat_name, K_grid, apply_fn in tc_features:
                     for k in K_grid:
@@ -841,6 +872,22 @@ def main():
                             per_year.append({"year": year, "population": pop_name,
                                              "model": "team_change_stack", "variant": f"k{k}", "ctx_k": k,
                                              "pos": pos, **m})
+
+                    # Same re-baseline for the quality-nuanced version — the
+                    # question that actually matters here is not "beats the
+                    # pure model" but "beats what SHIPS today" (the flat 0.25
+                    # discount, already live for RB/WR), which is why this
+                    # stack is worth building even though team_change_quality
+                    # is a brand-new idea, not yet shipped in any form.
+                    for k in TEAM_CHANGE_QUALITY_K:
+                        tcq_adj = apply_team_change_quality(shipped_for_tc, pop, flags_by_player, k)
+                        tcq_stack = apply_expert_shipped(
+                            pop, apply_injury_shipped(pop, tcq_adj, injury_by_player), expert_by_player)
+                        tcq_stack_merged = blend_with_market(pop, tcq_stack, adp_by_player, MARKET_ANCHOR_W)
+                        for pos, m in score(pop, tcq_stack_merged, sc).items():
+                            per_year.append({"year": year, "population": pop_name,
+                                             "model": "team_change_quality_stack", "variant": f"k{k}",
+                                             "ctx_k": k, "pos": pos, **m})
 
     df = pd.DataFrame(per_year)
     for c in ("blend_w", "k", "inj_k", "opp_k", "ctx_k"):
@@ -1215,7 +1262,7 @@ def main():
     # phase kill gate INDEPENDENTLY — one feature clearing it does not carry
     # the others, the same reason 0.3 and 1.1/1.2 report per position rather
     # than as a single phase-wide verdict.
-    tc_feature_names = ["team_change", "qb_change", "coach_change", "pace"]
+    tc_feature_names = ["team_change", "qb_change", "coach_change", "pace", "team_change_quality"]
     tca = agg[(agg["population"] == "all") & (agg["model"].isin(tc_feature_names))]
     if len(tca) and dis_rows:
         print("\n=== ROADMAP 1.3 — TEAM CONTEXT (team/QB/coach change, pace) ===")
@@ -1333,6 +1380,55 @@ def main():
             skip3 = [p for p, ok in tc_restacked_pass.items() if not ok]
             print(f"\n  -> Against the live board: ship team_change for {', '.join(ship3) or '(none)'}"
                   f"{'; ' + ', '.join(skip3) + ' do not clear it here' if skip3 else ''}.")
+
+        # ── follow-up: does nuancing the flat discount with destination ──
+        # offensive quality beat the flat discount itself — not just the
+        # pure model, and not just doing nothing? Two reference points per
+        # position: the live board with no team-change adjustment at all
+        # (shipped_stack), and the live board with the FLAT discount already
+        # applied where it ships today (team_change_stack's own best k) —
+        # the second is the bar that actually decides whether nuancing is
+        # worth shipping on top of what's already there.
+        tcqsa = agg[(agg["population"] == "all") & (agg["model"] == "team_change_quality_stack")]
+        if len(tcqsa) and len(ssa):
+            print("\n=== team_change_quality vs THE CURRENT LIVE BOARD (incl. shipped team_change) ===")
+            quality_pure_pass = {posn for (feat, posn), ok in tc_passed.items()
+                                 if feat == "team_change_quality" and ok}
+            tcq_restacked = {}
+            for posn in sorted(tcqsa["pos"].unique()):
+                if posn not in quality_pure_pass:
+                    continue
+                base_row = ssa[ssa["pos"] == posn]
+                if not len(base_row):
+                    continue
+                base_bare = float(base_row.iloc[0].spearman_total)
+                # the currently-shipped reference: team_change_stack's own
+                # best k for this position, if any; else just the bare board.
+                shipped_ref = tc_restacked.get(posn, {}).get("best", base_bare)
+                s = tcqsa[tcqsa["pos"] == posn].sort_values("ctx_k")
+                print(f"\n  {posn}   (live, no team_change: {base_bare:.4f}   "
+                      f"live, flat team_change: {shipped_ref:.4f})")
+                for _, r in s.iterrows():
+                    print(f"    k={r.ctx_k:<5} {r.spearman_total:.4f}  "
+                          f"(vs no-adj {r.spearman_total - base_bare:+.4f})  "
+                          f"(vs flat {r.spearman_total - shipped_ref:+.4f})")
+                best = s.loc[s.spearman_total.idxmax()]
+                tcq_restacked[posn] = {"base_bare": base_bare, "shipped_ref": shipped_ref,
+                                       "best": float(best.spearman_total), "best_k": float(best.ctx_k)}
+
+            print("\n  --- team_change_quality VERDICT (must beat the FLAT discount already shipped) ---")
+            tcq_pass = {}
+            for posn in sorted(tcq_restacked):
+                v = tcq_restacked[posn]
+                ok = v["best"] > v["shipped_ref"] + MERGE_EPS
+                tcq_pass[posn] = ok
+                print(f"    {posn}  k={v['best_k']}  {v['best']:.4f} vs flat-shipped "
+                      f"{v['shipped_ref']:.4f} ({v['best'] - v['shipped_ref']:+.4f})   "
+                      f"{'PASS' if ok else 'FAIL'}")
+            ship4 = [p for p, ok in tcq_pass.items() if ok]
+            skip4 = [p for p, ok in tcq_pass.items() if not ok]
+            print(f"\n  -> Nuancing beats the flat discount for: {', '.join(ship4) or '(none)'}"
+                  f"{'; ' + ', '.join(skip4) + ' stay on the flat 0.25 discount' if skip4 else ''}.")
 
     print(f"\n✓ wrote {args.out}/projection_backtest_summary.csv and _by_year.csv")
 
