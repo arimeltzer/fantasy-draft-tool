@@ -1,0 +1,67 @@
+name: Slot config test (roadmap 0.2)
+
+# Manual. Simulates whole snake drafts against the SHIPPED pickScore to ask
+# whether the ten per-slot configs in DEFAULT_SNAKE_PARAMS.SLOTS beat a single
+# shared config OUT OF SAMPLE.
+#
+# The split is the point: those configs were fitted on 2021-2025, so a win
+# there proves nothing. 2017-2020 was not available to whoever tuned them.
+#
+# Needs FANTASYPROS_API_KEY — the opponent bots draft by that season's real
+# ADP. Without it they would draft by our own model, and the comparison would
+# be against a strawman sharing our biases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      first:
+        description: "First season to export"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season to export"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated drafts per slot per season"
+        required: false
+        default: "24"
+        type: string
+
+jobs:
+  slot-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      # The simulator decides whether 100 tuned parameters stay in the engine.
+      # It gets verified before it is allowed to produce a number.
+      - name: Simulator selftest
+        run: node frontend/src/engine/draft-sim.selftest.mjs
+
+      - name: Export historical draft boards
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Per-slot vs shared config
+        run: |
+          node frontend/src/engine/slot-config-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --seeds ${{ inputs.seeds }} | tee data-pipeline/results/slot_config_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: slot-config-test
+          path: data-pipeline/results/
