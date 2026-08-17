@@ -171,6 +171,13 @@ export interface LeagueSettings {
   source?: { provider: string; extId: string };  // set on league import; drives keeper auto-fill
   keeperImport?: KeeperImportCache;              // cached prior-season pull (avoids refetching)
   scoring?: ScoringRules;  // per-stat scoring beyond PPR; drives valuations via resolveScoring()
+  /** Pull projections toward ADP/ECR order where the market ranks a player.
+   *  Defaults to ON — backtested better on the full board at every position.
+   *  Set false for a pool carrying no market ranks, or to undo it mid-draft. */
+  marketAnchor?: boolean;
+  /** Weight on OUR model in that blend; 1 = pure model, 0 = pure market order.
+   *  Defaults to MARKET_ANCHOR_W (0.3), which the sweep found flat-optimal. */
+  marketAnchorWeight?: number;
   /** Overall pick numbers you own (snake). Set only when picks were TRADED —
    *  unset means standard serpentine order from `draftSlot`. */
   myPicks?: number[];

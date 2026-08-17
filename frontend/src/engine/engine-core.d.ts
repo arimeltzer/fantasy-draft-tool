@@ -106,6 +106,24 @@ export declare function projectValue(
 ): { projPts: number; priorEquiv: number | null; valuePoints: number; ageMult: number; trend: number | null; rookie: boolean; risk: number };
 export declare function rankByAdp(players: { id: number | string; adp?: number | null; ecr?: number | null }[]): Record<number, number>;
 export declare function replacementRanks(league: League, P?: EngineParams): Record<string, number>;
+/** Default weight on OUR model when anchoring to the market (0.3). */
+export declare const MARKET_ANCHOR_W: number;
+/** Pull valuePoints toward the market's ordering where ADP/ECR ranks a player,
+ *  by rank transfer onto our own points ladder. Ranked players only; the rest
+ *  pass through untouched. `w` is the weight on our model. */
+export declare function marketAnchor<T extends { id: number | string; pos: string; valuePoints: number }>(
+  players: T[], w?: number, rankById?: Record<number | string, number> | null,
+): T[];
+/** Projection only — valuePoints without replacement level or VBD. */
+export declare function projectAll(
+  players: Player[], sc: Scoring, P?: EngineParams
+): (Player & ReturnType<typeof projectValue>)[];
+/** Replacement level, VBD and tiers from finished valuePoints. Runs LAST. */
+export declare function finalizeBoard(
+  scored: { id: number | string; pos: string; valuePoints: number }[],
+  league: League, P?: EngineParams,
+): BoardPlayer[];
 export declare function valueBoard(
-  players: Player[], league: League, sc: Scoring, P?: EngineParams
+  players: Player[], league: League, sc: Scoring, P?: EngineParams,
+  opts?: { anchor?: boolean; anchorW?: number },
 ): BoardPlayer[];

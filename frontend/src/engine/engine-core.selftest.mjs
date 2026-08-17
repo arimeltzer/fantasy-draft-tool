@@ -4,6 +4,7 @@
  * that never set `settings.scoring`. */
 import {
   DEFAULT_SCORING, defaultScoring, resolveScoring, points, projectValue, valueBoard,
+  marketAnchor, finalizeBoard,
 } from "./engine-core.js";
 
 let pass = 0, fail = 0;
@@ -94,6 +95,45 @@ ok(projected > deepEcr, "a real projection overrides the rank curve");
 const rookieRow = valueBoard([rookie("WR", { ecr: 20 })],
   { teams: 12, roster: { QB:1,RB:2,WR:2,TE:1,FLEX:1,K:1,DST:1,BENCH:6 } }, standard)[0];
 ok(rookieRow.risk >= 0.2, "rookie risk is flagged, not treated as a known quantity");
+/* ── market anchor ────────────────────────────────────────────────────────
+   Ported from projection_backtest.blend_with_market; `anchor_parity.py`
+   asserts the two stay numerically identical. These cover the STRUCTURAL
+   properties that parity alone would not catch if both sides were wrong
+   together. */
+{
+  const mk = (id, pos, vp) => ({ id, pos, valuePoints: vp });
+  // 6 RBs, only 3 ranked — the coverage case the merge exists for.
+  const pool = [mk("a","RB",100), mk("b","RB",90), mk("c","RB",80),
+                mk("d","RB",70), mk("e","RB",60), mk("f","RB",50)];
+  const ranks = { c: 1, a: 2, f: 3 };
+  const vp = (rows) => Object.fromEntries(rows.map((p) => [p.id, p.valuePoints]));
+
+  eq(vp(marketAnchor(pool, 1.0, ranks)), vp(pool), "anchor w=1 is the pure model");
+
+  const at0 = vp(marketAnchor(pool, 0.0, ranks));
+  eq([at0.a, at0.c, at0.f].sort((x, y) => x - y), [50, 80, 100],
+     "anchor reshuffles ranked players among their OWN point values");
+  ok(at0.c > at0.a && at0.a > at0.f, "anchor respects market order");
+  eq([at0.b, at0.d, at0.e], [90, 70, 60], "anchor leaves unranked players untouched");
+
+  const half = vp(marketAnchor(pool, 0.5, ranks));
+  ok(half.c > 80 && half.c < 100, "anchor at w=0.5 sits between the endpoints");
+
+  // Position isolation: a WR's rank must not pull on the RB ladder.
+  const mixed = [mk("r1","RB",100), mk("r2","RB",50), mk("w1","WR",10), mk("w2","WR",5)];
+  const mixedOut = vp(marketAnchor(mixed, 0.0, { r1: 2, r2: 1, w1: 1, w2: 2 }));
+  eq(mixedOut.r1, 50, "anchor is per-position (RB takes RB points)");
+  eq(mixedOut.w1, 10, "anchor is per-position (WR keeps WR points)");
+
+  eq(vp(marketAnchor(pool, 0.0, {})), vp(pool), "no ranks at all -> pass through");
+
+  // The whole point: VBD must be derived AFTER anchoring, not before.
+  const league = { teams: 10, roster: { QB:1,RB:2,WR:2,TE:1,FLEX:1,K:0,DST:0,BENCH:5 } };
+  const anchored = finalizeBoard(marketAnchor(pool, 0.0, ranks), league);
+  const top = anchored[0];
+  eq(top.id, "c", "board order follows the anchored points, not the raw model");
+  ok(anchored.every((p) => typeof p.vbd === "number"), "anchored board still carries vbd");
+}
 
 console.log(`\nengine-core.selftest: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

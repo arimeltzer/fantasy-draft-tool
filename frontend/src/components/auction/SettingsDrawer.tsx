@@ -5,6 +5,7 @@ import { DEFAULT_SCORING, resolveScoring } from "@/engine/valuation-engine.js";
 import { applyOpponentNames } from "@/engine/draft-order.js";
 import type { TeamRename } from "@/engine/draft-order.js";
 import { LeagueSettings, KeeperRule, ScoringRules } from "@/lib/api";
+import Tip from "@/components/shared/Tip";
 
 /** One team per line; blanks and stray whitespace are ignored, not stored. */
 const parseOpponents = (text: string) =>
@@ -97,6 +98,30 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
               className="accent-amber-500 w-4 h-4"
             />
           </label>
+          <label className="flex items-center justify-between gap-2 text-xs">
+            <Tip tip="Pulls projections toward expert consensus order for players the market ranks, and leaves the rest to the model. Backtested 2017–2025, this ranked the full board better than the model alone at every position. Turn it off only if this pool has no ADP/ECR data.">
+              <span className="text-gray-500">Anchor to market ranks</span>
+            </Tip>
+            <input
+              type="checkbox"
+              checked={local.marketAnchor !== false}
+              onChange={(e) => set({ marketAnchor: e.target.checked })}
+              className="accent-amber-500 w-4 h-4"
+            />
+          </label>
+          {local.marketAnchor !== false && (
+            <label className="flex items-center justify-between gap-2 text-xs">
+              <Tip tip="How much of YOUR model survives the anchor. 1 = ignore the market, 0 = follow it exactly. 0.3 is the backtested optimum and the curve is flat from about 0.2 to 0.5, so small changes here matter little.">
+                <span className="text-gray-500 pl-3">↳ model weight</span>
+              </Tip>
+              <input
+                type="number" min={0} max={1} step={0.1}
+                value={local.marketAnchorWeight ?? 0.3}
+                onChange={(e) => set({ marketAnchorWeight: Math.min(1, Math.max(0, Number(e.target.value))) })}
+                className="w-16 px-2 py-1 rounded bg-gray-50 border border-gray-300 text-right font-mono text-xs"
+              />
+            </label>
+          )}
         </div>
 
         <div className="space-y-2">

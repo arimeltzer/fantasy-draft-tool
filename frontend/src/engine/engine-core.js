@@ -236,6 +236,68 @@ export function rankByAdp(players) {
   return out;
 }
 
+/** Default weight on OUR model when anchoring to the market. See marketAnchor. */
+export const MARKET_ANCHOR_W = 0.3;
+
+/**
+ * Pull our projection toward the market's ordering, where the market has one.
+ *
+ * WHY. Backtested 2017-2025 on rank correlation against actual season points,
+ * the market beats this model at every position on the players it ranks —
+ * ADP 0.648/0.652/0.535/0.650 (QB/RB/TE/WR) against the model's
+ * 0.497/0.551/0.472/0.594. But ADP only ranks about 55% of the board, and the
+ * model has to price the rest. Anchoring the covered half and leaving the
+ * uncovered half to the model beat the shipped model on the FULL board by
+ * +0.052 QB, +0.047 RB, +0.016 TE, +0.022 WR, with top-24 hit rate up 3-5
+ * points everywhere. That merge is what this implements.
+ *
+ * HOW. Per position, the market's rank is converted back into points by RANK
+ * TRANSFER: if ADP says a player is the 7th-best RB, he receives the points
+ * this model assigns to ITS OWN 7th-best RB. Points, not ranks, because
+ * valuePoints feeds replacement level, VBD, tiers and auction dollars — a
+ * rank-only blend would score well and break everything downstream. The
+ * transfer uses no information from the season being predicted and keeps the
+ * output on our own scale.
+ *
+ * COVERAGE. The ladder is built from the RANKED players only, so the transfer
+ * is a permutation WITHIN that subset: ranked players are reshuffled among the
+ * point values ranked players already held, and everyone the market ignores
+ * keeps their projection and their place in the distribution. Reading the k-th
+ * market rank off a ladder that included unranked players would hand out slots
+ * those players already occupy, inflating the covered group and demoting the
+ * rest of the board.
+ *
+ * WEIGHT. w is the weight on OUR model; w=1 is the pure model, w=0 is the
+ * model's point distribution reordered by ADP. 0.3 is not a per-position fit:
+ * the sweep's optimum sits at 0.2-0.5 depending on position, the curves are
+ * flat across that range, and a single 0.3 lands within 0.001 Spearman of the
+ * best weight at all four positions. One constant chosen off a flat optimum
+ * generalizes; four constants read off their own evaluation data do not.
+ */
+export function marketAnchor(players, w = MARKET_ANCHOR_W, rankById = null) {
+  if (w >= 1) return players;
+  const ranks = rankById || rankByAdp(players);
+  const byPos = {};
+  players.forEach((p, i) => {
+    (byPos[p.pos] ||= []).push(i);
+  });
+
+  const out = players.slice();
+  for (const idxs of Object.values(byPos)) {
+    const ranked = idxs.filter((i) => ranks[players[i].id] != null);
+    if (!ranked.length) continue;
+    // Our own points for the ranked players, best first: the ladder the
+    // market's ordering is read against.
+    const ladder = ranked.map((i) => players[i].valuePoints).sort((a, b) => b - a);
+    const marketOrder = ranked.slice().sort((a, b) => ranks[players[a].id] - ranks[players[b].id]);
+    marketOrder.forEach((i, slot) => {
+      const implied = ladder[Math.min(slot, ladder.length - 1)];
+      out[i] = { ...players[i], valuePoints: +(w * players[i].valuePoints + (1 - w) * implied).toFixed(1) };
+    });
+  }
+  return out;
+}
+
 export function replacementRanks(league, P = DEFAULT_PARAMS) {
   const { teams, roster, superflex } = league;
   const flex = teams * (roster.FLEX || 0);
@@ -251,8 +313,23 @@ export function replacementRanks(league, P = DEFAULT_PARAMS) {
   return r;
 }
 
-export function valueBoard(players, league, sc, P = DEFAULT_PARAMS) {
-  const scored = players.map((pl) => ({ ...pl, ...projectValue(pl, sc, P) }));
+/** Projection only — no replacement level, no VBD. Split out so callers can
+ *  adjust valuePoints (schedule strength, market anchoring) BEFORE replacement
+ *  and VBD are derived from them, rather than deriving twice. */
+export function projectAll(players, sc, P = DEFAULT_PARAMS) {
+  return players.map((pl) => ({ ...pl, ...projectValue(pl, sc, P) }));
+}
+
+/**
+ * Replacement level, VBD and tiers from finished valuePoints.
+ *
+ * Everything downstream — auction dollars, scarcity, the snake recommender —
+ * reads vbd, so this must run LAST, after every adjustment to valuePoints.
+ * It used to be duplicated in useBoard for the schedule-strength path, with
+ * its own copy of the FLEX share constants; a change to one and not the other
+ * would have silently moved replacement level for SOS leagues only.
+ */
+export function finalizeBoard(scored, league, P = DEFAULT_PARAMS) {
   const rep = replacementRanks(league, P);
   const repPts = {};
   for (const pos of ["QB", "RB", "WR", "TE", "K", "DST"]) {
@@ -275,4 +352,18 @@ export function valueBoard(players, league, sc, P = DEFAULT_PARAMS) {
     });
   }
   return board.map((p) => ({ ...p, tier: tier[p.id] || null })).sort((a, b) => b.vbd - a.vbd);
+}
+
+/**
+ * Projection -> VBD in one call.
+ *
+ * The market anchor is OFF here and opted into by the app (see useBoard), not
+ * because it is optional in spirit but because the order matters: schedule
+ * strength has to land on valuePoints before the anchor reads them, so the
+ * app composes projectAll -> SOS -> marketAnchor -> finalizeBoard itself.
+ */
+export function valueBoard(players, league, sc, P = DEFAULT_PARAMS, opts = {}) {
+  let scored = projectAll(players, sc, P);
+  if (opts.anchor) scored = marketAnchor(scored, opts.anchorW ?? MARKET_ANCHOR_W);
+  return finalizeBoard(scored, league, P);
 }

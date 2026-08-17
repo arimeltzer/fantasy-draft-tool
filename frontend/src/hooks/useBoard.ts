@@ -1,5 +1,7 @@
 import { useMemo } from "react";
-import { valueBoard, resolveScoring } from "@/engine/valuation-engine.js";
+import {
+  projectAll, finalizeBoard, marketAnchor, MARKET_ANCHOR_W, resolveScoring,
+} from "@/engine/valuation-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
 import { ApiPlayer, LeagueSettings } from "@/lib/api";
 import { canonName, aliasName, sameTeamOrUnknown } from "@/lib/playerName";
@@ -21,7 +23,6 @@ function toEnginePlayer(p: ApiPlayer) {
   };
 }
 
-const FLEX_SHARE: Record<string, number> = { RB: 0.5, WR: 0.42, TE: 0.08 };
 
 /** Team spellings that mean the same franchise. Mirrors data-pipeline/teams.py
  *  and backend/integrations/matching.py. */
@@ -115,33 +116,31 @@ export function useBoard(
     };
 
     const enginePlayers = dedupePlayers(players).map(toEnginePlayer);
-    let board = valueBoard(enginePlayers, league, sc);
+
+    // Order is load-bearing. Schedule strength adjusts OUR projection, so it
+    // lands first; the market anchor then reads the finished projection; and
+    // replacement level, VBD and tiers are derived last, from whatever
+    // valuePoints ended up being. Deriving VBD before an adjustment (as the
+    // old SOS path did, then recomputing it by hand) is how the two copies of
+    // the replacement maths drifted apart.
+    let scored = projectAll(enginePlayers, sc);
 
     if (sos && Object.keys(sos).length > 0) {
-      board = board.map((p) => {
-        const mult = sos[p.team]?.[p.pos] ?? 1;
-        return { ...p, valuePoints: +(p.valuePoints * mult).toFixed(1) };
-      });
-
-      const repPts: Record<string, number> = {};
-      for (const pos of ["QB", "RB", "WR", "TE", "K", "DST"]) {
-        const list = board
-          .filter((p) => p.pos === pos)
-          .sort((a: BoardPlayer, b: BoardPlayer) => b.valuePoints - a.valuePoints);
-        const rosterCount = (settings.roster as Record<string, number>)[pos] ?? 0;
-        const flexContrib = FLEX_SHARE[pos] ?? 0;
-        const repIdx = Math.max(
-          0,
-          Math.floor(settings.teams * rosterCount + settings.teams * (settings.roster.FLEX ?? 0) * flexContrib) - 1,
-        );
-        repPts[pos] = list[Math.min(repIdx, list.length - 1)]?.valuePoints ?? 0;
-      }
-
-      board = board
-        .map((p: BoardPlayer) => ({ ...p, vbd: +(p.valuePoints - (repPts[p.pos] ?? 0)).toFixed(1) }))
-        .sort((a: BoardPlayer, b: BoardPlayer) => b.vbd - a.vbd);
+      scored = scored.map((p) => ({
+        ...p,
+        valuePoints: +(p.valuePoints * (sos[p.team]?.[p.pos] ?? 1)).toFixed(1),
+      }));
     }
 
-    return board;
+    // Backtested +0.05/+0.05/+0.02/+0.02 Spearman (QB/RB/TE/WR) against the
+    // unanchored model on the full board, so it is on by default; the setting
+    // exists because a league whose player pool carries no ADP or ECR at all
+    // gains nothing from it, and because a mid-draft valuation change should
+    // be reversible without a deploy.
+    if (settings.marketAnchor !== false) {
+      scored = marketAnchor(scored, settings.marketAnchorWeight ?? MARKET_ANCHOR_W);
+    }
+
+    return finalizeBoard(scored, league);
   }, [players, settings, sos]);
 }
