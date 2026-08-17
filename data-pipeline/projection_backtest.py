@@ -60,9 +60,14 @@ import os
 from datetime import date
 from itertools import product
 
-import nflreadpy as nfl
 import pandas as pd
 from scipy import stats
+
+# nflreadpy is imported lazily inside the loaders. Everything else here —
+# blend_with_market, disagreement_signal, score — is pure arithmetic, and
+# `anchor_parity.py` has to import them to check the shipped JS against them.
+# A module-level import would have made that check drag a season-data library
+# (and polars, and pyarrow) into a job that never touches the network.
 
 from projection_model import DEFAULT_PARAMS, default_scoring, project_points, with_overrides
 from projection_v2 import league_rates, stabilize_player
@@ -107,6 +112,7 @@ def _col(df, *names):
 
 def load_seasons(years) -> pd.DataFrame:
     """One row per (season, player): the engine's season line + games played."""
+    import nflreadpy as nfl
     frames = []
     for y in years:
         print(f"  loading {y}…", end=" ", flush=True)
@@ -138,6 +144,7 @@ def load_seasons(years) -> pd.DataFrame:
 
 def load_ages(years) -> dict:
     """(season, player_id) -> age on Sept 1 of that season."""
+    import nflreadpy as nfl
     ages = {}
     for y in years:
         try:

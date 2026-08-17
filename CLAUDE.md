@@ -84,6 +84,8 @@ cd backend && uvicorn main:app --reload
 cd backend && python -m integrations.selftest
 # nickname alias tables (playerName.ts vs name_aliases.py) must not drift
 cd data-pipeline && python name_parity.py
+# the SHIPPED market anchor must equal the Python that was backtested
+cd data-pipeline && python anchor_parity.py
 # projection model: port parity, then backtest (both pull from nflverse)
 cd data-pipeline && python projection_parity.py && python projection_backtest.py
 # SOS tuning (pulls 10 seasons from nflverse)
@@ -174,6 +176,52 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   September. Needs two GitHub repo secrets: `FANTASYPROS_API_KEY` and
   `DATABASE_PUBLIC_URL` (Settings → Secrets and variables → Actions). Can also
   be triggered manually from the Actions tab (`workflow_dispatch`).
+
+## Market anchoring (shipped, on by default)
+
+- The board no longer ranks on the model alone. `engine-core.js marketAnchor()`
+  pulls `valuePoints` toward ADP/ECR order **for the players the market ranks**,
+  by rank transfer onto our own points ladder; players the market ignores (~45%
+  of the board) keep their projection untouched.
+- **Why**: backtested 2017–2025, ADP beats this model on the players it ranks at
+  every position (0.648/0.652/0.535/0.650 vs 0.497/0.551/0.472/0.594). Anchoring
+  the covered half beat the pure model on the FULL board by **+0.052 QB /
+  +0.047 RB / +0.016 TE / +0.022 WR** Spearman, top-24 hit rate up 3–5 points.
+- **Weight is one number, 0.3, for all positions** — the per-position optima
+  (0.2–0.5) sit on a flat curve and a single 0.3 is within 0.001 of the best
+  everywhere. Four constants fit on their own evaluation data would generalize
+  worse. `settings.marketAnchor` / `marketAnchorWeight` override it.
+- **Pipeline order is load-bearing**: `projectAll` → SOS → `marketAnchor` →
+  `finalizeBoard`. VBD/tiers/replacement must be derived LAST, from whatever
+  valuePoints ended up as. useBoard previously had its own duplicate copy of the
+  replacement maths (with its own FLEX_SHARE) used only on the SOS path; that is
+  gone.
+- **`data-pipeline/anchor_parity.py` asserts the shipped JS is numerically
+  identical to `blend_with_market`** — equality, not tolerance, 2300 values over
+  a weight × coverage sweep plus ties. Otherwise the app ships arithmetic nobody
+  measured while the commit message quotes the measurement.
+
+## Auction calibration (shipped, on by default, inert without history)
+
+- FantasyPros has **no auction endpoint** (`fetch_aav` is an explicit no-op), so
+  `marketPrice()` is a generic log curve identical for every league. Real rooms
+  aren't generic: a league that spends 46% on RB against a curve assuming 37%
+  makes every back underpriced for you.
+- `engine/auction-calibration.js` learns **positional spend shares** from prior
+  draft prices already cached in `settings.keeperImport.candidates` (read today
+  only for keeper costs). Not per-player prices — last year's price for a given
+  player says little about this year's; the room's spending SHAPE persists.
+- Guards that matter: shrink toward neutral by sample size (`SHRINK_K0 = 40`),
+  refuse below `MIN_PICKS = 40`, **renormalize to spend-neutral** so the pot and
+  the inflation tracker are unchanged, drop absent positions from the reference,
+  clamp to [0.6, 1.6].
+- **Applied to `marketPrice` only.** `dollarValues` takes no calibration
+  argument at all, and a selftest asserts it — contaminating what a player is
+  WORTH with what the room will PAY collapses the bargain signal.
+- `topHeaviness` is computed and shown but **not applied**; acting on it needs a
+  separately validated model of the curve's shape.
+- `CalibrationBadge` states the sample and per-position effect, and reads
+  "generic prices" when there's no history — never adjust prices silently.
 
 ## Duplicate players & name matching
 

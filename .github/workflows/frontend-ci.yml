@@ -53,9 +53,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Alias tables agree across TS and Python
         working-directory: data-pipeline
         run: python name_parity.py
+      # The shipped anchor must be the arithmetic that produced the backtest
+      # numbers quoted for it; needs numpy/scipy for blend_with_market's module.
+      - run: pip install pandas scipy numpy
+      - name: Shipped market anchor matches the backtested one
+        working-directory: data-pipeline
+        run: python anchor_parity.py
       # integrations.selftest imports the ESPN adapter, which imports httpx.
       # The job had no pip install at all, so it failed on import before
       # reaching a single assertion.
