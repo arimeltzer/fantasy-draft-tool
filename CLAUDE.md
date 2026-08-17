@@ -3,6 +3,11 @@
 Onboarding for AI/dev sessions. Read this first, then `docs/UPDATES.md` for the
 running history. Keep both current as you work.
 
+**Planned work lives in `docs/ROADMAP.md`** — phased, with a pre-committed KILL
+GATE on every step. Read the gate before starting a step and report against it
+before shipping: the v2 touchdown experiment raised the model's incremental
+signal 10-25%, moved the actual board +0.003, and was correctly not shipped.
+
 ## What it is
 
 A full-stack fantasy-football draft assistant for **auction and snake** drafts.
