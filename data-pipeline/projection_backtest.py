@@ -72,10 +72,22 @@ from scipy import stats
 from projection_model import DEFAULT_PARAMS, default_scoring, project_points, with_overrides
 from projection_opportunity import league_efficiency, project_points_opportunity
 from projection_v2 import league_rates, stabilize_player
+from team_context import apply_flag_discount, apply_pace, context_flags, team_qb_by_season
 
 # Prior strength for v2's touchdown shrinkage, as a multiple of a typical
 # season's workload. 0 must reproduce the shipped model exactly (checked).
 V2_K = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0]
+
+# Roadmap 1.3: team continuity / workload signals. team_change, qb_change and
+# coach_change are direct fractional discounts (k IS the fraction, unlike
+# V2_K/OPP_K which scale a fitted shrinkage prior) — 0 must reproduce the
+# shipped model exactly, same as every other sweep here. pace_ratio is
+# already a ratio to league average, so its k scales how much of that ratio
+# passes through (k=1 is a full linear pass-through).
+TEAM_CHANGE_K = [0.0, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25]
+QB_CHANGE_K = [0.0, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25]
+COACH_CHANGE_K = [0.0, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25]
+PACE_K = [0.0, 0.25, 0.5, 1.0, 1.5, 2.0]
 
 # Prior strength for the opportunity model's efficiency shrinkage (roadmap
 # 1.1/1.2), same units as V2_K. Unlike V2_K, k=0 here is NOT the shipped
@@ -198,12 +210,14 @@ def load_seasons(years) -> pd.DataFrame:
         gp_c = _col(df, "games", "games_played")
         id_c = _col(df, "player_id", "gsis_id")
         name_c = _col(df, "player_display_name", "player_name")
+        team_c = _col(df, "team", "recent_team")
 
         keep = pd.DataFrame({
             "season": y,
             "player_id": df[id_c],
             "name": df[name_c],
             "pos": df[pos_c],
+            "team": df[team_c] if team_c else "",
             "gp": df[gp_c].fillna(0).astype(int),
         })
         for src, dst in {**COMP, **VOLUME}.items():
@@ -240,6 +254,31 @@ def load_ages(years) -> dict:
     return ages
 
 
+def load_team_context(years):
+    """(coach_by_team, pace_by_team) for roadmap 1.3 — see team_context.py
+    for what each is and why it's read the way it is. Both loaders are
+    independent of load_seasons()/load_ages(); the QB-starter signal reuses
+    load_seasons()'s own player rows instead of a third network call."""
+    import nflreadpy as nfl
+    import team_context as tc
+
+    sched = _pd(nfl.load_schedules(list(years)))
+    coach_rows = (
+        (int(r.season), r.home_team, r.home_coach, r.away_team, r.away_coach)
+        for r in sched.itertuples()
+    )
+    coach_by_team = tc.team_coach_by_season(coach_rows)
+
+    ts = _pd(nfl.load_team_stats(list(years), summary_level="reg"))
+    pace_rows = (
+        (int(r.season), r.team, r.attempts, r.carries,
+         getattr(r, "sacks_suffered", 0), r.games)
+        for r in ts.itertuples()
+    )
+    pace_by_team = tc.team_pace_by_season(pace_rows)
+    return coach_by_team, pace_by_team
+
+
 def season_line(row) -> dict:
     return {"gp": int(row.gp),
             **{v: float(getattr(row, v)) for v in COMP.values()},
@@ -262,7 +301,7 @@ def build_players(data: pd.DataFrame, ages: dict, year: int) -> list[dict]:
             "player_id": pid,
             "name": act.name,
             "pos": act.pos,
-            "team": "",
+            "team": act.team,
             "age": ages.get((year, pid)),
             "last": season_line(p1) if p1 is not None else None,
             "last2": season_line(p2) if p2 is not None else None,
@@ -468,6 +507,8 @@ def main():
                     help="skip the ADP baseline even when a FantasyPros key is present")
     ap.add_argument("--no-injury", action="store_true",
                     help="skip the injury-discount sweep (roadmap 0.3)")
+    ap.add_argument("--no-team-context", action="store_true",
+                    help="skip the team-context sweep (roadmap 1.3)")
     args = ap.parse_args()
 
     test_years = list(range(args.first, args.last + 1))
@@ -480,6 +521,17 @@ def main():
     print("Loading ages from rosters…")
     ages = load_ages(test_years)
     print(f"  {len(ages)} player-ages")
+
+    use_team_context = not args.no_team_context
+    qb_by_team = coach_by_team = pace_by_team = {}
+    team_by_ps = {}
+    if use_team_context:
+        print("Loading team context (coaches + pace) from schedules/team stats…")
+        coach_by_team, pace_by_team = load_team_context(need)
+        qb_by_team = team_qb_by_season(data.itertuples())
+        team_by_ps = {(r.season, r.player_id): r.team for r in data.itertuples()}
+        print(f"  {len(coach_by_team)} team-seasons with a coach, "
+              f"{len(pace_by_team)} with a pace, {len(qb_by_team)} with a starting QB")
 
     sc = default_scoring(PPR)
 
@@ -697,6 +749,52 @@ def main():
                                              "model": "opp_blend", "variant": f"k{k}_w{w}",
                                              "opp_k": k, "blend_w": w, "pos": pos, **m})
 
+            # ── roadmap 1.3: team continuity signals ────────────────────
+            # Team change, QB change, coach change, pace — each swept and
+            # judged INDEPENDENTLY, per the roadmap's own instruction
+            # ("measure each feature's incremental contribution before
+            # adding it"), so one real signal can't hide behind three noise
+            # ones or vice versa. Same solo/partial/merged treatment as v2
+            # and the opportunity model — applied to the PURE shipped model,
+            # not stacked on the opportunity model/injury discount/expert
+            # blend, so each idea's own marginal contribution is isolated
+            # the same way every other sweep in this file measures it.
+            if use_team_context:
+                shipped_for_tc = [project_points(p, sc, DEFAULT_PARAMS)["proj"] for p in pop]
+                flags_by_player = {
+                    p["player_id"]: context_flags(
+                        p["pos"], team_by_ps.get((year - 1, p["player_id"])),
+                        team_by_ps.get((year, p["player_id"])), year,
+                        qb_by_team, coach_by_team, pace_by_team)
+                    for p in pop
+                }
+                tc_features = (
+                    ("team_change", TEAM_CHANGE_K,
+                     lambda projs, k: apply_flag_discount(projs, pop, flags_by_player, "team_changed", k)),
+                    ("qb_change", QB_CHANGE_K,
+                     lambda projs, k: apply_flag_discount(projs, pop, flags_by_player, "qb_changed", k)),
+                    ("coach_change", COACH_CHANGE_K,
+                     lambda projs, k: apply_flag_discount(projs, pop, flags_by_player, "coach_changed", k)),
+                    ("pace", PACE_K,
+                     lambda projs, k: apply_pace(projs, pop, flags_by_player, k)),
+                )
+                for feat_name, K_grid, apply_fn in tc_features:
+                    for k in K_grid:
+                        adj = apply_fn(shipped_for_tc, k)
+                        for pos, m in score(pop, adj, sc).items():
+                            per_year.append({"year": year, "population": pop_name,
+                                             "model": feat_name, "variant": f"k{k}", "ctx_k": k,
+                                             "pos": pos, **m})
+                        if pop_name == "all" and adp_by_player and k > 0:
+                            for pos, m in disagreement_signal(pop, adj, adp_by_player, sc).items():
+                                dis_rows.append({"year": year, "variant": f"{feat_name}_k{k}",
+                                                 "ctx_k": k, "pos": pos, **m})
+                            for w in (0.2, 0.3, 0.4, 0.5):
+                                for pos, m in score(pop, blend_with_market(pop, adj, adp_by_player, w), sc).items():
+                                    per_year.append({"year": year, "population": pop_name,
+                                                     "model": f"{feat_name}_blend", "variant": f"k{k}_w{w}",
+                                                     "ctx_k": k, "blend_w": w, "pos": pos, **m})
+
             # ── re-baseline: does the opportunity model beat what is ──
             # ACTUALLY shipping right now (injury discount + expert blend +
             # anchor), not the pre-Phase-0 pure model every sweep above
@@ -724,7 +822,7 @@ def main():
                                          "pos": pos, **m})
 
     df = pd.DataFrame(per_year)
-    for c in ("blend_w", "k", "inj_k", "opp_k"):
+    for c in ("blend_w", "k", "inj_k", "opp_k", "ctx_k"):
         if c not in df.columns:
             df[c] = float("nan")
     os.makedirs(args.out, exist_ok=True)
@@ -739,6 +837,7 @@ def main():
                   k=("k", "first"),
                   inj_k=("inj_k", "first"),
                   opp_k=("opp_k", "first"),
+                  ctx_k=("ctx_k", "first"),
                   n_years=("year", "nunique"))
              .reset_index()
              .sort_values(["pos", "spearman_total"], ascending=[True, False]))
@@ -1090,6 +1189,87 @@ def main():
         skip2 = [p for p, ok in restacked_pass.items() if not ok]
         print(f"\n  -> Against the live board: ship for {', '.join(ship2) or '(none)'}"
               f"{'; ' + ', '.join(skip2) + ' do not clear it here' if skip2 else ''}.")
+
+    # ── roadmap 1.3: team continuity signals, each judged against the ─────
+    # phase kill gate INDEPENDENTLY — one feature clearing it does not carry
+    # the others, the same reason 0.3 and 1.1/1.2 report per position rather
+    # than as a single phase-wide verdict.
+    tc_feature_names = ["team_change", "qb_change", "coach_change", "pace"]
+    tca = agg[(agg["population"] == "all") & (agg["model"].isin(tc_feature_names))]
+    if len(tca) and dis_rows:
+        print("\n=== ROADMAP 1.3 — TEAM CONTEXT (team/QB/coach change, pace) ===")
+        print("Each feature discounts (team/QB/coach change) or scales (pace) the PURE")
+        print("shipped model directly — not stacked on the opportunity model, injury")
+        print("discount or expert blend — so its own marginal contribution is isolated")
+        print("the same way v2 and 1.1/1.2 were each measured. k=0 reproduces the shipped")
+        print(f"model exactly. Gate: partial correlation must clear baseline by more than "
+              f"{MATERIAL_EPS}, AND merged must beat the shipped model's best merge by more "
+              f"than {MERGE_EPS} (v2's own bar) — same as roadmap 1.1/1.2.")
+
+        dp_all = pd.DataFrame(dis_rows)
+        mb = agg[(agg["population"] == "all") & (agg["model"] == "blend")]
+        tc_verdict = {}
+        for feat in tc_feature_names:
+            fa = agg[(agg["population"] == "all") & (agg["model"] == feat)]
+            fb = agg[(agg["population"] == "all") & (agg["model"] == f"{feat}_blend")]
+            if not len(fa):
+                continue
+            print(f"\n  --- {feat} ---")
+            for posn in sorted(fa["pos"].unique()):
+                if feat == "qb_change" and posn == "QB":
+                    continue  # structurally N/A — context_flags() never sets
+                    # qb_changed for a QB's own row (see team_context.py); a
+                    # QB's "quarterback" is himself, already covered by
+                    # team_change. Every k reproduces k=0 exactly here, which
+                    # would report as a correctly-failed but meaningless row.
+                s = fa[fa["pos"] == posn].sort_values("ctx_k")
+                base = s[s.ctx_k == 0.0]
+                b0 = base.iloc[0].spearman_total if len(base) else float("nan")
+                print(f"\n    {posn}   (shipped solo {b0:.4f})")
+                for _, r in s.iterrows():
+                    m = fb[(fb["pos"] == posn) & (fb["ctx_k"] == r.ctx_k)]
+                    best = f"{m.spearman_total.max():.4f}" if len(m) else "   —  "
+                    bw = (f" @w{m.loc[m.spearman_total.idxmax()].blend_w}") if len(m) else ""
+                    print(f"      k={r.ctx_k:<5} solo {r.spearman_total:.4f} "
+                          f"({r.spearman_total - b0:+.4f})   merged {best}{bw}")
+
+                best_merged_row = fb[fb["pos"] == posn]
+                best_merged = (float(best_merged_row.spearman_total.max())
+                               if len(best_merged_row) else float("nan"))
+                shipped_merged_row = mb[mb["pos"] == posn]
+                shipped_merged = (float(shipped_merged_row.spearman_total.max())
+                                  if len(shipped_merged_row) else float("nan"))
+
+                dp = dp_all[dp_all["pos"] == posn]
+                base_partial = dp[dp["variant"] == "shipped"]["partial_model"].mean()
+                variants = [v for v in dp["variant"].unique() if v.startswith(f"{feat}_k")]
+                best_partial = (dp[dp["variant"].isin(variants)]["partial_model"].max()
+                                if variants else float("nan"))
+
+                tc_verdict[(feat, posn)] = {
+                    "base_partial": base_partial, "best_partial": best_partial,
+                    "shipped_merged": shipped_merged, "best_merged": best_merged,
+                }
+
+        print("\n  --- ROADMAP 1.3 KILL GATE (same bar as 1.1/1.2) ---")
+        tc_passed = {}
+        for (feat, posn), v in sorted(tc_verdict.items()):
+            partial_ok = v["best_partial"] > v["base_partial"] + MATERIAL_EPS
+            merge_ok = v["best_merged"] > v["shipped_merged"] + MERGE_EPS
+            ok = partial_ok and merge_ok
+            tc_passed[(feat, posn)] = ok
+            print(f"    {feat:<12} {posn}  partial {v['best_partial']:+.4f} vs "
+                  f"{v['base_partial']:+.4f} ({'material' if partial_ok else 'NOT material'})   "
+                  f"merged {v['best_merged']:.4f} vs {v['shipped_merged']:.4f} "
+                  f"({'beats v2' if merge_ok else 'does NOT beat v2'})   {'PASS' if ok else 'FAIL'}")
+        if tc_passed and any(tc_passed.values()):
+            ship = [f"{feat}/{posn}" for (feat, posn), ok in tc_passed.items() if ok]
+            print(f"\n  -> PASS for: {', '.join(ship)}. Everything else stays off (shipped")
+            print("     model unchanged there) rather than a feature that didn't earn it.")
+        else:
+            print("\n  -> DO NOT SHIP any of team_change/qb_change/coach_change/pace. No")
+            print("     position cleared both halves of the gate. The gate was set in advance")
+            print("     precisely so this decision is not made after seeing the numbers.")
 
     print(f"\n✓ wrote {args.out}/projection_backtest_summary.csv and _by_year.csv")
 

@@ -37,6 +37,9 @@ jobs:
       - name: Backtest selftest (blend + diagnostic pinned to known answers)
         working-directory: data-pipeline
         run: python backtest_selftest.py
+      - name: Team context selftest (roadmap 1.3 — team/QB/coach/pace)
+        working-directory: data-pipeline
+        run: python team_context_selftest.py
       - name: Backtest
         working-directory: data-pipeline
         env:
