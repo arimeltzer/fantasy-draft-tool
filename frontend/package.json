@@ -6,7 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "selftest": "node src/engine/engine-core.selftest.mjs && node src/engine/keeper.selftest.mjs && node src/engine/keeperReco.selftest.mjs && node src/engine/draft-order.selftest.mjs && node src/components/draft-rooms.selftest.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.62.7",
@@ -17,13 +20,16 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "jsdom": "^30.0.1",
     "postcss": "^8.5.1",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^3.2.7"
   }
 }

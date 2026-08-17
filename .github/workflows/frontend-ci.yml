@@ -1,0 +1,40 @@
+name: Frontend CI
+
+# Runs on every push/PR touching the frontend. Did not exist before this
+# workflow was added — nothing gated a push to main, which is how a deleted
+# player-list render (frontend/src/components/snake/SnakeRoom.tsx, the
+# ROW_MAP_PLACEHOLDER incident) passed straight through: `tsc -b && vite build`
+# succeeds on bare JSX text just as readily as on a real render, and nothing
+# else was watching. This adds the type-check + build, the engine/board
+# selftests (node scripts, no framework), and the vitest render suite that
+# actually mounts the draft rooms and checks players appear on screen.
+
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths: ["frontend/**", ".github/workflows/frontend-ci.yml"]
+  pull_request:
+    paths: ["frontend/**", ".github/workflows/frontend-ci.yml"]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Type-check + build (tsc -b && vite build)
+        run: npm run build
+      - name: Engine + board selftests (node, no framework)
+        run: npm run selftest
+      - name: Render tests (vitest + testing-library)
+        run: npm test

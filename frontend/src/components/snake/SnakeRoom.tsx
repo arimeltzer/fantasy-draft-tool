@@ -129,7 +129,14 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   }, [picks, updatePick]);
 
   const draft = useCallback((p: BoardPlayer, mine: boolean, teamId?: number) => {
-    addPick({ playerId: p.id as number, mine, teamId });
+    // Fire-and-forget from the row's perspective — the optimistic pick already
+    // landed. But addPick rethrows on failure after rolling that row back
+    // (deliberately: a phantom pick would hide a player who is still
+    // available), and nothing upstream was awaiting this, so a network failure
+    // used to surface only as a silent unhandled rejection. Surface it instead.
+    addPick({ playerId: p.id as number, mine, teamId }).catch(() => {
+      alert(`Couldn't save the pick for ${p.name} — check your connection and try again.`);
+    });
   }, [addPick]);
 
   const undo = useCallback((pickId: number) => removePick(pickId), [removePick]);

@@ -117,7 +117,12 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
 
   const buy = useCallback((p: BoardPlayer, mine: boolean, teamId?: number) => {
     const price = Math.max(1, Math.round(prices[p.id as number] ?? p.adjValue ?? p.parValue ?? 1));
-    addPick({ playerId: p.id as number, mine, teamId, price });
+    // See SnakeRoom's `draft`: addPick rethrows on failure after rolling back
+    // the optimistic row, and this call was never awaited, so that used to be
+    // a silent unhandled rejection. Surface it instead.
+    addPick({ playerId: p.id as number, mine, teamId, price }).catch(() => {
+      alert(`Couldn't save the sale for ${p.name} — check your connection and try again.`);
+    });
     setPrices((prev) => { const n = { ...prev }; delete n[p.id as number]; return n; });
   }, [prices, addPick]);
 
