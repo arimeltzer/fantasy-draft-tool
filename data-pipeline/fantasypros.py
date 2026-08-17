@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import re
 import urllib.error
 import urllib.request
@@ -47,6 +48,41 @@ SCORING = {"STD": "STD", "STANDARD": "STD", "HALF": "HALF", "HALF-PPR": "HALF",
 
 _SUFFIX = re.compile(r"\b(jr|sr|ii|iii|iv|v)\b\.?", re.I)
 
+
+
+# FantasyPros rate-limits, and it answers 429 rather than failing loudly. A
+# probe that fired four requests per season across seven seasons got two
+# seasons of data and five seasons of "Too Many Requests" — which reads exactly
+# like "historical data does not exist" unless you look at the status code.
+# Anything that loops over seasons or positions has to pace itself and retry.
+RATE_LIMIT_PAUSE = 1.5      # seconds between consecutive calls
+RATE_LIMIT_RETRIES = 4      # on 429, back off 2s, 4s, 8s, 16s
+
+
+def _get_json(url: str, api_key: str, *, label: str = "") -> dict | None:
+    """GET with 429 backoff. Returns None when the call ultimately fails, so a
+    caller looping over positions can report a partial pull instead of dying."""
+    req = urllib.request.Request(url, headers={
+        "x-api-key": api_key, "Accept": "application/json",
+        "User-Agent": "fantasy-draft-tool/1.0",
+    })
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < RATE_LIMIT_RETRIES:
+                wait = 2 ** (attempt + 1)
+                print(f"  · {label or url}: 429, waiting {wait}s")
+                time.sleep(wait)
+                continue
+            body = e.read()[:200].decode("utf-8", "replace")
+            print(f"  ! {label or url}: HTTP {e.code} {body}")
+            return None
+        except Exception as e:  # noqa: BLE001 — one dead call is not fatal
+            print(f"  ! {label or url}: {type(e).__name__}: {e}")
+            return None
+    return None
 
 def norm(n: str) -> str:
     """Match projections.py / matching.py normalization."""
@@ -295,18 +331,12 @@ def fetch_projections(season: int, scoring: str = "HALF", api_key: str | None = 
     for pos in positions:
         url = PROJ_BASE.format(season=season) + "?" + urlencode(
             {"position": pos, "scoring": sc, "week": week})
-        req = urllib.request.Request(url, headers={
-            "x-api-key": api_key, "Accept": "application/json",
-            "User-Agent": "fantasy-draft-tool/1.0",
-        })
-        try:
-            with urllib.request.urlopen(req, timeout=30) as r:
-                data = json.load(r)
-        except urllib.error.HTTPError as e:
-            # Per-position, so one bad position can't silently zero the whole pull.
-            body = e.read()[:200].decode("utf-8", "replace")
-            print(f"  ! projections {pos}: HTTP {e.code} {body}")
+        # Per-position, so one bad position can't silently zero the whole pull,
+        # and paced because FantasyPros 429s a tight loop (see _get_json).
+        data = _get_json(url, api_key, label=f"projections {season} {pos}")
+        if data is None:
             continue
+        time.sleep(RATE_LIMIT_PAUSE)
         got = parse_projections(data)
         if not got:
             print(describe_payload(data, f"projections {pos} parsed 0 rows"))
