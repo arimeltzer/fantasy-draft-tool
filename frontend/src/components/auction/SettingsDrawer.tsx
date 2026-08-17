@@ -109,6 +109,19 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
               className="accent-amber-500 w-4 h-4"
             />
           </label>
+          {isAuction && (
+            <label className="flex items-center justify-between gap-2 text-xs">
+              <Tip tip="Adjusts predicted auction PRICES for how your league actually spends, learned from the prior-season draft you imported for keepers. Does nothing until that history exists, and never changes your own $Value — the gap between the two is the bargain signal.">
+                <span className="text-gray-500">Calibrate prices to this league</span>
+              </Tip>
+              <input
+                type="checkbox"
+                checked={local.auctionCalibration !== false}
+                onChange={(e) => set({ auctionCalibration: e.target.checked })}
+                className="accent-amber-500 w-4 h-4"
+              />
+            </label>
+          )}
           {local.marketAnchor !== false && (
             <label className="flex items-center justify-between gap-2 text-xs">
               <Tip tip="How much of YOUR model survives the anchor. 1 = ignore the market, 0 = follow it exactly. 0.3 is the backtested optimum and the curve is flat from about 0.2 to 0.5, so small changes here matter little.">

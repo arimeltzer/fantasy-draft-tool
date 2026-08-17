@@ -178,6 +178,10 @@ export interface LeagueSettings {
   /** Weight on OUR model in that blend; 1 = pure model, 0 = pure market order.
    *  Defaults to MARKET_ANCHOR_W (0.3), which the sweep found flat-optimal. */
   marketAnchorWeight?: number;
+  /** Adjust auction MARKET price forecasts for how this league actually spends,
+   *  learned from `keeperImport` prices. Defaults to ON; inert without history.
+   *  Never touches dollarValue — see engine/auction-calibration.js. */
+  auctionCalibration?: boolean;
   /** Overall pick numbers you own (snake). Set only when picks were TRADED —
    *  unset means standard serpentine order from `draftSlot`. */
   myPicks?: number[];

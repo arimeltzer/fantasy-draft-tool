@@ -7,6 +7,9 @@ import {
 } from "@/engine/auction-engine.js";
 import type { BoardPlayer } from "@/engine/auction-engine.js";
 import { LeagueSettings, ApiLeague } from "@/lib/api";
+import {
+  calibrateAuction, picksFromKeeperImport, noCalibration, describeCalibration,
+} from "@/engine/auction-calibration.js";
 import { useDraftStore } from "@/store/draftStore";
 import { usePatchLeague } from "@/hooks/useLeague";
 import { posStyle } from "@/lib/posStyles";
@@ -16,6 +19,7 @@ import ValueBar from "@/components/board/ValueBar";
 import BudgetTracker from "@/components/auction/BudgetTracker";
 import NominationPanel from "@/components/auction/NominationPanel";
 import InflationBadge from "@/components/auction/InflationBadge";
+import CalibrationBadge from "@/components/auction/CalibrationBadge";
 import RosterPanel from "@/components/shared/RosterPanel";
 import NeedsPanel from "@/components/snake/NeedsPanel";
 import CommonOpponentsPopover from "@/components/shared/CommonOpponentsPopover";
@@ -78,11 +82,25 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   // Position-allocation dollar values + market prices (ported strategy).
   const withDollar = useMemo(() => dollarValues(board, al), [board, al]);
   const adpRankById = useMemo(() => rankByAdp(board), [board]);
+
+  // What THIS room pays, learned from last season's draft prices — which the
+  // keeper importer already pulled and cached. FantasyPros publishes no
+  // auction values, so without this every market price is a generic curve
+  // identical for every league. Applied to the market forecast only; our own
+  // dollarValue stays independent, or the bargain signal it exists to show
+  // would be measuring itself.
+  const calibration = useMemo(() => {
+    if (settings.auctionCalibration === false) return noCalibration("turned off in settings");
+    return calibrateAuction(picksFromKeeperImport(settings.keeperImport), al);
+  }, [settings.keeperImport, settings.auctionCalibration, al]);
+
   const marketById = useMemo(() => {
     const m: Record<number, number> = {};
-    for (const p of board) m[p.id as number] = marketPrice(adpRankById[p.id as number], al, undefined, p.pos, p.aav);
+    for (const p of board) {
+      m[p.id as number] = marketPrice(adpRankById[p.id as number], al, undefined, p.pos, p.aav, calibration);
+    }
     return m;
-  }, [board, adpRankById, al]);
+  }, [board, adpRankById, al, calibration]);
 
   // Every priced pick in the room — my buys, opponents' buys, and keepers —
   // drives inflation (money spent is money out of the pool, whoever spent it).
@@ -212,6 +230,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           </div>
           <div className="ml-auto flex items-center gap-2 text-xs">
             <InflationBadge factor={inflation.factor} />
+            <CalibrationBadge cal={calibration} />
             <button
               onClick={() => setShowLive(true)}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300"

@@ -141,13 +141,19 @@ export function dollarValues(board, auctionLeague, P = DEFAULT_AUCTION_PARAMS) {
  * only approximate. Falls back to the logarithmic ADP-rank curve otherwise
  * (e.g. deep sleepers/rookies FantasyPros hasn't priced, or no AAV pulled yet).
  */
-export function marketPrice(adpRank, auctionLeague, P = DEFAULT_AUCTION_PARAMS, pos, aav) {
+export function marketPrice(adpRank, auctionLeague, P = DEFAULT_AUCTION_PARAMS, pos, aav, calibration) {
   const min = P.auction.minBid;
+  // Your league's positional spending bias, learned from a prior draft.
+  // Applied HERE and nowhere else: this is a forecast of what a player will
+  // COST. Our own estimate of what he is WORTH (parValue / dollarValue) must
+  // stay independent of it, because the gap between the two is the entire
+  // bargain signal. See auction-calibration.js.
+  const cal = calibration?.usable ? (calibration.posMult?.[pos] ?? 1) : 1;
   // Trust AAV only when it's a plausible price: no player can cost more than
   // one team's whole budget. Anything above that is corrupted data (e.g. a
   // rank mis-parsed as a dollar figure) — ignore it and use the curve.
   if (aav != null && aav > 0 && aav <= auctionLeague.budget) {
-    return Math.max(min, Math.round(aav));
+    return Math.max(min, Math.round(aav * cal));
   }
   if (!adpRank || adpRank < 1) return min;
   const { teams, rosterSize } = auctionLeague;
@@ -159,7 +165,7 @@ export function marketPrice(adpRank, auctionLeague, P = DEFAULT_AUCTION_PARAMS, 
     if (adpRank <= 28) price *= 1.12;
     else if (adpRank <= 56) price *= 1.06;
   }
-  return Math.max(min, Math.round(price));
+  return Math.max(min, Math.round(price * cal));
 }
 
 /**

@@ -79,7 +79,11 @@ export declare function dollarValues(
   board: BoardPlayer[], auctionLeague: AuctionLeague, P?: AuctionParams
 ): BoardPlayer[];
 export declare function marketPrice(
-  adpRank: number, auctionLeague: AuctionLeague, P?: AuctionParams, pos?: string, aav?: number | null
+  adpRank: number, auctionLeague: AuctionLeague, P?: AuctionParams, pos?: string,
+  aav?: number | null,
+  /** League-specific positional price bias. See auction-calibration.js — it is
+   *  applied to this FORECAST only, never to our own dollarValue. */
+  calibration?: import("./auction-calibration.js").AuctionCalibration | null,
 ): number;
 export declare function suggestBid(
   player: BoardPlayer, myState: MyBidState, P?: AuctionParams
