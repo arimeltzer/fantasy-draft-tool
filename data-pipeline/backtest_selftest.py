@@ -24,7 +24,7 @@ from __future__ import annotations
 import random
 from types import SimpleNamespace
 
-from projection_backtest import COMP, blend_with_market, disagreement_signal
+from projection_backtest import COMP, blend_with_market, disagreement_signal, injury_multiplier
 from projection_model import default_scoring
 
 SC = default_scoring(0.5)
@@ -182,6 +182,24 @@ check("magnitude is preserved, not just order",
       blend_expert([100.0], [900.0], 0.5)[0] == 500.0,
       "a rank transfer would have returned 100.0 here")
 check("empty input is handled", blend_expert([], [], 0.5) == [])
+
+# ── injury_multiplier: roadmap 0.3 ──────────────────────────────────────────
+print("\ninjury_multiplier (roadmap 0.3)")
+check("k=0 is a no-op regardless of severity",
+      injury_multiplier("out", 0.0) == 1.0 and injury_multiplier("questionable", 0.0) == 1.0)
+check("no reported severity is a no-op at any k",
+      injury_multiplier(None, 1.0) == 1.0 and injury_multiplier("", 2.0) == 1.0)
+check("an unrecognized severity (e.g. 'note') is a no-op",
+      injury_multiplier("note", 1.0) == 1.0)
+check("'out' at k=1 discounts exactly 6 of 17 games",
+      approx(injury_multiplier("out", 1.0), (17 - 6) / 17, 1e-9),
+      f"{injury_multiplier('out', 1.0):.4f}")
+check("k scales the table linearly",
+      approx(injury_multiplier("out", 2.0), (17 - 12) / 17, 1e-9))
+check("severities order the same way the games-missed table does",
+      injury_multiplier("out", 1.0) < injury_multiplier("doubtful", 1.0) < injury_multiplier("questionable", 1.0))
+check("the multiplier never goes negative even at an absurd k",
+      injury_multiplier("out", 100.0) == 0.0, f"{injury_multiplier('out', 100.0)}")
 
 print()
 if FAILS:

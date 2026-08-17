@@ -114,9 +114,29 @@ tuning harness that did not exist. That harness is Phase 3's, built early.
 `InjuryBadge` reports status but valuation ignores it. Convert status into
 expected games missed and apply it to the projection.
 
-**Kill gate**: must improve `spearman_total` (the target that counts missed
-games) without degrading `spearman_pace`. If it only moves `pace`, it is
-double-counting the durability multiplier.
+**Precondition, checked first**: `injury_probe.py` — does FantasyPros'
+injuries endpoint even serve a real, DATED report for a past season, or just
+today's live status regardless of `year`? The endpoint is a flat URL (year as
+a query param, not in the path like projections/rankings), and the only place
+this project called it before now always passed the current season — so this
+was unverified, not assumed safe. **Result**: 6 of 7 tested seasons
+(2019–2025) verdict "genuine dated report" — distinct fingerprint per season
+(no staleness) and a positive games-missed gap (flagged players missed more
+games that season than the field) at every single season tested, including
+the one that missed the roster-match threshold. Precondition cleared.
+
+**Kill gate**: per position, sweep `k` (scales `INJURY_GAMES_MISSED`, k=0 =
+shipped/no discount). PASSES only if, at the best `k > 0`:
+  - `spearman_total` improves by more than 0.002 over k=0 (the target that
+    counts missed games — the point of the feature), **and**
+  - `spearman_pace` does not drop by more than 0.002 from k=0 (per-game rate
+    with availability removed — this must NOT move, or the discount is really
+    just re-discovering `durabilityMult`, which already lives downstream of
+    `pace`).
+0.002 is noise-sized — the same order of magnitude already visible between
+repeated runs elsewhere in this file — so smaller moves in either direction
+don't count. Ships **per position**: a position that fails is left on
+`durabilityMult` alone rather than given a discount that didn't earn it there.
 
 > **Prompt** — "Do roadmap step 0.3: make injury status affect the projection
 > via expected games missed. Check it against the kill gate."

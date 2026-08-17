@@ -78,12 +78,30 @@ V2_K = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0]
 
 try:
     from adp_probe import fetch_adp          # needs FANTASYPROS_API_KEY
-    from fantasypros import fetch_projections
+    from fantasypros import fetch_injuries, fetch_projections
     from fantasypros import norm as fp_norm
 except Exception:                             # probe/key absent -> ADP skipped
     fetch_adp = None
+    fetch_injuries = None
     fetch_projections = None
     fp_norm = None
+
+# Roadmap 0.3: expected games missed by injury severity, out of a full
+# season. `injury_probe.py` found real per-season signal mainly at the "out"
+# tier (IR/PUP/Suspended/OUT/COV-IR) -- doubtful/questionable are too rare in
+# a week-0 report to calibrate a games-missed number from directly, so those
+# two are set as a conservative fraction of "out" rather than fit. K scales
+# the whole table for the sweep; K=0 must reproduce the shipped model exactly.
+INJURY_GAMES_MISSED = {"out": 6.0, "doubtful": 2.0, "questionable": 0.5}
+INJ_K = [0.0, 0.5, 1.0, 1.5, 2.0]
+
+
+def injury_multiplier(severity, K, G=17):
+    """Discount for expected games missed, same shape as durabilityMult."""
+    if not severity or K <= 0:
+        return 1.0
+    missed = INJURY_GAMES_MISSED.get(severity, 0.0) * K
+    return max(0.0, (G - missed) / G)
 
 # Blend weights on OUR model when mixing in the experts' projection (0.1).
 EXPERT_W = [round(x / 10, 1) for x in range(0, 11)]
@@ -397,6 +415,8 @@ def main():
                     help="skip the expert-projection blend (roadmap 0.1)")
     ap.add_argument("--no-adp", action="store_true",
                     help="skip the ADP baseline even when a FantasyPros key is present")
+    ap.add_argument("--no-injury", action="store_true",
+                    help="skip the injury-discount sweep (roadmap 0.3)")
     args = ap.parse_args()
 
     test_years = list(range(args.first, args.last + 1))
@@ -421,6 +441,7 @@ def main():
 
     use_adp = bool(fetch_adp) and not args.no_adp and os.getenv("FANTASYPROS_API_KEY")
     use_expert = bool(fetch_projections) and not args.no_expert and os.getenv("FANTASYPROS_API_KEY")
+    use_injury = bool(fetch_injuries) and not args.no_injury and os.getenv("FANTASYPROS_API_KEY")
     if not use_adp:
         print("\n! ADP baseline SKIPPED (no FANTASYPROS_API_KEY or --no-adp). "
               "The model-vs-market comparison is the point; run this where the key lives.")
@@ -463,6 +484,22 @@ def main():
                         expert_by_player[p["player_id"]] = v
             print(f"  {year}: {len(expert_by_player)} players with an expert projection")
 
+        # Roadmap 0.3: that season's week-0 injury report. `injury_probe.py`
+        # verified this is a real, dated report (not stale/echoed) for 6 of 7
+        # tested seasons -- the precondition for sweeping it here at all.
+        injury_by_player = {}
+        if use_injury:
+            try:
+                inj = fetch_injuries(year, week=0)
+            except Exception as e:  # noqa: BLE001 — a dead season is not fatal
+                print(f"  ! injuries {year}: {type(e).__name__}: {e}")
+                inj = {}
+            for p in players:
+                row = inj.get((fp_norm(p["name"]), p["pos"]))
+                if row:
+                    injury_by_player[p["player_id"]] = row["severity"]
+            print(f"  {year}: {len(injury_by_player)} players with a reported injury")
+
         adp_by_player = {}
         if use_adp:
             adp = fetch_adp(year, rank_type="ADP") or fetch_adp(year, rank_type="DRAFT")
@@ -498,6 +535,20 @@ def main():
                 for pos, m in score(pop, adp_scores, sc).items():
                     per_year.append({"year": year, "population": pop_name,
                                      "model": "adp_market", "pos": pos, **m})
+
+            # ── roadmap 0.3: injury-aware expected games ──────────────
+            # Applied to the PURE model (same stage durabilityMult already
+            # lives in), scored solo -- this is a model correction, not a
+            # market blend, so there is no "merged" arm the way 0.1 had one.
+            if injury_by_player:
+                shipped_projs = [project_points(p, sc, DEFAULT_PARAMS)["proj"] for p in pop]
+                for k in INJ_K:
+                    inj_projs = [proj * injury_multiplier(injury_by_player.get(p["player_id"]), k)
+                                 for p, proj in zip(pop, shipped_projs)]
+                    for pos, m in score(pop, inj_projs, sc).items():
+                        per_year.append({"year": year, "population": pop_name,
+                                         "model": "injury", "variant": f"k{k}",
+                                         "inj_k": k, "pos": pos, **m})
 
             for combo in combos:
                 P = with_overrides(**combo)
@@ -570,7 +621,7 @@ def main():
                                              "k": k, "blend_w": w, "pos": pos, **m})
 
     df = pd.DataFrame(per_year)
-    for c in ("blend_w", "k"):
+    for c in ("blend_w", "k", "inj_k"):
         if c not in df.columns:
             df[c] = float("nan")
     os.makedirs(args.out, exist_ok=True)
@@ -583,6 +634,7 @@ def main():
                   # carried through the groupby so the sweeps can be ordered
                   blend_w=("blend_w", "first"),
                   k=("k", "first"),
+                  inj_k=("inj_k", "first"),
                   n_years=("year", "nunique"))
              .reset_index()
              .sort_values(["pos", "spearman_total"], ascending=[True, False]))
@@ -698,6 +750,66 @@ def main():
         else:
             print("  -> DO NOT SHIP on these numbers. The gate was set in advance")
             print("     precisely so this decision is not made after seeing them.")
+
+    # ── roadmap 0.3: injury-aware expected games, judged against its gate ─
+    inj_all = agg[(agg["population"] == "all") & (agg["model"] == "injury")]
+    if len(inj_all):
+        # Gate fixed here, before reading the sweep below (docs/ROADMAP.md 0.3
+        # only specified the SHAPE of the bar, not a number): total must
+        # improve, pace must not degrade. 0.002 treats anything smaller than
+        # that as noise in either direction — the same order of magnitude as
+        # the rounding already visible between repeated runs elsewhere here.
+        GATE_EPS = 0.002
+        print("\n=== ROADMAP 0.3 — INJURY-AWARE EXPECTED GAMES ===")
+        print("k scales INJURY_GAMES_MISSED; k=0 is the shipped model (no discount).")
+        print("total = the target that counts missed games (the point of this feature).")
+        print("pace  = per-game rate with availability removed — must NOT move, or the")
+        print("        discount is really just re-discovering durabilityMult.")
+        inj_verdict = {}
+        for posn in sorted(inj_all["pos"].unique()):
+            s = inj_all[inj_all["pos"] == posn].sort_values("inj_k")
+            base = s[s.inj_k == 0.0]
+            if not len(base):
+                continue
+            b_total, b_pace = base.iloc[0].spearman_total, base.iloc[0].spearman_pace
+            print(f"\n  {posn}   (shipped: total {b_total:.4f}, pace {b_pace:.4f})")
+            for _, r in s.iterrows():
+                print(f"    k={r.inj_k:<4} total {r.spearman_total:.4f} "
+                      f"({r.spearman_total - b_total:+.4f})   pace {r.spearman_pace:.4f} "
+                      f"({r.spearman_pace - b_pace:+.4f})")
+            # Best k among those that do not degrade pace past the gate.
+            safe = s[s.spearman_pace >= b_pace - GATE_EPS]
+            best = safe.loc[safe.spearman_total.idxmax()] if len(safe) else None
+            inj_verdict[posn] = {
+                "base_total": b_total, "base_pace": b_pace,
+                "best_k": float(best.inj_k) if best is not None else float("nan"),
+                "best_total": float(best.spearman_total) if best is not None else float("nan"),
+                "best_pace": float(best.spearman_pace) if best is not None else float("nan"),
+            }
+
+        print("\n  --- KILL GATE (docs/ROADMAP.md 0.3: improve total, don't degrade pace) ---")
+        passed = {}
+        for posn in sorted(inj_verdict):
+            v = inj_verdict[posn]
+            improves_total = v["best_total"] > v["base_total"] + GATE_EPS
+            holds_pace = v["best_pace"] >= v["base_pace"] - GATE_EPS
+            ok = improves_total and holds_pace and v["best_k"] > 0
+            passed[posn] = ok
+            print(f"    {posn}  k={v['best_k']}  total {v['best_total']:.4f} vs "
+                  f"{v['base_total']:.4f} ({'better' if improves_total else 'NOT better'})   "
+                  f"pace {v['best_pace']:.4f} vs {v['base_pace']:.4f} "
+                  f"({'held' if holds_pace else 'DEGRADED'})   {'PASS' if ok else 'FAIL'}")
+        if passed and all(passed.values()):
+            print("  -> SHIP IT for every position. Both conditions cleared everywhere.")
+        elif any(passed.values()):
+            ship = [p for p, ok in passed.items() if ok]
+            skip = [p for p, ok in passed.items() if not ok]
+            print(f"  -> PARTIAL. Ship for {', '.join(ship)} only; {', '.join(skip)} keep "
+                  f"durabilityMult alone rather than ship a discount that didn't earn it there.")
+        else:
+            print("  -> DO NOT SHIP. No position cleared both halves of the gate. The gate")
+            print("     was set in advance precisely so this decision is not made after")
+            print("     seeing the numbers.")
 
     # ── v2: did shrinking touchdowns help, and did it help the BLEND? ─────
     v2a = agg[(agg["population"] == "all") & (agg["model"] == "v2")]
