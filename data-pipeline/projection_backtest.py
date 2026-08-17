@@ -83,6 +83,50 @@ V2_K = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0]
 # two-stage model's own unshrunk arm.
 OPP_K = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0]
 
+# Phase 1 gate thresholds (docs/ROADMAP.md), fixed at module level so both the
+# original gate and the re-baselined one below read the identical bar.
+MATERIAL_EPS = 0.03   # absolute partial-correlation increase required
+MERGE_EPS = 0.003     # the v2 attempt's own number; must be EXCEEDED, not matched
+
+# The ACTUAL constants shipped in engine-core.js — kept in sync by hand, same
+# as GATE_MATCHED/GATE_MERGED below. Used to re-baseline Phase 1 against what
+# is really live (injury discount + expert blend + anchor), not the pre-
+# Phase-0 pure model every other sweep in this file compares against. That
+# choice is right for judging an idea's OWN marginal contribution in
+# isolation (how v2, 0.1 and 0.3 were each judged) but wrong for judging
+# whether a NEW idea is worth shipping ON TOP of what already shipped.
+EXPERT_SHIPPED_W = {"QB": 0.3, "RB": 0.2, "TE": 0.2, "WR": 0.4, "K": 1.0, "DST": 1.0}
+INJ_SHIPPED_K = {"QB": 0.5, "RB": 0.5, "TE": 0.0, "WR": 0.0, "K": 0.0, "DST": 0.0}
+
+
+def apply_injury_shipped(pop, projs, injury_by_player, K=INJ_SHIPPED_K):
+    """injury_multiplier(), per-position K, applied across a population —
+    the list-shaped equivalent of engine-core.js applyInjuryDiscount()."""
+    out = list(projs)
+    for i, p in enumerate(pop):
+        k = K.get(p["pos"], 0.0)
+        if k <= 0:
+            continue
+        severity = injury_by_player.get(p["player_id"])
+        out[i] = projs[i] * injury_multiplier(severity, k)
+    return out
+
+
+def apply_expert_shipped(pop, projs, expert_by_player, W=EXPERT_SHIPPED_W):
+    """blend_expert(), per-position W, applied across a population — the
+    list-shaped equivalent of engine-core.js blendExpertAll(). Unlike the
+    0.1 sweep (one shared w per run, position read out of score()'s
+    breakdown), this applies each position's OWN shipped weight in a single
+    pass, because that is what the live board actually does."""
+    out = list(projs)
+    for i, p in enumerate(pop):
+        w = W.get(p["pos"])
+        if w is None or w >= 1:
+            continue
+        e = expert_by_player.get(p["player_id"])
+        out[i] = blend_expert([projs[i]], [e], w)[0]
+    return out
+
 try:
     from adp_probe import fetch_adp          # needs FANTASYPROS_API_KEY
     from fantasypros import fetch_injuries, fetch_projections
@@ -653,6 +697,32 @@ def main():
                                              "model": "opp_blend", "variant": f"k{k}_w{w}",
                                              "opp_k": k, "blend_w": w, "pos": pos, **m})
 
+            # ── re-baseline: does the opportunity model beat what is ──
+            # ACTUALLY shipping right now (injury discount + expert blend +
+            # anchor), not the pre-Phase-0 pure model every sweep above
+            # compares against? Only meaningful on "all" with every input
+            # available, and only at MARKET_ANCHOR_W — that is the one
+            # number the live board actually produces.
+            if pop_name == "all" and adp_by_player and expert_by_player and injury_by_player:
+                shipped_stack = apply_expert_shipped(
+                    pop, apply_injury_shipped(pop, base_projs, injury_by_player), expert_by_player)
+                shipped_stack_merged = blend_with_market(pop, shipped_stack, adp_by_player, MARKET_ANCHOR_W)
+                for pos, m in score(pop, shipped_stack_merged, sc).items():
+                    per_year.append({"year": year, "population": pop_name,
+                                     "model": "shipped_stack", "variant": "current",
+                                     "pos": pos, **m})
+
+                for k in OPP_K:
+                    opp_k = [project_points_opportunity(p, sc, opp_rates, k, DEFAULT_PARAMS)["proj"]
+                             for p in pop]
+                    opp_stack = apply_expert_shipped(
+                        pop, apply_injury_shipped(pop, opp_k, injury_by_player), expert_by_player)
+                    opp_stack_merged = blend_with_market(pop, opp_stack, adp_by_player, MARKET_ANCHOR_W)
+                    for pos, m in score(pop, opp_stack_merged, sc).items():
+                        per_year.append({"year": year, "population": pop_name,
+                                         "model": "opp_stack", "variant": f"k{k}", "opp_k": k,
+                                         "pos": pos, **m})
+
     df = pd.DataFrame(per_year)
     for c in ("blend_w", "k", "inj_k", "opp_k"):
         if c not in df.columns:
@@ -913,11 +983,9 @@ def main():
     # phase kill gate ───────────────────────────────────────────────────
     oppa = agg[(agg["population"] == "all") & (agg["model"] == "opp")]
     if len(oppa) and dis_rows:
-        # Both numbers fixed here, before reading the sweep below. The
-        # roadmap only specified the SHAPE of the bar for the first one
-        # ("materially" above baseline) — not an exact number.
-        MATERIAL_EPS = 0.03   # absolute partial-correlation increase required
-        MERGE_EPS = 0.003     # the v2 attempt's own number; must be EXCEEDED, not matched
+        # MATERIAL_EPS/MERGE_EPS fixed at module level, before reading the
+        # sweep below. The roadmap only specified the SHAPE of the bar for
+        # the first one ("materially" above baseline) — not an exact number.
         print("\n=== ROADMAP 1.1/1.2 — VOLUME x SHRUNK EFFICIENCY ===")
         print("k = efficiency shrinkage strength. Unlike v2/the injury discount, k=0")
         print("here is NOT the shipped model — it's the two-stage model's own unshrunk arm.")
@@ -978,6 +1046,50 @@ def main():
             print("  -> DO NOT SHIP. No position cleared both halves of the phase gate. The")
             print("     gate was set in advance precisely so this decision is not made after")
             print("     seeing the numbers.")
+
+    # ── re-baseline: same merge gate, against what is ACTUALLY shipping ───
+    # right now (injury discount + expert blend + anchor) instead of the
+    # pre-Phase-0 pure model. Every other verdict in this file — v2, 0.1,
+    # 0.3, and the PHASE 1 KILL GATE above — is deliberately scored against
+    # the bare model, because that isolates each idea's OWN marginal
+    # contribution the same way every time, which is what let v2 be killed
+    # on a clean, reproducible number and RB above be compared apples-to-
+    # apples against it. This block answers a different, narrower question:
+    # if the board today already has 0.1 and 0.3, does swapping in the
+    # opportunity model on top of THAT still help, or does it double up on
+    # signal those two already captured?
+    ssa = agg[(agg["population"] == "all") & (agg["model"] == "shipped_stack")]
+    osa = agg[(agg["population"] == "all") & (agg["model"] == "opp_stack")]
+    if len(ssa) and len(osa):
+        print("\n=== RE-BASELINED — OPPORTUNITY MODEL vs THE CURRENT LIVE BOARD ===")
+        print("shipped_stack = project_points -> injury discount -> expert blend -> anchor,")
+        print("at the EXACT weights shipped in engine-core.js. Same MERGE_EPS as above (0.003),")
+        print("now measured against this instead of the pre-Phase-0 model.")
+        restacked = {}
+        for posn in sorted(osa["pos"].unique()):
+            base_row = ssa[ssa["pos"] == posn]
+            if not len(base_row):
+                continue
+            base = float(base_row.iloc[0].spearman_total)
+            s = osa[osa["pos"] == posn].sort_values("opp_k")
+            print(f"\n  {posn}   (current live board: {base:.4f})")
+            for _, r in s.iterrows():
+                print(f"    k={r.opp_k:<5} {r.spearman_total:.4f}  ({r.spearman_total - base:+.4f})")
+            best = s.loc[s.spearman_total.idxmax()]
+            restacked[posn] = {"base": base, "best": float(best.spearman_total), "best_k": float(best.opp_k)}
+
+        print("\n  --- RE-BASELINED VERDICT (same +0.003 bar, honest baseline) ---")
+        restacked_pass = {}
+        for posn in sorted(restacked):
+            v = restacked[posn]
+            ok = v["best"] > v["base"] + MERGE_EPS
+            restacked_pass[posn] = ok
+            print(f"    {posn}  k={v['best_k']}  {v['best']:.4f} vs live {v['base']:.4f} "
+                  f"({v['best'] - v['base']:+.4f})   {'PASS' if ok else 'FAIL'}")
+        ship2 = [p for p, ok in restacked_pass.items() if ok]
+        skip2 = [p for p, ok in restacked_pass.items() if not ok]
+        print(f"\n  -> Against the live board: ship for {', '.join(ship2) or '(none)'}"
+              f"{'; ' + ', '.join(skip2) + ' do not clear it here' if skip2 else ''}.")
 
     print(f"\n✓ wrote {args.out}/projection_backtest_summary.csv and _by_year.csv")
 
