@@ -86,11 +86,13 @@ V2_K = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0]
 # shipped model exactly, same as every other sweep here. pace_ratio is
 # already a ratio to league average, so its k scales how much of that ratio
 # passes through (k=1 is a full linear pass-through).
-# Extended past the originally-shipped grid's top (0.25) — that sweep was
-# still climbing at 0.25 when TEAM_CHANGE_K shipped, so 0.25 was the best OF
-# WHAT WAS TRIED, not a found optimum. This re-run checks whether it keeps
-# climbing, or actually turns over somewhere past it.
-TEAM_CHANGE_K = [0.0, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25, 0.3, 0.4, 0.5]
+# Extended TWICE past the originally-shipped grid's top (0.25) — that sweep
+# was still climbing at 0.25 when TEAM_CHANGE_K shipped, so 0.25 was the
+# best OF WHAT WAS TRIED, not a found optimum. The first re-run (to 0.5)
+# found RB's real peak (0.4, shipped) but WR was STILL climbing at 0.5, so
+# this second extension pushes further to actually locate WR's peak rather
+# than repeat the same mistake with a bigger number.
+TEAM_CHANGE_K = [0.0, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 QB_CHANGE_K = [0.0, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25]
 COACH_CHANGE_K = [0.0, 0.02, 0.05, 0.08, 0.12, 0.18, 0.25]
 PACE_K = [0.0, 0.25, 0.5, 1.0, 1.5, 2.0]
