@@ -69,7 +69,7 @@ move — and then this does not ship.
 > veterans, not just rookies. Sweep the blend weight, run the backtest, and
 > report against the kill gate in docs/ROADMAP.md before shipping anything."
 
-### 0.2 Collapse the overfit snake slot configs
+### 0.2 Collapse the overfit snake slot configs — DONE, collapsed
 
 `DEFAULT_SNAKE_PARAMS.SLOTS` carries ~8 parameters for each of 10 draft slots,
 grid-searched on five seasons. That is a lot of knobs for very little data, and
@@ -80,9 +80,19 @@ instead of four fitted ones.
 config. Keep per-slot tuning only for slots where it survives out of sample;
 collapse the rest.
 
-> **Prompt** — "Do roadmap step 0.2: test whether the per-slot snake configs
-> survive leave-one-season-out validation against a single shared config.
-> Collapse whatever doesn't."
+**RESULT.** The grid search behind those configs was never in this repo, so
+they could not be re-run — `draft-sim.mjs` was built to test them out of sample
+instead, replaying identical leagues and changing only the config:
+
+| | drafts | mean diff | mean/SE |
+|---|---|---|---|
+| 2021–2025 (fitted) | 1,200 | **+10.67** | 4.24 — real |
+| 2017–2020 (held out) | 960 | **+2.53** | 1.16 — noise |
+
+Better exactly where tuned, indistinguishable elsewhere. `SLOTS` is now `{}`;
+the lookup remains so a config that earns its place can return. Note this
+step cost a week, not the "days" estimated above — the estimate assumed a
+tuning harness that did not exist. That harness is Phase 3's, built early.
 
 ### 0.3 Injury-aware expected games
 

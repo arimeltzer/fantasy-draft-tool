@@ -16,7 +16,10 @@
  *
  *   node frontend/src/engine/snake-engine.selftest.mjs
  */
-import { pickScore, maxUseful, snakePicks, myPickNumbers } from "./snake-engine.js";
+import {
+  pickScore, maxUseful, snakePicks, myPickNumbers,
+  resolveSlotConfig, DEFAULT_SNAKE_PARAMS,
+} from "./snake-engine.js";
 
 let pass = 0;
 const fails = [];
@@ -102,6 +105,28 @@ check("serpentine picks alternate correctly",
       JSON.stringify(snakePicks(3, 10, 4)));
 check("traded picks override the serpentine formula",
       JSON.stringify(myPickNumbers({ teams: 10, draftSlot: 3, myPicks: [5, 9] }, 4)) === "[5,9]");
+
+// ── roadmap 0.2: the per-slot configs are collapsed ───────────────────────
+// Ten configs (~100 fitted numbers, provenance outside this repo) beat one
+// shared config by +10.67 pts where they were tuned and +2.53 (mean/SE 1.16)
+// out of sample. Indistinguishable from noise, so they were removed on
+// parsimony. These assertions stop them coming back without evidence, and
+// stop the MECHANISM being deleted along with the values.
+check("no per-slot configs ship", Object.keys(DEFAULT_SNAKE_PARAMS.SLOTS).length === 0,
+      JSON.stringify(Object.keys(DEFAULT_SNAKE_PARAMS.SLOTS)));
+check("every slot resolves to the one shared config",
+      [1, 5, 10, 12].every((s) =>
+        resolveSlotConfig(DEFAULT_SNAKE_PARAMS, 10, s) === DEFAULT_SNAKE_PARAMS.SLOT_DEFAULT));
+check("a non-10-team league also uses it",
+      resolveSlotConfig(DEFAULT_SNAKE_PARAMS, 12, 3) === DEFAULT_SNAKE_PARAMS.SLOT_DEFAULT);
+{
+  // The lookup still works, so a config that EARNS its place can return.
+  const withSlot = { ...DEFAULT_SNAKE_PARAMS, SLOTS: { 4: { ...DEFAULT_SNAKE_PARAMS.SLOT_DEFAULT, QB_MIN: 3 } } };
+  check("a reinstated per-slot config is still honoured",
+        resolveSlotConfig(withSlot, 10, 4).QB_MIN === 3);
+  check("...and only for its own slot",
+        resolveSlotConfig(withSlot, 10, 5) === DEFAULT_SNAKE_PARAMS.SLOT_DEFAULT);
+}
 
 console.log();
 if (fails.length) {

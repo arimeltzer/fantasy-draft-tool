@@ -33,7 +33,8 @@ backend/            FastAPI + async SQLAlchemy (asyncpg) + Postgres, JWT auth
 frontend/           React + TS + Vite + Tailwind (light design system)
   src/engine/         engine-core.js (projection+VBD) · auction-engine.js
                       (dollarValues/marketPrice/suggestBid/nominationScore) ·
-                      snake-engine.js (pickScore + per-slot configs) ·
+                      snake-engine.js (pickScore; per-slot configs COLLAPSED,
+                      see roadmap 0.2) ·
                       valuation-engine.js (back-compat re-export shim) ·
                       strength-of-schedule.js ·
                       keeper.js (keeper-cost rule engine, node fixture-tested) ·
@@ -274,6 +275,21 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   match** — add an entry to one only and CI fails.
 - Import matching (`matching.py`) has the alias as its WEAKEST tier: unique
   candidate or outright team agreement, position-scoped, gives up on ambiguity.
+
+## Snake slot configs: collapsed (roadmap 0.2)
+
+- `DEFAULT_SNAKE_PARAMS.SLOTS` held ten per-draft-slot configs (~100 fitted
+  numbers) whose grid search was never in this repo — trustable, not auditable.
+- `engine/draft-sim.mjs` tests them the only way left: out of sample, replaying
+  identical leagues (common random numbers) and changing only the config.
+  **+10.67 pts where they were fitted (mean/SE 4.24), +2.53 held out (1.16).**
+  The gap IS the overfitting; `SLOTS` is now `{}`.
+- The lookup in `resolveSlotConfig` is deliberately kept, so a per-slot config
+  can return the moment one earns it on held-out evidence. `adpAbs`/`adpAbsCeil`
+  are now inert — only slot 10 ever set `adpAbsActive`.
+- Run it: the `Slot config test (roadmap 0.2)` workflow (needs the API key —
+  opponent bots draft by real ADP, or the comparison is against a strawman
+  sharing our own biases).
 
 ## Roster discipline in the snake recommender
 

@@ -20,9 +20,10 @@ export {
 /* ------------------------------------------------------------------ *
  * SNAKE-SPECIFIC PARAMS — ported from the offline research model.
  *
- * SLOTS holds the grid-searched per-draft-slot configs for a 10-team
- * league; SLOT_DEFAULT is the generic fallback for other league sizes
- * or when the draft slot is unknown. Tune here.
+ * SLOT_DEFAULT is the config every draft slot uses. SLOTS is an empty
+ * override map kept for reinstating a per-slot config that earns its
+ * place on held-out evidence — the ten that used to live there did not
+ * (roadmap 0.2; see the comment on SLOTS). Tune here.
  * ------------------------------------------------------------------ */
 export const DEFAULT_SNAKE_PARAMS = {
   ...DEFAULT_PARAMS,
@@ -34,27 +35,48 @@ export const DEFAULT_SNAKE_PARAMS = {
   adpAbs:     12,    // ADP absolute-floor unit (slot-10 injury-year guard)
   adpAbsCeil: 25,    // floor applies to adp_rank <= this
 
-  // Generic config (non-10-team, or unknown slot): slot-1-like baseline.
+  // The config every draft slot now uses — see SLOTS below for why there is
+  // only one. Held-out simulation could not distinguish ten tuned configs from
+  // this single shared one, so this is the whole per-slot strategy.
   SLOT_DEFAULT: {
     QB_MIN: 8, QB2_MIN: 9,
     WR_P1: 1.35, WR_P2: 1.25, WR_P3: 1.12, WR_P4: 1.06,
     ADP_W: 0.15, AGE29: 1.00, AGE31: 1.00, adpAbsActive: false,
   },
 
-  // 10-team grid-searched configs (2021–2025). WR tiers:
-  //   baseline 1.35/1.25/1.12/1.06 · heavy 1.50/1.35/1.18/1.08 · max 1.60/1.40/1.20/1.10
-  SLOTS: {
-    1:  { QB_MIN: 7, QB2_MIN: 10, WR_P1: 1.35, WR_P2: 1.25, WR_P3: 1.12, WR_P4: 1.06, ADP_W: 0.15, AGE29: 1.00, AGE31: 1.00, adpAbsActive: false },
-    2:  { QB_MIN: 8, QB2_MIN: 9,  WR_P1: 1.35, WR_P2: 1.25, WR_P3: 1.12, WR_P4: 1.06, ADP_W: 0.15, AGE29: 1.00, AGE31: 1.00, adpAbsActive: false },
-    3:  { QB_MIN: 8, QB2_MIN: 9,  WR_P1: 1.35, WR_P2: 1.25, WR_P3: 1.12, WR_P4: 1.06, ADP_W: 0.15, AGE29: 1.00, AGE31: 1.00, adpAbsActive: false },
-    4:  { QB_MIN: 7, QB2_MIN: 9,  WR_P1: 1.60, WR_P2: 1.40, WR_P3: 1.20, WR_P4: 1.10, ADP_W: 0.05, AGE29: 0.90, AGE31: 0.82, adpAbsActive: false },
-    5:  { QB_MIN: 8, QB2_MIN: 9,  WR_P1: 1.60, WR_P2: 1.40, WR_P3: 1.20, WR_P4: 1.10, ADP_W: 0.15, AGE29: 0.90, AGE31: 0.82, adpAbsActive: false },
-    6:  { QB_MIN: 8, QB2_MIN: 9,  WR_P1: 1.35, WR_P2: 1.25, WR_P3: 1.12, WR_P4: 1.06, ADP_W: 0.15, AGE29: 0.90, AGE31: 0.82, adpAbsActive: false },
-    7:  { QB_MIN: 7, QB2_MIN: 9,  WR_P1: 1.50, WR_P2: 1.35, WR_P3: 1.18, WR_P4: 1.08, ADP_W: 0.15, AGE29: 1.00, AGE31: 1.00, adpAbsActive: false },
-    8:  { QB_MIN: 7, QB2_MIN: 9,  WR_P1: 1.35, WR_P2: 1.25, WR_P3: 1.12, WR_P4: 1.06, ADP_W: 0.15, AGE29: 1.00, AGE31: 1.00, adpAbsActive: false },
-    9:  { QB_MIN: 7, QB2_MIN: 9,  WR_P1: 1.35, WR_P2: 1.25, WR_P3: 1.12, WR_P4: 1.06, ADP_W: 0.15, AGE29: 1.00, AGE31: 1.00, adpAbsActive: false },
-    10: { QB_MIN: 7, QB2_MIN: 9,  WR_P1: 1.35, WR_P2: 1.25, WR_P3: 1.12, WR_P4: 1.06, ADP_W: 0.15, AGE29: 1.00, AGE31: 1.00, adpAbsActive: true },
-  },
+  /**
+   * COLLAPSED — roadmap 0.2, and empty on purpose.
+   *
+   * This held ten per-draft-slot configs, ~10 parameters each, described as
+   * "10-team grid-searched (2021-2025)". The search itself was never in this
+   * repository, so 100 numbers could be trusted but not reproduced or audited.
+   * `draft-sim.mjs` was built to test them the one way still available — out
+   * of sample — by replaying identical leagues (common random numbers) and
+   * changing only whether the agent used its per-slot config or this default:
+   *
+   *     2021-2025, where they were fitted : +10.67 pts, mean/SE 4.24
+   *     2017-2020, held out               : + 2.53 pts, mean/SE 1.16
+   *
+   * Better exactly where they were tuned, indistinguishable from noise
+   * everywhere else. The gap between those two numbers is the overfitting:
+   * five seasons of draft-to-draft variance carried forward as though it were
+   * draft-position strategy.
+   *
+   * Note the held-out mean is still nominally positive, so the finding is NOT
+   * "these hurt you" — it is "they buy nothing measurable while costing 100
+   * unverifiable parameters", and parsimony decides it.
+   *
+   * The MECHANISM is kept, not deleted: `resolveSlotConfig` still consults
+   * this map first, so a per-slot config can be reinstated the moment one
+   * earns its place on held-out evidence. What was removed is unvalidated
+   * values, not the ability to have values.
+   *
+   * Consequence worth knowing: `adpAbsActive` was true only for slot 10, so
+   * the ADP absolute floor (`adpAbs` / `adpAbsCeil` below) is now inert
+   * everywhere. Those params are left in place because the gate they feed is
+   * still wired; they simply have nothing turning them on.
+   */
+  SLOTS: {},
 };
 
 /** Resolve the slot config: exact per-slot for 10-team, else the generic fallback. */
