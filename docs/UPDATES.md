@@ -6,6 +6,49 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 0.1 shipped: veterans now use the expert projection too
+- `blendExpertAll()` (`engine-core.js`) blends every veteran's model projection
+  with FantasyPros' expert projection, in points space, at a **per-position**
+  weight (`EXPERT_BLEND_W`: QB 0.3, RB 0.2, TE 0.2, WR 0.4; K/DST stay at 1.0 —
+  never backtested). Unlike the market anchor's single shared 0.3, a single
+  weight here would give up real signal: the per-position optimum is narrower
+  and more position-dependent (QB and WR sit more than a full weight-step
+  apart at the top of their curves).
+- Wired into `useBoard.ts` right after `projectAll()`, before schedule
+  strength and the market anchor — `projectAll -> blendExpertAll -> SOS ->
+  marketAnchor -> finalizeBoard`. On by default (`settings.expertBlend`);
+  rookies are skipped (`rookieProjection()` already used `player.proj` first,
+  with higher priority — blending again would double-count it).
+- `expert_blend_parity.py`/`.mjs` assert the shipped JS is numerically
+  identical to the backtested Python `blend_expert()` (1,080+ values across 9
+  cases, equality not tolerance), same treatment `anchor_parity.py` already
+  gives the market anchor.
+- **The kill gate passed at every position, both halves** (`docs/ROADMAP.md`
+  0.1): matched-population Spearman beats plain ADP, and the full-board
+  merged-with-anchor number beats the pre-0.1 board — QB +0.030, RB +0.037,
+  TE +0.044, WR +0.020. Backtest run: `projection-backtest.yml` #32032864146.
+
+## 2026-08 — Roadmap 0.1/0.2: kill-gated, one shipped, one collapsed
+- **0.2 collapsed.** `DEFAULT_SNAKE_PARAMS.SLOTS` carried ~100 fitted numbers
+  (10 draft slots × ~8 params) whose grid search was never checked into this
+  repo — trustable, not auditable. Built `draft-sim.mjs`, a from-scratch draft
+  simulator running the actual shipped `pickScore` (not a port), to test them
+  out of sample instead: **+10.67 pts where they were fitted** (mean/SE
+  4.24 — real), **+2.53 held out** (mean/SE 1.16 — indistinguishable from
+  noise). `SLOTS` is now `{}`; the `resolveSlotConfig` lookup stays so a
+  config that earns its place on held-out evidence can return.
+- **0.1 validated first.** `projection_probe.py` confirmed FantasyPros'
+  historical preseason projections are genuine (not hindsight, not stale) for
+  6+ of 7 tested seasons — the precondition for blending them in at all.
+  (First probe run misread a self-inflicted rate-limit as missing data;
+  `fantasypros.py` now retries 429s with backoff — `RATE_LIMIT_RETRIES=4`.)
+  `blend_expert()` (points-space, not rank transfer — magnitude matters here,
+  unlike the market anchor which already extracts order) then cleared the
+  kill gate; see the entry above for the ship.
+- The simulator this took to build (`draft-sim.mjs` + selftest + export +
+  runner + CI workflow) doubles as Phase 3's head-to-head harness, so the
+  week it cost (not the "days" originally estimated) wasn't sunk.
+
 ## 2026-08 — Model vs. market on a matched population: the market wins
 - Historical preseason ADP is available and genuine (correlation with that
   season's finish 0.53–0.66 — the band for real preseason opinion; hindsight

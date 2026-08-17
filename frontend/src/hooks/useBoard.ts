@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   projectAll, finalizeBoard, marketAnchor, MARKET_ANCHOR_W, resolveScoring,
+  blendExpertAll, EXPERT_BLEND_W,
 } from "@/engine/valuation-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
 import { ApiPlayer, LeagueSettings } from "@/lib/api";
@@ -117,13 +118,25 @@ export function useBoard(
 
     const enginePlayers = dedupePlayers(players).map(toEnginePlayer);
 
-    // Order is load-bearing. Schedule strength adjusts OUR projection, so it
-    // lands first; the market anchor then reads the finished projection; and
-    // replacement level, VBD and tiers are derived last, from whatever
-    // valuePoints ended up being. Deriving VBD before an adjustment (as the
-    // old SOS path did, then recomputing it by hand) is how the two copies of
-    // the replacement maths drifted apart.
+    // Order is load-bearing. The expert blend corrects OUR projection with
+    // FantasyPros' veteran numbers first (roadmap 0.1 — this is the model's
+    // own point estimate, same category as age/durability, not a ranking
+    // correction); schedule strength adjusts that finished projection next;
+    // the market anchor then reads it; and replacement level, VBD and tiers
+    // are derived last, from whatever valuePoints ended up being. Deriving
+    // VBD before an adjustment (as the old SOS path did, then recomputing it
+    // by hand) is how the two copies of the replacement maths drifted apart.
     let scored = projectAll(enginePlayers, sc);
+
+    // Backtested 2019-2025: matched-population AND full-board merged Spearman
+    // both clear the roadmap 0.1 kill gate at every position, at the weights
+    // in EXPERT_BLEND_W. On by default for the same reason as the anchor
+    // below — a league with no expert-projection coverage in its pool loses
+    // nothing (blendExpertAll leaves uncovered players untouched), and a
+    // mid-draft valuation change should be reversible without a deploy.
+    if (settings.expertBlend !== false) {
+      scored = blendExpertAll(scored, sc, EXPERT_BLEND_W);
+    }
 
     if (sos && Object.keys(sos).length > 0) {
       scored = scored.map((p) => ({

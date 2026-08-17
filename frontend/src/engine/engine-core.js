@@ -221,6 +221,71 @@ export function projectValue(player, sc, P = DEFAULT_PARAMS) {
 }
 
 /**
+ * Per-position weight on OUR model when blending with the FantasyPros expert
+ * projection, in POINTS space (roadmap 0.1). w=1 is our model untouched, w=0
+ * is the experts' number.
+ *
+ * Backtested 2019-2025 (`data-pipeline/projection_backtest.py`): at these
+ * weights, BOTH halves of the pre-committed kill gate in docs/ROADMAP.md
+ * clear — matched-population Spearman beats plain ADP, and the full-board
+ * merged-with-market-anchor number beats the shipped model, at every
+ * position (QB +0.030, RB +0.037, TE +0.044, WR +0.020 over the pre-0.1
+ * merged board).
+ *
+ * Unlike MARKET_ANCHOR_W, this is deliberately four separate numbers, not
+ * one shared constant: the per-position optimum here (0.2-0.4) is narrower
+ * and more position-dependent than the market anchor's flat 0.2-0.5 range —
+ * QB and WR are more than one full weight-step apart at the top of their
+ * curves — so a single constant would give up real, measured signal for no
+ * parsimony benefit. K/DST were never in the backtest population (no
+ * FantasyPros expert projection was tested for them), so they stay at w=1
+ * (pure model) rather than guess a weight nothing validated.
+ */
+export const EXPERT_BLEND_W = { QB: 0.3, RB: 0.2, TE: 0.2, WR: 0.4, K: 1.0, DST: 1.0 };
+
+/**
+ * Blend our model's points with the experts' (FantasyPros) projection, in
+ * POINTS space — preserves magnitude, unlike marketAnchor's rank transfer.
+ * `w` is the weight on OUR model.
+ *
+ * A player the experts do not cover — no `proj` at all, or a projection of
+ * exactly 0, which reads as "no opinion filed" rather than "projected for
+ * zero points" — keeps our model's number untouched. Blending toward an
+ * absent or zero opinion would quietly rewrite the ~45-50% of the board
+ * FantasyPros doesn't project down toward zero.
+ */
+export function blendExpert(modelPts, expertPts, w) {
+  if (expertPts == null || !(expertPts > 0)) return modelPts;
+  return +(w * modelPts + (1 - w) * expertPts).toFixed(1);
+}
+
+/**
+ * Apply the expert blend to an already-projected board.
+ *
+ * Rookies are skipped: `rookieProjection()` inside `projectPoints()` already
+ * uses the expert projection FIRST, with higher priority than our own
+ * pace-based estimate — blending it in again here would double-count the
+ * same number instead of correcting the veteran path the roadmap audit
+ * found broken ("every veteran is projected from their own box scores while
+ * an expert forecast sits unused in the same row").
+ *
+ * Runs right after `projectAll()`, before SOS/marketAnchor — the backtest
+ * that validated `EXPERT_BLEND_W` measured plain-model -> expert-blend ->
+ * market-anchor, in that order, and this keeps the shipped pipeline in the
+ * same order the measurement describes.
+ */
+export function blendExpertAll(players, sc, W = EXPERT_BLEND_W) {
+  return players.map((p) => {
+    if (p.rookie) return p;
+    const w = W[p.pos];
+    if (w == null || w >= 1) return p;
+    const expertPts = points(p.proj || {}, sc);
+    const valuePoints = blendExpert(p.valuePoints, expertPts, w);
+    return valuePoints === p.valuePoints ? p : { ...p, valuePoints };
+  });
+}
+
+/**
  * Rank players by market position: ADP when present, ECR as the fallback
  * (FantasyPros pulls sometimes carry rankings but no ADP — ECR order is a
  * close proxy, and without a fallback every market-rank signal goes dead).
@@ -357,13 +422,15 @@ export function finalizeBoard(scored, league, P = DEFAULT_PARAMS) {
 /**
  * Projection -> VBD in one call.
  *
- * The market anchor is OFF here and opted into by the app (see useBoard), not
- * because it is optional in spirit but because the order matters: schedule
- * strength has to land on valuePoints before the anchor reads them, so the
- * app composes projectAll -> SOS -> marketAnchor -> finalizeBoard itself.
+ * The expert blend and market anchor are OFF here and opted into by the app
+ * (see useBoard), not because they are optional in spirit but because order
+ * matters: schedule strength has to land on valuePoints before the anchor
+ * reads them, so the app composes
+ * projectAll -> blendExpertAll -> SOS -> marketAnchor -> finalizeBoard itself.
  */
 export function valueBoard(players, league, sc, P = DEFAULT_PARAMS, opts = {}) {
   let scored = projectAll(players, sc, P);
+  if (opts.expertBlend) scored = blendExpertAll(scored, sc, opts.expertBlendW ?? EXPERT_BLEND_W);
   if (opts.anchor) scored = marketAnchor(scored, opts.anchorW ?? MARKET_ANCHOR_W);
   return finalizeBoard(scored, league, P);
 }

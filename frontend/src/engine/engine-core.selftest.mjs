@@ -4,7 +4,7 @@
  * that never set `settings.scoring`. */
 import {
   DEFAULT_SCORING, defaultScoring, resolveScoring, points, projectValue, valueBoard,
-  marketAnchor, finalizeBoard,
+  marketAnchor, finalizeBoard, blendExpert, blendExpertAll, EXPERT_BLEND_W,
 } from "./engine-core.js";
 
 let pass = 0, fail = 0;
@@ -133,6 +133,44 @@ ok(rookieRow.risk >= 0.2, "rookie risk is flagged, not treated as a known quanti
   const top = anchored[0];
   eq(top.id, "c", "board order follows the anchored points, not the raw model");
   ok(anchored.every((p) => typeof p.vbd === "number"), "anchored board still carries vbd");
+}
+
+/* ── expert blend (roadmap 0.1) ───────────────────────────────────────────
+   `blendExpert` mirrors data-pipeline/projection_backtest.py:blend_expert;
+   `expert_blend_parity.py` asserts the shipped weights stay numerically
+   identical to what was backtested. These cover the structural properties. */
+{
+  eq(blendExpert(100, 200, 1.0), 100, "expert blend w=1 is the pure model");
+  eq(blendExpert(100, 200, 0.0), 200, "expert blend w=0 is the pure expert number");
+  eq(blendExpert(100, 300, 0.5), 200, "expert blend w=0.5 is the midpoint");
+  eq(blendExpert(100, null, 0.5), 100, "no expert opinion -> model passes through");
+  eq(blendExpert(100, 0, 0.5), 100, "a zero expert projection reads as no opinion, not zero points");
+  eq(blendExpert(100, -5, 0.5), 100, "a negative expert projection also reads as no opinion");
+
+  const mk = (id, pos, vp, projPts, rookie = false) =>
+    ({ id, pos, valuePoints: vp, rookie, proj: { pts: projPts } });
+  const sc = defaultScoring(0.5);
+  const pool = [
+    mk("v1", "QB", 300, 400),       // veteran, expert disagrees -> blended
+    mk("v2", "RB", 200, null),      // veteran, no expert coverage -> untouched
+    mk("r1", "WR", 100, 900, true), // rookie -> skipped even though covered
+  ];
+  const out = blendExpertAll(pool, sc, EXPERT_BLEND_W);
+  const by = Object.fromEntries(out.map((p) => [p.id, p.valuePoints]));
+  eq(by.v1, EXPERT_BLEND_W.QB * 300 + (1 - EXPERT_BLEND_W.QB) * 400,
+     "veteran with expert coverage is blended at the position weight");
+  eq(by.v2, 200, "veteran with no expert coverage passes through untouched");
+  eq(by.r1, 100, "rookies are skipped — rookieProjection() already used proj first");
+
+  const noOp = blendExpertAll([mk("k1", "K", 50, 999)], sc, EXPERT_BLEND_W);
+  eq(noOp[0].valuePoints, 50, "a position at weight 1.0 (K/DST) is never touched");
+
+  // The whole point: VBD must be derived AFTER the expert blend, not before.
+  const league = { teams: 10, roster: { QB:1,RB:2,WR:2,TE:1,FLEX:1,K:0,DST:0,BENCH:5 } };
+  const blended = finalizeBoard(blendExpertAll(
+    [mk("lowproj", "QB", 100, 500), mk("highproj", "QB", 90, 100)], sc, EXPERT_BLEND_W
+  ), league);
+  ok(blended.every((p) => typeof p.vbd === "number"), "blended board still carries vbd");
 }
 
 console.log(`\nengine-core.selftest: ${pass} passed, ${fail} failed`);

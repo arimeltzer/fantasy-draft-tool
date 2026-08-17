@@ -201,6 +201,12 @@ export interface LeagueSettings {
   /** Weight on OUR model in that blend; 1 = pure model, 0 = pure market order.
    *  Defaults to MARKET_ANCHOR_W (0.3), which the sweep found flat-optimal. */
   marketAnchorWeight?: number;
+  /** Blend veteran projections with the FantasyPros expert projection, in
+   *  points space (roadmap 0.1). Defaults to ON — backtested better on both
+   *  the matched-population and full-board merged Spearman at every
+   *  position. Set false for a pool carrying no expert projections at all,
+   *  or to undo it mid-draft. */
+  expertBlend?: boolean;
   /** Adjust auction MARKET price forecasts for how this league actually spends,
    *  learned from `keeperImport` prices. Defaults to ON; inert without history.
    *  Never touches dollarValue — see engine/auction-calibration.js. */

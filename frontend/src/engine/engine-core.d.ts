@@ -104,6 +104,19 @@ export declare function projectPoints(
 export declare function projectValue(
   player: Player, sc: Scoring, P?: EngineParams
 ): { projPts: number; priorEquiv: number | null; valuePoints: number; ageMult: number; trend: number | null; rookie: boolean; risk: number };
+/** Per-position weight on OUR model when blending with the FantasyPros expert
+ *  projection (roadmap 0.1). QB/RB/TE/WR are backtested; K/DST stay at 1.0
+ *  (pure model — never tested). */
+export declare const EXPERT_BLEND_W: Record<string, number>;
+/** Points-space blend of our model with the experts' projection. `w` is the
+ *  weight on our model; an absent or zero expert projection passes through
+ *  untouched. */
+export declare function blendExpert(modelPts: number, expertPts: number | null | undefined, w: number): number;
+/** Apply blendExpert() across a projected board, keyed by EXPERT_BLEND_W[pos].
+ *  Rookies are skipped — rookieProjection() already used player.proj first. */
+export declare function blendExpertAll<T extends { pos: string; rookie?: boolean; valuePoints: number; proj?: StatLine }>(
+  players: T[], sc: Scoring, W?: Record<string, number>,
+): T[];
 export declare function rankByAdp(players: { id: number | string; adp?: number | null; ecr?: number | null }[]): Record<number, number>;
 export declare function replacementRanks(league: League, P?: EngineParams): Record<string, number>;
 /** Default weight on OUR model when anchoring to the market (0.3). */
@@ -125,5 +138,5 @@ export declare function finalizeBoard(
 ): BoardPlayer[];
 export declare function valueBoard(
   players: Player[], league: League, sc: Scoring, P?: EngineParams,
-  opts?: { anchor?: boolean; anchorW?: number },
+  opts?: { anchor?: boolean; anchorW?: number; expertBlend?: boolean; expertBlendW?: Record<string, number> },
 ): BoardPlayer[];

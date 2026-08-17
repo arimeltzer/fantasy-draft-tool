@@ -92,6 +92,8 @@ cd backend && python -m integrations.selftest
 cd data-pipeline && python name_parity.py
 # the SHIPPED market anchor must equal the Python that was backtested
 cd data-pipeline && python anchor_parity.py
+# the SHIPPED expert-projection blend must equal the Python that was backtested
+cd data-pipeline && python expert_blend_parity.py
 # projection model: port parity, then backtest (both pull from nflverse)
 cd data-pipeline && python projection_parity.py && python projection_backtest.py
 # SOS tuning (pulls 10 seasons from nflverse)
@@ -197,15 +199,44 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   (0.2–0.5) sit on a flat curve and a single 0.3 is within 0.001 of the best
   everywhere. Four constants fit on their own evaluation data would generalize
   worse. `settings.marketAnchor` / `marketAnchorWeight` override it.
-- **Pipeline order is load-bearing**: `projectAll` → SOS → `marketAnchor` →
-  `finalizeBoard`. VBD/tiers/replacement must be derived LAST, from whatever
-  valuePoints ended up as. useBoard previously had its own duplicate copy of the
-  replacement maths (with its own FLEX_SHARE) used only on the SOS path; that is
-  gone.
+- **Pipeline order is load-bearing**: `projectAll` → `blendExpertAll` → SOS →
+  `marketAnchor` → `finalizeBoard`. VBD/tiers/replacement must be derived LAST,
+  from whatever valuePoints ended up as. useBoard previously had its own
+  duplicate copy of the replacement maths (with its own FLEX_SHARE) used only
+  on the SOS path; that is gone.
 - **`data-pipeline/anchor_parity.py` asserts the shipped JS is numerically
   identical to `blend_with_market`** — equality, not tolerance, 2300 values over
   a weight × coverage sweep plus ties. Otherwise the app ships arithmetic nobody
   measured while the commit message quotes the measurement.
+
+## Expert projection blend (shipped, on by default; roadmap 0.1)
+
+- Veterans used to ignore `player.proj` entirely — `projectPoints()` only read
+  it in the rookie branch, so the FantasyPros expert projection sat unused in
+  the same row as the model's own pace-based estimate. `engine-core.js
+  blendExpertAll()` blends the two, in POINTS space (not rank transfer — the
+  market anchor already extracts order, so a second market-like source needs
+  to contribute magnitude to be worth anything). Players the experts don't
+  cover — no projection, or a projection of exactly 0, read as "no opinion"
+  — keep the model's number untouched.
+- **Weight is FOUR numbers, one per position** (`EXPERT_BLEND_W`: QB 0.3,
+  RB 0.2, TE 0.2, WR 0.4; K/DST 1.0 — never backtested, stay pure model) —
+  the opposite call from the market anchor. Backtested 2019–2025, the
+  per-position optimum here is narrower and NOT flat across positions (QB and
+  WR sit more than a full weight-step apart at the top of their curves), so a
+  single shared constant would give up real, measured signal rather than
+  simplify for free. See `docs/ROADMAP.md` 0.1 for the sweep.
+- **Kill gate passed at every position, both halves**: matched-population
+  Spearman beats plain ADP, and the full-board merged (with market anchor)
+  number beats the pre-0.1 board — QB +0.030, RB +0.037, TE +0.044, WR +0.020.
+- Rookies are skipped in `blendExpertAll` — `rookieProjection()` inside
+  `projectPoints()` already uses `player.proj` FIRST, at higher priority than
+  the model; blending it in again would double-count the same number.
+- `settings.expertBlend` overrides it off (mirrors `settings.marketAnchor`).
+- **`data-pipeline/expert_blend_parity.py` asserts the shipped JS is
+  numerically identical to `blend_expert`** — same equality-not-tolerance
+  treatment as `anchor_parity.py`, 1,080+ values over a coverage × weight
+  sweep plus the rookie-skip and zero-as-no-opinion edge cases.
 
 ## Auction calibration (shipped, on by default, inert without history)
 

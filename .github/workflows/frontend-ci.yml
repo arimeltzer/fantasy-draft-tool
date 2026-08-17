@@ -65,6 +65,10 @@ jobs:
       - name: Shipped market anchor matches the backtested one
         working-directory: data-pipeline
         run: python anchor_parity.py
+      # Same treatment for roadmap 0.1's expert-projection blend.
+      - name: Shipped expert-projection blend matches the backtested one
+        working-directory: data-pipeline
+        run: python expert_blend_parity.py
       # integrations.selftest imports the ESPN adapter, which imports httpx.
       # The job had no pip install at all, so it failed on import before
       # reaching a single assertion.

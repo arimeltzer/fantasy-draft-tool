@@ -52,7 +52,7 @@ Phases 1 and 2 attack these. Everything else is downstream.
 
 ## Phase 0 — Cheap wins, days not weeks
 
-### 0.1 Use the expert projection for veterans
+### 0.1 Use the expert projection for veterans — DONE, shipped
 
 The data is already in Postgres. Blend `player.proj` with the model's own
 pace-based estimate and sweep the weight, exactly as the market anchor was
@@ -65,9 +65,24 @@ current 0.7554 / 0.7364 / 0.7240 / 0.7564. If the expert projection only
 duplicates what market anchoring already extracts, the merged number will not
 move — and then this does not ship.
 
-> **Prompt** — "Do roadmap step 0.1: use the FantasyPros expert projection for
-> veterans, not just rookies. Sweep the blend weight, run the backtest, and
-> report against the kill gate in docs/ROADMAP.md before shipping anything."
+**RESULT.** Backtested 2019–2025 (`projection-backtest.yml` #32032864146).
+Both halves of the gate cleared at every position:
+
+| | matched (vs gate) | merged (vs gate) | best weight on our model |
+|---|---|---|---|
+| QB | 0.6358 vs 0.4970 **PASS** | 0.7858 vs 0.7554 **PASS** | 0.3 |
+| RB | 0.6921 vs 0.5510 **PASS** | 0.7732 vs 0.7364 **PASS** | 0.2 |
+| TE | 0.5606 vs 0.4720 **PASS** | 0.7680 vs 0.7240 **PASS** | 0.2 |
+| WR | 0.6681 vs 0.5940 **PASS** | 0.7765 vs 0.7564 **PASS** | 0.4 |
+
+Unlike the market anchor, the per-position optimum here is NOT flat across
+positions (QB and WR sit more than a full weight-step apart), so this shipped
+as four separate weights (`EXPERT_BLEND_W` in `engine-core.js`), not one
+shared constant. Wired into `useBoard.ts`:
+`projectAll -> blendExpertAll -> SOS -> marketAnchor -> finalizeBoard`.
+Rookies are skipped (already used `player.proj` first, at higher priority).
+`expert_blend_parity.py` holds the shipped JS to the backtested Python,
+equality not tolerance — same treatment `anchor_parity.py` gives the anchor.
 
 ### 0.2 Collapse the overfit snake slot configs — DONE, collapsed
 
@@ -241,14 +256,15 @@ decided after the draft. Everything here reuses the Phase 2 objective.
 
 | Phase | Effort | Payoff | Risk |
 |---|---|---|---|
-| 0 | Days | Moderate, near-certain | Low — 0.1 may reveal the anchor already captured it |
+| 0 | Days | Moderate, near-certain | Low — 0.1 and 0.2 are done; see their results above |
 | 1 | Weeks | Large | Moderate — could still fail its gate like v2 |
 | 2 | Weeks | Largest conceptual | **Highest** — calibration is hard and unglamorous |
 | 3 | Weeks | Large, format-specific | Moderate — depends entirely on Phase 2 |
 | 4 | Ongoing | Large over a season | Low technically, wide in scope |
 
-**Do Phase 0 first regardless.** It is cheap and 0.1 may recover a chunk of the
-ADP gap for almost nothing.
+**Do Phase 0 first regardless.** 0.1 and 0.2 are done (0.3 — injury-aware
+expected games — is the one step left); it was cheap and 0.1 shipped a real
+gain (+0.02 to +0.04 Spearman merged, per position).
 
 **If time is short before a draft**, do Phase 0, then 3.1 (snake) or 3.3/3.4
 (auction) using the *current* projection. Survival probability and budget paths
