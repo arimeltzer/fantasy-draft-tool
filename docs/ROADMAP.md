@@ -185,6 +185,68 @@ Project volume first, then apply a shrunk efficiency rate. The v2 experiment
 already built the shrinkage machinery (`projection_v2.py`) — this reuses it at
 the right level instead of patching touchdowns onto a points model.
 
+**1.1/1.2 approach taken**: rather than committing to the Postgres schema
+migration + `ingest_nflverse.py` production plumbing before knowing whether
+any of this earns its place, the two-stage model (`projection_opportunity.py`)
+was built and backtested first, reusing volume columns (`carries`, `targets`,
+`attempts`) `projection_backtest.py` already loads for `projection_v2.py` —
+no migration needed to MEASURE it. `target_share`/`air_yards_share`/`wopr`
+(also named above) were not used this round — not verified available in the
+pulled columns, so not claimed. The real DB/pipeline work only happens if the
+gate passes, same "nothing ships without the measurement" discipline 0.1 and
+0.3 both followed.
+
+**RESULT — DONE, shipped for TE only.** Swept 2017–2025, measured TWO ways:
+
+| pos | vs the pure model (`projection-backtest.yml` #32048231675) | vs the ACTUAL live board — injury discount + expert blend already applied (#32058062329) |
+|---|---|---|
+| QB | partial +0.3038 (material), merged +0.0043 → **PASS** | merged +0.0001 → **FAIL** |
+| RB | partial +0.2809 (material), merged +0.0023 → FAIL | merged +0.0000 → FAIL |
+| TE | partial +0.4000 (material), merged +0.0071 → **PASS** | merged +0.0040 → **PASS** |
+| WR | partial +0.3083 (material), merged +0.0034 → **PASS** | merged +0.0016 → **FAIL** |
+
+The first measure is the same one every other gate in this file uses (v2, 0.1,
+0.3): isolate the idea's own marginal contribution against the bare model.
+QB/TE/WR all passed it. But that measure doesn't say whether a NEW idea helps
+on top of what's ALREADY shipped — so it was re-run with `shipped_stack =
+project_points -> injury discount -> expert blend -> anchor`, at the EXACT
+weights live in `engine-core.js`, as the baseline instead. Against that
+honest bar, QB and WR's gains nearly vanish: both are the positions
+`EXPERT_BLEND_W` trusts the experts most (0.3, 0.4 — the two highest), so the
+opportunity model's signal there turned out to be mostly what the expert
+blend was already extracting, not something new. RB failed both measures,
+landing within 0.0003 of v2's already-rejected RB result (+0.0020) each
+time — three separate comparisons, same conclusion. TE — lowest expert-blend
+trust (0.2), no injury discount at all — is the only position with genuine
+room left, and it held up on the honest baseline too (+0.0040, still clears
+the same +0.003 bar).
+
+Shipped as `OPPORTUNITY_K = { TE: 2.0 }` (everyone else 0) in
+`frontend/src/engine/projection-opportunity.js`, wired into `useBoard.ts`
+right after `projectAll()` — before the injury discount / expert blend / SOS
+/ anchor, matching the order the backtest actually measured:
+`projectAll -> applyOpportunityModel -> applyInjuryDiscount -> blendExpertAll
+-> SOS -> marketAnchor -> finalizeBoard`. A TE with no usable volume (a
+rookie) falls straight through to the points-pace model, same coverage rule
+0.1/0.3 use. `opportunity_parity.py` holds the shipped JS to the backtested
+Python on the one number that matters, `proj`.
+
+**The real 1.1 turned out to need no migration.** `fantasy_players.last`/
+`last2` are already JSONB — `ingest_nflverse.py` now carries `carries`/
+`targets`/`attempts` alongside the scoring components as plain extra keys
+(`VOLUME` dict, mirroring `projection_backtest.py`'s own), and
+`load_to_db.py` already writes `last`/`last2` through untouched
+(`json.dumps(p.get("last"))::jsonb`, no fixed-column handling anywhere in
+the chain — confirmed by reading it, not assumed). The client-side engine
+pools league efficiency from whatever's on the current board (each TE's
+`last`+`last2`) rather than the backtest's multi-season pool — a necessary,
+documented difference in what data FEEDS the formula, not in the formula
+itself, which is exactly what `opportunity_parity.py` isolates and checks.
+
+> **Prompt** — "Start roadmap Phase 1: rebuild the projection on opportunity
+> data rather than points. Do 1.1 and 1.2 first, backtest, and report against
+> the phase kill gate before going near 1.3."
+
 ### 1.3 Team context — DONE, shipped: team change, RB/WR only
 Team change, quarterback change, coaching change, pace. **Evidence-driven
 only**: measure each feature's incremental contribution before adding it. This
@@ -368,82 +430,31 @@ EPA attempt. Backtest run: `projection-backtest.yml` #32092900025.
 
 ### 1.4 Rookie model on draft capital
 Rookies currently get an ADP-curve fallback. NFL draft round and pick are far
-stronger priors for opportunity.
+stronger priors for opportunity than anything in a rookie's (nonexistent) NFL
+box score.
 
-**Kill gate for the phase**: partial correlation vs ADP must rise materially
-above the current +0.036 QB / +0.047 RB / +0.107 TE / +0.098 WR, **and** the
-merged full-board number must improve by more than the v2 attempt's +0.003.
-Partial correlation alone is not enough — v2 raised it and still didn't matter.
+> **Doc note**: this section previously carried the ORIGINAL, pre-Phase-0
+> Phase-1 kill gate text (partial vs ADP baseline `+0.036 QB / +0.047 RB /
+> +0.107 TE / +0.098 WR`) and, misplaced beneath it by an earlier commit's
+> insertion anchor, the unrelated 1.1/1.2 RESULT block — moved to sit under
+> 1.2 above, where it belongs. 1.4 itself had never actually been attempted.
+> The kill gate below is freshly set, re-baselined against what's live today
+> (1.1–1.3 already shipped), rather than reusing the stale pre-Phase-0 numbers.
 
-**"Materially" fixed as a number, before running**: partial correlation must
-clear baseline by **more than +0.03 absolute** (roughly doubling the QB/RB
-floor, ~30% relative on TE/WR). "More than v2's +0.003" is taken literally —
-merged Spearman must beat the shipped model's best market-merge by **more
-than +0.003**, not merely match it. Both halves required; evaluated **per
-position**, same as 0.1 and 0.3 — a position that fails stays on the shipped
-model rather than getting a replacement that didn't earn it there.
-
-**1.1/1.2 approach taken**: rather than committing to the Postgres schema
-migration + `ingest_nflverse.py` production plumbing before knowing whether
-any of this earns its place, the two-stage model (`projection_opportunity.py`)
-was built and backtested first, reusing volume columns (`carries`, `targets`,
-`attempts`) `projection_backtest.py` already loads for `projection_v2.py` —
-no migration needed to MEASURE it. `target_share`/`air_yards_share`/`wopr`
-(also named in this section) were not used this round — not verified
-available in the pulled columns, so not claimed. The real DB/pipeline work
-only happens if the gate passes, same "nothing ships without the measurement"
-discipline 0.1 and 0.3 both followed.
-
-**RESULT — DONE, shipped for TE only.** Swept 2017–2025, measured TWO ways:
-
-| pos | vs the pure model (`projection-backtest.yml` #32048231675) | vs the ACTUAL live board — injury discount + expert blend already applied (#32058062329) |
-|---|---|---|
-| QB | partial +0.3038 (material), merged +0.0043 → **PASS** | merged +0.0001 → **FAIL** |
-| RB | partial +0.2809 (material), merged +0.0023 → FAIL | merged +0.0000 → FAIL |
-| TE | partial +0.4000 (material), merged +0.0071 → **PASS** | merged +0.0040 → **PASS** |
-| WR | partial +0.3083 (material), merged +0.0034 → **PASS** | merged +0.0016 → **FAIL** |
-
-The first measure is the same one every other gate in this file uses (v2, 0.1,
-0.3): isolate the idea's own marginal contribution against the bare model.
-QB/TE/WR all passed it. But that measure doesn't say whether a NEW idea helps
-on top of what's ALREADY shipped — so it was re-run with `shipped_stack =
-project_points -> injury discount -> expert blend -> anchor`, at the EXACT
-weights live in `engine-core.js`, as the baseline instead. Against that
-honest bar, QB and WR's gains nearly vanish: both are the positions
-`EXPERT_BLEND_W` trusts the experts most (0.3, 0.4 — the two highest), so the
-opportunity model's signal there turned out to be mostly what the expert
-blend was already extracting, not something new. RB failed both measures,
-landing within 0.0003 of v2's already-rejected RB result (+0.0020) each
-time — three separate comparisons, same conclusion. TE — lowest expert-blend
-trust (0.2), no injury discount at all — is the only position with genuine
-room left, and it held up on the honest baseline too (+0.0040, still clears
-the same +0.003 bar).
-
-Shipped as `OPPORTUNITY_K = { TE: 2.0 }` (everyone else 0) in
-`frontend/src/engine/projection-opportunity.js`, wired into `useBoard.ts`
-right after `projectAll()` — before the injury discount / expert blend / SOS
-/ anchor, matching the order the backtest actually measured:
-`projectAll -> applyOpportunityModel -> applyInjuryDiscount -> blendExpertAll
--> SOS -> marketAnchor -> finalizeBoard`. A TE with no usable volume (a
-rookie) falls straight through to the points-pace model, same coverage rule
-0.1/0.3 use. `opportunity_parity.py` holds the shipped JS to the backtested
-Python on the one number that matters, `proj`.
-
-**The real 1.1 turned out to need no migration.** `fantasy_players.last`/
-`last2` are already JSONB — `ingest_nflverse.py` now carries `carries`/
-`targets`/`attempts` alongside the scoring components as plain extra keys
-(`VOLUME` dict, mirroring `projection_backtest.py`'s own), and
-`load_to_db.py` already writes `last`/`last2` through untouched
-(`json.dumps(p.get("last"))::jsonb`, no fixed-column handling anywhere in
-the chain — confirmed by reading it, not assumed). The client-side engine
-pools league efficiency from whatever's on the current board (each TE's
-`last`+`last2`) rather than the backtest's multi-season pool — a necessary,
-documented difference in what data FEEDS the formula, not in the formula
-itself, which is exactly what `opportunity_parity.py` isolates and checks.
-
-> **Prompt** — "Start roadmap Phase 1: rebuild the projection on opportunity
-> data rather than points. Do 1.1 and 1.2 first, backtest, and report against
-> the phase kill gate before going near 1.3."
+**Kill gate, set before running**: same two-measure discipline as every other
+step in this phase. (1) Partial correlation of the rookie model vs actual
+outcome must clear the CURRENT ADP-fallback baseline by **more than +0.03
+absolute** for that position (mirrors the "material" bar used everywhere
+else in Phase 1). (2) Re-baselined against `shipped_stack` (project_points ->
+opportunity model -> team-change discount -> injury discount -> expert blend
+-> anchor, i.e. today's actual live board) restricted to the rookie
+population, the merged full-board Spearman must improve by **more than
++0.003**, matching v2's own bar. Evaluated **per position** — a position that
+fails stays on the ADP-curve fallback rather than getting a replacement that
+didn't earn it there. Rookies are a small, high-variance population (no prior
+NFL season to measure against), so both halves are required precisely because
+a partial-correlation-only win (v2's own mistake) is easiest to manufacture
+by accident on a small sample.
 
 ---
 
