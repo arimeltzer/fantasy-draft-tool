@@ -473,6 +473,33 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
 - `CalibrationBadge` states the sample and per-position effect, and reads
   "generic prices" when there's no history — never adjust prices silently.
 
+## Rookie draft capital (tried, roadmap 1.4 — NOT shipped)
+
+- Rookies with no FantasyPros projection fall back to an ADP/ECR decaying
+  curve (`rookieProjection()`/`rookie_projection()`). Tested replacing that
+  fallback with an empirical model: expected rookie-season pace as the
+  historical mean for every other rookie drafted in the same ROUND (not a
+  continuous pick curve — same "don't fit more than the data supports"
+  discipline that collapsed the snake-slot configs, roadmap 0.2), fit
+  leave-one-year-out from `nflreadpy.load_draft_picks()` (1,633 drafted
+  skill players, 1,296 rookie-season pace rows — draft order spot-checked
+  against 2023's real results first).
+- **Result: worse than the fallback at every position, on every measure** —
+  solo, partial-vs-ADP, and the full board merged (rookies anchored
+  together with returning players, re-baselined against the live board).
+  RB's partial correlation (holding ADP constant) came back numerically
+  IDENTICAL between the two models — draft capital carries essentially no
+  signal ADP doesn't already have for rookies, because ADP compilers
+  already price the draft the same way this model does; asking round to
+  out-predict a consensus largely derived FROM the round is close to
+  asking a proxy to beat its own source. QB/TE couldn't even run the
+  partial-correlation diagnostic most years — too few ADP-ranked rookies at
+  those positions to clear its sample floor.
+- Not shipped in any form; the ADP/ECR-curve fallback is unchanged.
+  `data-pipeline/rookie_capital.py` (15 fixture-test assertions) stays in
+  the repo as a documented negative result, same treatment every other
+  killed idea in this file gets. See `docs/ROADMAP.md` 1.4 for the full table.
+
 ## Duplicate players & name matching
 
 - A duplicate board row is not cosmetic: drafting one copy leaves the twin

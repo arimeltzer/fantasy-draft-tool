@@ -428,7 +428,7 @@ EPA attempt. Backtest run: `projection-backtest.yml` #32092900025.
 > "let's run 3 and 4 -- in part, I want to make sure we aren't overly
 > discounting WRs if there is a more nuanced adjustment"
 
-### 1.4 Rookie model on draft capital
+### 1.4 Rookie model on draft capital — DONE, NOT SHIPPED
 Rookies currently get an ADP-curve fallback. NFL draft round and pick are far
 stronger priors for opportunity than anything in a rookie's (nonexistent) NFL
 box score.
@@ -455,6 +455,42 @@ didn't earn it there. Rookies are a small, high-variance population (no prior
 NFL season to measure against), so both halves are required precisely because
 a partial-correlation-only win (v2's own mistake) is easiest to manufacture
 by accident on a small sample.
+
+**RESULT — DONE, NOT SHIPPED. Draft capital does not beat the ADP/ECR curve
+anywhere, at either measure.** Swept 2017-2025 (`projection-backtest.yml`
+#32094460741), 1,633 drafted skill-position players on record, 1,296
+rookie-season pace rows pooled to fit `rookie_capital_curve()` (bucketed by
+round, leave-one-year-out, `MIN_ROUND_N=5`):
+
+| pos | solo (capital vs baseline) | partial vs ADP (capital vs baseline) | merged, live board (capital vs baseline) | verdict |
+|---|---|---|---|---|
+| QB | 0.4882 vs 0.4985 (worse) | n=0 years (too few ADP-covered rookie QBs/season to clear `disagreement_signal`'s n≥15) | 0.7702 vs 0.7732 (worse) | FAIL |
+| RB | 0.5159 vs 0.5176 (worse) | +0.3620 vs **+0.3620 — identical to 4 decimals** | 0.7318 vs 0.7326 (worse) | FAIL |
+| TE | 0.2962 vs 0.2985 (worse) | n=0 years (same QB-sized coverage problem) | 0.6899 vs 0.6922 (worse) | FAIL |
+| WR | 0.3982 vs 0.4056 (worse) | +0.3700 vs +0.3759 (worse) | 0.7269 vs 0.7277 (worse) | FAIL |
+
+Every single comparison — solo, partial, and merged — reads WORSE for the
+draft-capital model, at every position, not merely "not better by enough."
+The RB result is the clearest tell: the partial correlation (which holds ADP
+constant) came back numerically IDENTICAL between the two models. That is
+not "draft capital adds nothing on the margin" in the usual noisy sense —
+it means ADP's own consensus for a rookie is already substantially a
+function of the player's draft slot. Fantasy ADP compilers already read
+the draft the same way this model does; asking draft round to out-predict
+ADP for the players ADP itself derives largely FROM the draft is close to
+asking a proxy to beat its own source. QB/TE's zero-coverage partial result
+is a separate, structural problem: most years don't have 15 ADP-ranked
+rookie QBs or TEs to run the diagnostic on at all — the position is just
+too thin for this specific diagnostic, regardless of the model's quality.
+
+Not shipped in any form. `rookie_projection()` / `rookieProjection()`'s
+ADP/ECR-curve fallback is unchanged. `rookie_capital.py` and its 15
+fixture-test assertions stay in the repo as a documented negative result,
+same treatment every other killed idea in this file gets — the measurement
+infrastructure (leave-one-year-out curve fitting, the rookies-merged-with-
+returning-players full-board anchor) is real and reusable if a future
+attempt uses PICK rather than ROUND, or blends capital with ADP instead of
+replacing it outright, rather than being thrown away.
 
 ---
 
@@ -553,7 +589,7 @@ decided after the draft. Everything here reuses the Phase 2 objective.
 | Phase | Effort | Payoff | Risk |
 |---|---|---|---|
 | 0 | Days | Moderate, near-certain | Low — 0.1, 0.2 and 0.3 are all done; see their results above |
-| 1 | Weeks | Real, but position-specific | Moderate — 1.1/1.2 done, TE only; 1.3 done, team_change RB/WR only (qb_change/coach_change/pace failed) |
+| 1 | Weeks | Real, but position-specific | Moderate — 1.1/1.2 done, TE only; 1.3 done, team_change RB/WR only (qb_change/coach_change/pace failed); 1.4 done, not shipped (draft capital ≈ what ADP already knows for rookies) |
 | 2 | Weeks | Largest conceptual | **Highest** — calibration is hard and unglamorous |
 | 3 | Weeks | Large, format-specific | Moderate — depends entirely on Phase 2 |
 | 4 | Ongoing | Large over a season | Low technically, wide in scope |

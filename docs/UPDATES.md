@@ -6,6 +6,29 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 1.4 done, not shipped: draft capital ≈ what ADP already knows
+- Tested replacing rookies' ADP/ECR-curve fallback (`rookie_projection()`)
+  with an empirical draft-round-based model: expected rookie-season pace as
+  the historical mean for every other rookie drafted in that round, fit
+  leave-one-year-out (1,633 drafted skill players, 1,296 rookie-season pace
+  rows pooled from `nflreadpy.load_draft_picks()`, spot-checked against
+  2023's real draft order first). Bucketed by ROUND (not a continuous pick
+  curve) — same "don't fit more than the data supports" discipline as the
+  collapsed snake-slot configs (0.2).
+- Result: worse than the existing fallback at every position, on every
+  measure — solo, partial-vs-ADP, and the full board merged (rookies
+  anchored together with returning players, re-baselined against the actual
+  live board). RB's partial correlation (holding ADP constant) came back
+  numerically IDENTICAL between the two models — draft capital carries
+  essentially no signal ADP doesn't already have for rookies, because ADP
+  compilers already price the draft the same way this model does. QB/TE
+  couldn't even run the partial-correlation diagnostic most years — too few
+  ADP-ranked rookies at those positions to clear its n≥15 floor.
+- Not shipped in any form; `rookie_projection()`/`rookieProjection()`
+  unchanged. `rookie_capital.py` (15 fixture-test assertions) stays in the
+  repo as a documented negative result. Backtest run:
+  `projection-backtest.yml` #32094460741.
+
 ## 2026-08 — Roadmap 1.3 follow-up #2: O-line and contract-commitment nuances tried and killed
 - Motivated by whether the shipped WR discount (70%) is overly punitive for
   movers into a good spot, tested the next two tier-1 destination-quality
