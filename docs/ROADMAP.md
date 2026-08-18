@@ -894,6 +894,51 @@ this tests the one hypothesis (d) actually supports, not a search over split
 points chosen after seeing results — that would be the exact p-hacking move
 this file's discipline exists to rule out.
 
+**RESULT — (e) REJECTED on gate 1. The split moves coverage the right
+direction but costs sharpness, the exact trade CRPS exists to catch.**
+Backtest `projection-backtest.yml` #32137111681.
+
+*Gate 1 fails on both populations*:
+
+| population | `pos` CRPS (baseline) | `pos_rank` CRPS (QB split) | delta |
+|---|---|---|---|
+| survivors | 40.59 | 40.77 | **-0.4%, does not earn it** |
+| with_busts | 41.19 | 41.51 | **-0.8%, does not earn it** |
+
+The split makes QB's fit slightly WORSE on CRPS in both populations — the
+opposite of what would be needed to accept it. Per the pre-registered gate,
+QB stays on `pos`, unchanged from before (e) existed.
+
+*And yet gate 2, on its own, looks like a win* — this is the informative part:
+
+| population | `pos` cov80 (shipped) | `pos_rank` cov80 (QB split, rejected) |
+|---|---|---|
+| survivors | 0.743 (FAIL) | **0.770 (would be IN band)** |
+| with_busts | 0.781 (already PASS) | 0.796 (also in band) |
+
+On survivors — the population that actually fails the standing kill gate —
+the QB-specific split would have moved coverage from 0.743 to 0.770, inside
+`[0.75, 0.85]`, if coverage were the only bar. It is not. Widening a QB1-9
+vs QB10+ split moves probability mass into the tails broadly enough to buy
+calibration, but not narrowly enough to do it for free — which is precisely
+the failure mode gate 1 was written to catch, and precisely what follow-up
+(c) already caught once with a rolling window instead of a tier split. Two
+different levers, same result: buying QB coverage by widening costs more in
+sharpness than the calibration is worth under this file's stated bar.
+
+**Consequence**: the split is not shipped; `RANK_TIERS_BY_POS` stays in the
+repo as a working, tested mechanism (7 selftest assertions) but produces no
+change to QB's fitted model, which remains `pos` — the same place (b)/(c)
+left it. This closes the "wrong tier boundary" explanation for QB's narrow
+tails almost as cleanly as (c) closed the "wrong window" one: two structurally
+different fixes (a rolling window, a position-specific split) both move
+coverage toward nominal only by paying more in sharpness than the gate
+allows. The remaining honest options are still the three (c) named — exclude
+QB from whatever 2.2 consumes, condition on something that predicts
+dispersion ex ante (starter/backup status, not draft rank), or accept a wider
+QB interval as a real cost of the position rather than a bug to keep chasing
+with variations on "cut the population differently."
+
 ### 2.2 Weekly-lineup-aware season simulator
 Season totals are the wrong unit: you start ~9 of 15 players each week. Simulate
 weeks, set lineups, score the lineup. This makes bench depth worth its true

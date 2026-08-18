@@ -6,6 +6,34 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 2.1 follow-up (e) RESULT: QB tier split REJECTED — buys coverage, costs sharpness
+- Tested whether QB's `pos_rank` conditioning failed the original 1% CRPS bar
+  because the shared `RANK_TIERS` boundary straddled QB's real cliff, found by
+  (d) between ADP 7-9 and 10-12. Added `RANK_TIERS_BY_POS` to
+  `outcome_distribution.py` (`rank_tier()` now takes an optional `pos`), one
+  QB-only override splitting at rank 9/10 — a single split point, not a
+  fitted curve, matching (d)'s own caveat that its tier detail was too noisy
+  to trust a finer shape. 7 new selftest assertions, 73/73 total pass.
+- Ran `projection-backtest.yml` #32137111681 against live data.
+  **Gate 1 (CRPS) fails on both populations** — `pos_rank` under the QB split
+  scores WORSE than the `pos` baseline (survivors: 40.59 → 40.77, -0.4%;
+  with_busts: 41.19 → 41.51, -0.8%). Per the pre-registered gate, QB stays on
+  `pos`, unchanged.
+- **The informative part: gate 2 alone would have looked like a win.**
+  Survivors cov80 moves from 0.743 (FAIL) to 0.770 (would be IN the [0.75,
+  0.85] band) under the rejected split. Calibration improves, but only by
+  widening broadly enough to cost more in sharpness than it buys — the exact
+  trade CRPS exists to catch, and the same failure mode follow-up (c) hit
+  with a rolling window instead of a tier split. Two structurally different
+  fixes, same result.
+- **Consequence**: `RANK_TIERS_BY_POS` stays in the repo as a tested,
+  working mechanism but produces no change to QB's shipped model. This closes
+  the "wrong tier boundary" explanation for QB's narrow tails, joining (c)'s
+  closure of "wrong fit window." Remaining honest options unchanged from (c):
+  exclude QB from whatever 2.2 consumes, condition on starter/backup status
+  instead of draft rank, or accept the wider QB interval as a real
+  characteristic of the position. Nothing shipped or wired in.
+
 ## 2026-08 — Roadmap 2.1 follow-up (d) RESULT: widening confirmed everywhere; QB's tier boundary looks like the real culprit
 - Ran `projection-backtest.yml` #32135813303 against live FantasyPros/nflverse
   data (2017-2025, ~2,000 ADP-ranked player-seasons) — confirmed the run
