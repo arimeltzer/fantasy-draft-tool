@@ -6,3 +6,4 @@ data-pipeline/__pycache__/
 data-pipeline/data/
 *.pyc
 .env
+data-pipeline/backtest_results/
