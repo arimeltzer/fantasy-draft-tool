@@ -640,6 +640,47 @@ natural hypothesis (c) is a recency-weighted or rolling-window fit rather than a
 flat pool over all prior seasons — pre-registered separately, and tested on
 whether it closes QB without breaking the positions that currently pass.
 
+**FOLLOW-UP (c) — pre-registration, written before the code exists.**
+
+*Hypothesis*: QB's ratio distribution is non-stationary, so a flat pool over
+every prior season is too narrow for recent ones. Restricting the fit to a
+rolling window of the most recent `W` seasons should widen QB toward nominal.
+
+*Form*: a rolling window, not a smooth decay. It keeps the `type6` estimator
+exactly as validated in (b) — weighted order statistics would change the
+effective `n` that estimator's unbiasedness is derived for — and makes the
+tradeoff explicit, since a shorter window is strictly less data. One parameter.
+A smooth `RECENCY_DECAY` (as auction calibration already uses for pooling
+seasons) is the natural refinement *if* the window works, not before.
+
+*Held fixed*: the conditioning accepted in the flat-pool run (`pos` for QB,
+`pos_rank` for RB/TE/WR). Sweeping conditioning and window together would be a
+two-parameter search dressed up as one test.
+
+*Gate, all four required*:
+1. QB `cov80` enters [0.75, 0.85] on the **survivors** population — the case
+   that fails today.
+2. **No position that currently passes may leave the band.**
+3. **CRPS must not degrade by more than 1% relative at any position.** A short
+   window can "fix" coverage purely by widening intervals; that is the exact
+   failure CRPS is in this gate to catch, and buying coverage with sharpness is
+   not a fix.
+4. **The mechanism must show up, not just the number**: QB's by-year coverage
+   trend — which currently *falls* as the fit fattens — must visibly flatten.
+   This is the real test, because it is a prediction about the SHAPE of the
+   result rather than a number being optimised.
+
+*One shared `W` for all positions*, unless the per-position curves are clearly
+non-flat — the market anchor's single 0.3 rather than `EXPERT_BLEND_W`'s four
+numbers, and for the same reason.
+
+*Limitation, stated in advance rather than discovered later*: with 8 evaluation
+years there is no held-out set left for a second-stage parameter choice, so any
+`W` that clears this is a **hypothesis confirmed in direction, not a validated
+tuned constant**. Shipping it would need confirmation on seasons not used to
+pick it. Gate 4 exists precisely because a shape prediction is much harder to
+satisfy by chance than a single optimised number.
+
 **Known population caveat, measured rather than hand-waved**: every correlation
 in this file is computed over players who APPEAR in season Y, so a player who
 was drafted and then never played is excluded rather than counted as a zero.
