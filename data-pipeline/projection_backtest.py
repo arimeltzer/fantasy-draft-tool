@@ -73,8 +73,8 @@ from projection_model import DEFAULT_PARAMS, default_scoring, points as _model_p
     project_points, rookie_projection, with_overrides
 from outcome_distribution import (
     CONDITIONINGS, QUANTILE_METHODS, age_bucket, covers, crps_empirical,
-    expected_coverage, fit_residuals, in_window, lookup_ratios, pit, rank_tier,
-    residual_ratio,
+    expected_coverage, fit_residuals, in_window, interval, lookup_ratios, pit,
+    quantile, rank_tier, residual_ratio,
 )
 from projection_opportunity import league_efficiency, project_points_opportunity
 from projection_v2 import league_rates, stabilize_player
@@ -1325,12 +1325,30 @@ def main():
                 for r, i in enumerate(sorted(idxs, key=lambda i: -dist_final[i]), start=1):
                     order[i] = r
 
+            # ADP rank WITHIN position, off the market's own consensus value —
+            # separate from `order` above, which is our BLENDED board number
+            # (already 30% pulled toward market rank for anchored players).
+            # roadmap 2.1 follow-up (d): is ADP's own accuracy uniform across
+            # draft depth, or does it degrade at a position-specific rate?
+            # That question needs the market's rank on its own terms, not a
+            # number our model has already partly absorbed the market into.
+            adp_order = {}
+            by_pos_idx_adp = {}
+            for i, p in enumerate(dist_pop):
+                if p["player_id"] in dist_adp:
+                    by_pos_idx_adp.setdefault(p["pos"], []).append(i)
+            for pos_, idxs in by_pos_idx_adp.items():
+                for r, i in enumerate(
+                        sorted(idxs, key=lambda i: dist_adp[dist_pop[i]["player_id"]]), start=1):
+                    adp_order[i] = r
+
             for i, p in enumerate(dist_pop):
                 act = p["_actual"]
                 actual_total = _points(season_line(act), sc) if act is not None else 0.0
                 dist_rows.append({
                     "year": year, "pos": p["pos"], "proj": dist_final[i],
-                    "actual": actual_total, "rank": order[i], "age": p["age"],
+                    "actual": actual_total, "rank": order[i],
+                    "adp_rank": adp_order.get(i), "age": p["age"],
                     "bust": act is None,
                 })
             print(f"  {year}: {len(players)} returning + {len(vanished)} market-ranked "
@@ -2246,6 +2264,67 @@ def main():
                         rho = float("nan")
                     label = "flat pool" if w is None else f"window={w}"
                     print(f"        {label:<12} rho(cov80, year) {rho:+.2f}   {series}")
+
+        # ── follow-up (d): is ADP's OWN accuracy uniform across draft depth, ──
+        # or position-specific? (user hypothesis, roadmap 2.1) The kill gate
+        # above conditions on OUR blended board rank (`rank`/`tier`), which is
+        # already 30% pulled toward the market for anchored players. This asks
+        # a narrower, prior question: does the empirical actual/projection
+        # ratio spread widen at a different rate per position as ADP rank goes
+        # deeper — and if so, does our shared RANK_TIERS (1-6/7-12/13-24/
+        # 25-48/49+, identical for every position) track that, or is each
+        # position's real accuracy cliff somewhere those shared cuts miss?
+        # Tier WIDTH is position-specific, not a shared cutoff: QB/TE in
+        # chunks of 3 (a QB1 and a QB13 are not comparable pools, and 20 spots
+        # covers nearly the whole startable position at either), RB/WR in
+        # chunks of 5 (twice the startable depth per team, so a shared width
+        # would be too coarse for QB/TE or too thin to fill for RB/WR).
+        print("\n  --- 2.1 FOLLOW-UP (d): ADP's OWN ACCURACY BY DRAFT DEPTH ---")
+        print("  Does the empirical actual/projected ratio spread widen smoothly with ADP")
+        print("  depth, or cliff at a position-specific point? Ranked by the MARKET's own")
+        print("  order (not our blended board number), so this reads ADP on its own terms,")
+        print("  independent of anything the model already does to it.")
+
+        ADP_TIER_WIDTH = {"QB": 3, "TE": 3, "RB": 5, "WR": 5}
+        MIN_TIER_N = 20        # below this, a tier's own quantiles are noise
+
+        for variant in ("survivors", "with_busts"):
+            sub = dfr if variant == "with_busts" else dfr[~dfr["bust"]]
+            sub = sub[sub["adp_rank"].notna()]
+            if sub.empty:
+                continue
+            print(f"\n    population: {variant} ({len(sub)} ADP-ranked player-seasons)")
+            for posn in sorted(sub["pos"].unique()):
+                width = ADP_TIER_WIDTH.get(posn)
+                if width is None:
+                    continue
+                p = sub[sub["pos"] == posn]
+                max_rank = int(p["adp_rank"].max())
+                print(f"\n      {posn}  (tier width {width})")
+                tier_widths = []
+                for lo in range(1, max_rank + 1, width):
+                    hi = lo + width - 1
+                    tier = p[(p["adp_rank"] >= lo) & (p["adp_rank"] <= hi)]
+                    ratios = sorted(r for r in
+                        (residual_ratio(row.actual, row.proj) for row in tier.itertuples())
+                        if r is not None)
+                    if len(ratios) < MIN_TIER_N:
+                        continue
+                    lo_q, hi_q = interval(ratios, 0.80)
+                    w80 = hi_q - lo_q
+                    med = quantile(ratios, 0.5)
+                    prior = tier_widths[-1][1] if tier_widths else None
+                    grew = "" if prior is None else f"  ({w80 - prior:+.3f} vs prior tier)"
+                    tier_widths.append((f"{lo}-{hi}", w80))
+                    print(f"        ADP {lo:3d}-{hi:<3d}  n={len(ratios):<4} "
+                          f"median ratio {med:.3f}  80%-width {w80:.3f} "
+                          f"[{lo_q:.3f}, {hi_q:.3f}]{grew}")
+                if len(tier_widths) >= 2:
+                    first_lbl, first_w = tier_widths[0]
+                    last_lbl, last_w = tier_widths[-1]
+                    print(f"        -> shallowest usable tier (ADP {first_lbl}) width "
+                          f"{first_w:.3f} vs deepest usable tier (ADP {last_lbl}) width "
+                          f"{last_w:.3f}  ({last_w / first_w:.2f}x)")
 
         print("\n  Note: nothing is wired into the frontend on this step regardless of the")
         print("  above — docs/ROADMAP.md 2.1 says the calibration check must pass BEFORE")

@@ -757,6 +757,50 @@ usual population, and over one that adds back players the market ranked (they
 have season-Y ADP, so drafters were really considering them) who then produced
 no season-Y stats line, scored as an actual outcome of 0.
 
+**FOLLOW-UP (d) — pre-registration, written before the code exists.**
+
+*Hypothesis (user-proposed)*: the fitted models condition on OUR blended board
+rank (`rank`/`tier`, off `RANK_TIERS` — 1-6/7-12/13-24/25-48/49+, one shared
+layout across all four positions), and that number is already 30% pulled
+toward market order by `marketAnchor()` before it ever reaches the tier cut.
+A prior, cleaner question: does the empirical actual/projected ratio spread
+degrade at a *uniform* rate with ADP depth, or does each position have its own
+accuracy curve — and does the one shared `RANK_TIERS` layout happen to cut
+where each position's curve actually bends, or does it miss?
+
+*Form*: position-specific tier WIDTH, not a shared cutoff — QB/TE in chunks of
+3 (≈12-20 spots covers nearly the entire startable position at either, so a
+6-wide RB-style tier would be too coarse to say anything), RB/WR in chunks of
+5 (twice the startable depth per team, so a QB-width tier would leave most
+of the position too thin to fill `MIN_TIER_N`). Ranked by the market's OWN
+order (`adp_rank`, added to `dist_rows` alongside the existing blended `rank`)
+rather than the board's blended number, so this reads ADP's accuracy on its
+own terms — independent of anything the model already does to it, including
+the market anchor's own 30% pull.
+
+*Implemented, not yet run*: `projection_backtest.py`, "2.1 FOLLOW-UP (d)",
+printed for both `survivors` and `with_busts` populations, reporting each
+tier's empirical 80%-interval width (`interval()`/`quantile()` from
+`outcome_distribution.py`, `MIN_TIER_N = 20`) and the shallowest-vs-deepest
+usable-tier ratio per position. Not yet run against real data — needs
+`FANTASYPROS_API_KEY` + network, unavailable in the session that wrote it. Run
+via the `projection-backtest.yml` workflow or locally with the key.
+
+*What this would and would not settle*: this is a THIRD, independent lens on
+2.1's open problems, not a re-run of (a)/(b)/(c) under a new name. It does not
+touch QB's narrow tails — (c) already established those are an
+evaluation-season effect, not a conditioning-granularity one — and it does not
+settle the RB/WR bust-population question either (that is still follow-up (a)
+on its own). What it CAN show: whether the single shared `RANK_TIERS` layout
+is costing CRPS by cutting position-specific accuracy curves at the wrong
+depth — e.g. a real cliff after WR30 that the shared 25-48 tier straddles
+instead of isolating. If the per-position curves it produces track the shared
+tiers closely, this is confirmatory and nothing changes. If they diverge, the
+gate for shipping a position-specific `RANK_TIERS` is the same discipline the
+three existing conditioning levels already clear: >1% relative CRPS
+improvement, held-out, without pushing any currently-passing position's cov80
+out of `[0.75, 0.85]`.
+
 ### 2.2 Weekly-lineup-aware season simulator
 Season totals are the wrong unit: you start ~9 of 15 players each week. Simulate
 weeks, set lineups, score the lineup. This makes bench depth worth its true

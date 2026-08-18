@@ -6,6 +6,31 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 2.1 follow-up (d): pre-registered, not yet run — ADP's own accuracy by position-specific draft depth
+- User-proposed hypothesis: 2.1's fitted models condition on OUR blended board
+  rank (`RANK_TIERS`, one shared 1-6/7-12/13-24/25-48/49+ layout across all
+  four positions), and that rank is already 30% pulled toward market order by
+  `marketAnchor()`. Prior question: does the empirical actual/projected ratio
+  spread degrade at a uniform rate with ADP depth, or does each position have
+  its own accuracy curve that the one shared tier layout may cut at the wrong
+  place?
+- Implemented in `projection_backtest.py` ("2.1 FOLLOW-UP (d)"): `dist_rows`
+  now also carries `adp_rank` (market rank within position, independent of the
+  existing blended `rank`), tiered at position-specific WIDTH — QB/TE in
+  chunks of 3, RB/WR in chunks of 5, `MIN_TIER_N = 20` — reporting each tier's
+  empirical 80%-interval width and the shallowest-vs-deepest ratio, for both
+  `survivors` and `with_busts`.
+- **Not yet run against real data** — needs `FANTASYPROS_API_KEY` + network,
+  unavailable in the session that wrote it. Logic smoke-tested against
+  synthetic ratios (widening-with-depth pattern recovers cleanly). Run via
+  `projection-backtest.yml` or locally with the key.
+- This is a third, independent lens — it doesn't touch QB's narrow tails
+  ((c) already pinned those to the evaluation season, not conditioning
+  granularity) or the RB/WR bust-population question (still open as follow-up
+  (a) on its own). Shipping a position-specific `RANK_TIERS` off this would
+  need the same >1% held-out CRPS bar every other conditioning variable here
+  has cleared, without pushing any passing position's cov80 out of band.
+
 ## 2026-08 — Roadmap 2.1 follow-up (c): rolling window rejected; QB is an evaluation-season effect
 - Tested the non-stationarity hypothesis (b) pointed at: fit only the most
   recent W seasons instead of pooling all prior ones. Pre-registered with a
