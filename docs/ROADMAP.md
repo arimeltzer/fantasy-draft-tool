@@ -939,6 +939,30 @@ dispersion ex ante (starter/backup status, not draft rank), or accept a wider
 QB interval as a real cost of the position rather than a bug to keep chasing
 with variations on "cut the population differently."
 
+**DECISION — QB excluded from whatever 2.2 consumes.** Of the three options
+above, exclusion is the one taken. Reasoning for skipping option (ii)
+(condition on starter/backup status) rather than pursuing it: a QB who has
+lost the starting job typically stops being meaningfully ADP-ranked at all,
+or falls deep enough that the entry is noise regardless — the same scarcity
+signal `marketAnchor()` already leans on elsewhere in this codebase. Building
+a dedicated starter/backup feature would mostly be re-deriving what ADP rank
+already encodes for this specific position. **Not independently tested** —
+recorded as the stated reasoning for not pursuing (ii), not a validated
+finding the way (a)-(e) above are.
+
+**Practical effect, to be enforced when 2.2 exists**: whatever 2.2's design
+consumes for per-player outcome sampling, QB gets a documented carve-out —
+no distribution sampled for QB (point estimate only, or whatever placeholder
+2.2's own design settles on), rather than sampling from a distribution known
+to be mis-calibrated. Recording this now so 2.2's design doesn't re-litigate
+it.
+
+**2.1's remaining blocker before "usable" is RB/WR only.** TE is calibrated
+under both populations already; QB is carved out by the decision above. The
+`with_busts` over-width at RB/WR (follow-up (a) — settle the bust rate
+directly rather than bracketing it) is the one open item left before 2.1 can
+be called fully usable for the positions that remain in scope.
+
 ### 2.2 Weekly-lineup-aware season simulator
 Season totals are the wrong unit: you start ~9 of 15 players each week. Simulate
 weeks, set lineups, score the lineup. This makes bench depth worth its true

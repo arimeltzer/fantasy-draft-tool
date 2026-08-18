@@ -6,6 +6,21 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 2.1: QB decision — excluded from 2.2, not chasing starter/backup conditioning
+- With follow-ups (b)/(c)/(e) all closing off fit-side fixes for QB's narrow
+  tails (estimator bias, rolling window, and a position-specific rank split
+  all rejected on the same CRPS-vs-coverage trade), decided QB is excluded
+  from whatever 2.2 (the weekly-lineup simulator) consumes — no distribution
+  sampled for QB, point estimate only.
+- Skipped the remaining option — conditioning on starter/backup status
+  instead of draft rank — on the reasoning that ADP largely already encodes
+  it: a QB who's lost the job typically stops being meaningfully ADP-ranked,
+  or falls deep enough to be noise regardless. **Not independently tested**,
+  recorded as the stated reasoning rather than a validated finding.
+- 2.1's remaining blocker before "usable" is now RB/WR's `with_busts`
+  over-width only (follow-up (a)) — TE is already calibrated under both
+  populations, QB is carved out by this decision.
+
 ## 2026-08 — Roadmap 2.1 follow-up (e) RESULT: QB tier split REJECTED — buys coverage, costs sharpness
 - Tested whether QB's `pos_rank` conditioning failed the original 1% CRPS bar
   because the shared `RANK_TIERS` boundary straddled QB's real cliff, found by
