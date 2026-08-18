@@ -6,6 +6,37 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 2.1 follow-up (b): estimator bias real and fixed, but QB is the model's fault
+- Tested whether QB's cov80=0.730 was small-sample bias in the empirical
+  quantile. The bias is analytic, so the prediction was registered in advance:
+  2.1 shipped Hyndman-Fan type7 (`q(n-1)`), whose 80% interval has expected
+  coverage `0.8(n-1)/(n+1)` — always short, worst on thin cells; type6
+  (Weibull, `q(n+1)`) is exactly unbiased at every n. Predicted gain
+  `1.6/(n+1)`. Switched the default to type6, which is the right estimator
+  here regardless of the diagnostic, since "interval between order statistics
+  achieves nominal coverage for a future draw" is precisely what the gate
+  measures.
+- **The correction behaves as predicted** — RB +0.0095 observed vs +0.0087
+  predicted (n=183), TE +0.0099 vs +0.0132 (n=120). QB overshot 3x (+0.0215
+  vs +0.0069), which is itself a mis-specification signal: the prediction
+  assumes a correctly-specified cell.
+- **Hypothesis rejected.** Survivors QB only moves 0.730 → 0.743, still under
+  the gate — and the new per-year breakdown reverses the expected sign:
+  QB coverage gets WORSE as the fit cell fattens (n=110 → 0.866; n=367 →
+  0.731; n=433 → 0.731), settling at 0.731 in its two largest fits. Small-sample
+  bias predicts the opposite. RB/TE/WR show no such trend. QB's narrow tails
+  are the model's problem, not the estimator's.
+- Confound stated, not glossed: fit size and evaluation year advance together
+  in an expanding window, so this is either non-stationarity in the QB ratio
+  distribution or year-specific dispersion in 2024-25 — but both are the model,
+  so neither rescues the hypothesis. Natural next test (c): a recency-weighted
+  or rolling-window fit instead of a flat pool over all prior seasons.
+- Gate outcome unchanged in shape (everything ~+0.01 wider): survivors RB/TE/WR
+  pass and QB fails; with_busts QB/TE pass and RB/WR are over-wide. TE is still
+  the only position calibrated under both. Nothing wired in. Selftest +12
+  assertions (59 total) pinning the coverage property by simulation. Backtest
+  run: `projection-backtest.yml` #32126283470.
+
 ## 2026-08 — Roadmap 2.1: outcome distributions built and validated; age dead, tails unresolved
 - Built `outcome_distribution.py` — a player's predictive distribution is his
   live-board projection times the empirical sample of actual/projected ratios

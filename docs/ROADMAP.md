@@ -577,6 +577,69 @@ little data, `MIN_CELL_N=40` puts the 10th percentile at the 4th order
 statistic, and that under-estimates tail width — by reporting coverage per
 year, which this run did not print.
 
+**FOLLOW-UP (b) — the estimator bias was real, is now fixed, and does NOT
+explain QB. Hypothesis rejected, and the per-year trend runs backwards.**
+Backtest `projection-backtest.yml` #32126283470.
+
+The bias is analytic, so the prediction was registered before running rather
+than read off after. 2.1 shipped Hyndman-Fan **type7** (position `q(n-1)`),
+whose nominal-80% interval spans `0.8(n-1)` of the `n+1` gaps a future
+observation can land in — expected coverage `0.8(n-1)/(n+1)`, i.e. 0.761 at
+n=40, 0.784 at n=100, 0.796 at n=450. **type6** (Weibull, `q(n+1)`) spans
+`0.8(n+1)` of those same gaps and is exactly unbiased at every n. That property
+*is* what an interval-calibration gate measures, so type6 is the correct
+estimator here, not merely a different one — it is kept regardless of this
+diagnostic. Predicted gain: `1.6/(n+1)`.
+
+*The correction behaves as predicted, and the residual is informative:*
+
+| pos | median cell n | observed type6−type7 | predicted 1.6/(n+1) |
+|---|---|---|---|
+| RB | 183 | +0.0095 | +0.0087 |
+| TE | 120 | +0.0099 | +0.0132 |
+| WR | 346 | +0.0085 | +0.0046 |
+| QB | 230 | +0.0215 | +0.0069 |
+
+RB and TE land essentially on the prediction. The prediction assumes the cell is
+correctly specified and the sample iid from it, so *exceeding* it — QB by 3x — is
+itself a mis-specification signal rather than a bonus.
+
+*And QB is not rescued.* Survivors QB moves 0.730 → **0.743**, still under the
+0.75 gate. The per-year breakdown then kills the hypothesis outright — coverage
+gets **worse as the fit cell gets fatter** (with_busts QB, type6):
+
+| fit year | cell n | cov80 |
+|---|---|---|
+| 2020 | 110 | 0.866 |
+| 2021 | 170 | 0.754 |
+| 2022 | 230 | 0.819 |
+| 2023 | 298 | 0.768 |
+| 2024 | 367 | **0.731** |
+| 2025 | 433 | **0.731** |
+
+Small-sample bias predicts the exact opposite — thin fits under-cover, fat fits
+approach nominal. QB does the reverse and settles at 0.731 in the two most
+recent years, its two largest fits. RB/TE/WR show no such trend (TE is flat
+around 0.79; WR sits high throughout). **So QB's narrow tails are the model's
+problem, not the estimator's.**
+
+*Confound, stated rather than glossed*: in an expanding window the fit size and
+the evaluation year advance together, so this is either non-stationarity in the
+QB ratio distribution (a pooled 8-year sample no longer describing recent QB
+seasons) or year-specific dispersion in 2024-25. Distinguishing those needs its
+own test — but it does not rescue (b), because both explanations are the model,
+not the quantile estimator.
+
+Net gate after the fix — same shape as before, everything ~+0.01 wider:
+survivors RB 0.812 / TE 0.780 / WR 0.797 PASS, QB 0.743 FAIL; with_busts QB
+0.781 / TE 0.795 PASS, RB 0.866 / WR 0.882 too wide. **TE remains the only
+position calibrated under both populations.** Still not wired into anything.
+
+*Next, if this is pursued*: the QB trend points at non-stationarity, so the
+natural hypothesis (c) is a recency-weighted or rolling-window fit rather than a
+flat pool over all prior seasons — pre-registered separately, and tested on
+whether it closes QB without breaking the positions that currently pass.
+
 **Known population caveat, measured rather than hand-waved**: every correlation
 in this file is computed over players who APPEAR in season Y, so a player who
 was drafted and then never played is excluded rather than counted as a zero.

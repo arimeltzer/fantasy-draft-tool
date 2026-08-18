@@ -518,14 +518,29 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   pre-committed 1% CRPS bar at every position in both populations, four times
   making CRPS worse. Rank earns it at RB/WR/TE, not QB. Same lesson as 1.3,
   where three of four roadmap-named signals failed.
+- **The quantile definition is load-bearing and is `type6`, not the familiar
+  `type7`.** An empirical 80% interval built at position `q(n-1)` (Hyndman-Fan
+  type7, numpy/R's default) spans `0.8(n-1)` of the `n+1` gaps a future
+  observation can fall into, so its expected coverage is `0.8(n-1)/(n+1)` —
+  0.761 at n=40, 0.796 at n=450, always short. `type6` (Weibull, `q(n+1)`) is
+  exactly unbiased at every n, and "the interval achieves nominal coverage for
+  a future draw" is precisely what the calibration gate measures. Don't
+  "simplify" this back to numpy's default.
 - **Not usable yet, and the reason is precise.** Coverage misses the
   [0.75, 0.85] gate in OPPOSITE directions depending on whether players who were
   drafted and then never played are counted as zeros: survivors-only leaves QB
-  too narrow (0.730), adding busts back over-widens RB (0.857) and WR (0.874).
+  too narrow (0.743), adding busts back over-widens RB (0.866) and WR (0.882).
   Only TE passes both. cov50 and PIT are fine everywhere, so the centre is
   right and the problem is entirely the tails. That population choice is a real
   modelling decision, **not** a column to select after seeing the results, and
   it blocks 2.2. See `docs/ROADMAP.md` 2.1.
+- **QB's narrowness was chased down and is the MODEL's fault, not the
+  estimator's** (roadmap 2.1 follow-up b). Switching to `type6` moved it only
+  0.730 → 0.743, and the per-year breakdown reverses the small-sample story:
+  QB coverage gets *worse* as the fit cell fattens (n=110 → 0.866; n=367 →
+  0.731; n=433 → 0.731). Thin fits are not the problem. Points at
+  non-stationarity in the QB ratio distribution; a recency-weighted or
+  rolling-window fit is the untested next hypothesis.
 - Nothing consumes these — the roadmap requires the calibration check to pass
   first. `outcome_distribution_selftest.py` (47 assertions) runs in the
   backtest workflow.
