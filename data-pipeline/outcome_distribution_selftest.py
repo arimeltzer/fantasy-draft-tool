@@ -10,6 +10,7 @@ from outcome_distribution import (
     covers,
     crps_empirical,
     fit_residuals,
+    in_window,
     interval,
     lookup_ratios,
     pit,
@@ -168,6 +169,21 @@ check("a correctly-specified generator yields ~80% coverage end to end",
       0.77 <= cov <= 0.83, f"coverage {cov:.3f}")
 
 check("MIN_CELL_N is the documented value", MIN_CELL_N == 40)
+
+# ── in_window (roadmap 2.1 follow-up c) ──────────────────────────────
+check("the test year itself is never usable (no lookahead)",
+      not in_window(2025, 2025, None) and not in_window(2025, 2025, 3))
+check("a FUTURE season is never usable", not in_window(2026, 2025, None))
+check("window=None admits every prior season", in_window(2005, 2025, None))
+check("window=3 predicting 2025 admits 2022 (the third season back)",
+      in_window(2022, 2025, 3))
+check("window=3 predicting 2025 EXCLUDES 2021 (a fourth season back)",
+      not in_window(2021, 2025, 3))
+check("window=3 admits exactly three seasons, not four",
+      sum(in_window(y, 2025, 3) for y in range(2000, 2026)) == 3)
+check("window=1 admits exactly the immediately prior season",
+      in_window(2024, 2025, 1) and not in_window(2023, 2025, 1)
+      and sum(in_window(y, 2025, 1) for y in range(2000, 2026)) == 1)
 
 # ── quantile method: the coverage property that makes type6 the right one ──
 # This is the claim the 2.1 follow-up rests on, so it is pinned by simulation

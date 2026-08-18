@@ -95,6 +95,25 @@ def residual_ratio(actual, proj):
     return actual / proj
 
 
+def in_window(row_year: int, test_year: int, window) -> bool:
+    """Is a historical season usable for predicting `test_year` under a rolling
+    window of `window` seasons? (roadmap 2.1 follow-up c)
+
+    Two conditions, and both are load-bearing: strictly BEFORE the test year
+    (no lookahead, the rule every stage in this pipeline follows) and no more
+    than `window` seasons back. `window=None` is the flat pool over all prior
+    seasons — the original 2.1 behaviour, and the baseline arm of the sweep.
+
+    Boundary: `window=3` predicting 2025 admits 2022, 2023, 2024 — three
+    seasons, the most recent three, not four.
+    """
+    if row_year >= test_year:
+        return False
+    if window is None:
+        return True
+    return row_year >= test_year - window
+
+
 def _keys_for(pos, tier, age_b):
     """The cell key at each conditioning level, coarsest first — parallel to
     CONDITIONINGS by index."""

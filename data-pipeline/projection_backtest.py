@@ -73,7 +73,8 @@ from projection_model import DEFAULT_PARAMS, default_scoring, points as _model_p
     project_points, rookie_projection, with_overrides
 from outcome_distribution import (
     CONDITIONINGS, QUANTILE_METHODS, age_bucket, covers, crps_empirical,
-    expected_coverage, fit_residuals, lookup_ratios, pit, rank_tier, residual_ratio,
+    expected_coverage, fit_residuals, in_window, lookup_ratios, pit, rank_tier,
+    residual_ratio,
 )
 from projection_opportunity import league_efficiency, project_points_opportunity
 from projection_v2 import league_rates, stabilize_player
@@ -2003,6 +2004,12 @@ def main():
         COVERAGE_LEVELS = (0.50, 0.80, 0.90)
         COVERAGE_BAND = (0.75, 0.85)     # the gate, for the 80% interval
         CRPS_REL_EPS = 0.01              # a conditioning variable must earn 1%
+        # roadmap 2.1 follow-up (c). None = the flat pool over every prior
+        # season (2.1's original behaviour and the baseline arm); the rest are
+        # rolling windows of the most recent W seasons. None MUST stay first —
+        # the main report and the conditioning decision read it.
+        FIT_WINDOWS = (None, 5, 4, 3, 2)
+        CRPS_TOLERANCE = 0.01            # a window may not cost more than 1% CRPS
 
         def _thin(vals):
             if len(vals) <= MAX_EVAL_SAMPLE:
@@ -2027,6 +2034,7 @@ def main():
         print("from passing a coverage-only test. Lower is better.")
 
         dist_verdict = {}
+        dist_by_variant = {}
         for variant, keep_busts in (("survivors", False), ("with_busts", True)):
             sub = dfr if keep_busts else dfr[~dfr["bust"]]
             print(f"\n  ── population: {variant} "
@@ -2034,12 +2042,15 @@ def main():
                   f"produced no season-Y line) — {len(sub)} player-seasons ──")
 
             recs = []
-            for cond in CONDITIONINGS:
+            for window in FIT_WINDOWS:
+              for cond in CONDITIONINGS:
                 cache = {}
                 for yi, year in enumerate(years_sorted):
                     if yi == 0:
                         continue                     # nothing strictly before it
-                    hist = sub[sub["year"] < year]
+                    hist = sub[[in_window(y, year, window) for y in sub["year"]]]
+                    if hist.empty:
+                        continue
                     fitted = fit_residuals(
                         (r.pos, r.tier, r.agebucket, residual_ratio(r.actual, r.proj))
                         for r in hist.itertuples())
@@ -2064,7 +2075,8 @@ def main():
                         # by materialising proj * every ratio: identical numbers,
                         # no per-player list construction.
                         z = r.actual / r.proj
-                        rec = {"cond": cond, "year": year, "pos": r.pos,
+                        rec = {"cond": cond, "window": window, "year": year,
+                               "pos": r.pos,
                                "crps": r.proj * crps_empirical(ratios_thin, z),
                                "pit": pit(ratios, z), "proj": r.proj,
                                "cell_n": len(ratios)}
@@ -2076,7 +2088,13 @@ def main():
             if not recs:
                 print("    ! no evaluable rows — skipping this population")
                 continue
-            ev = pd.DataFrame(recs)
+            ev_all = pd.DataFrame(recs)
+            # The main report and the conditioning decision use the FLAT pool
+            # (window=None) — the original 2.1 behaviour. The window sweep
+            # below reuses whatever conditioning that accepted, so it stays a
+            # one-parameter test rather than a joint search.
+            ev = ev_all[ev_all["window"].isna()] if ev_all["window"].isna().any() \
+                else ev_all[ev_all["window"] == FIT_WINDOWS[0]]
 
             for posn in sorted(ev["pos"].unique()):
                 print(f"\n    {posn}")
@@ -2136,6 +2154,7 @@ def main():
                     "cond": accepted, "pit": med_pit, "crps": prev_crps,
                     "n": len(fin), "med_n": med_n,
                     "obs_gain": obs_gain, "pred_gain": pred_gain, **cov}
+            dist_by_variant[variant] = ev_all
 
         print(f"\n  --- ROADMAP 2.1 KILL GATE (cov80 within {COVERAGE_BAND}) ---")
         for variant in ("survivors", "with_busts"):
@@ -2159,6 +2178,74 @@ def main():
             bad = [p for p, ok in passed.items() if not ok]
             print(f"      -> calibrated for: {', '.join(good) or '(none)'}"
                   + (f"; NOT calibrated for {', '.join(bad)}" if bad else ""))
+
+        # ── follow-up (c): does a ROLLING WINDOW fix QB? ──────────────────
+        # Pre-registered in docs/ROADMAP.md before this existed. Conditioning
+        # is held at whatever the flat pool accepted, so this sweeps exactly
+        # one parameter.
+        print("\n  --- 2.1 FOLLOW-UP (c): ROLLING-WINDOW FIT ---")
+        print("  (b) showed QB's tails are the MODEL's fault and that QB coverage gets")
+        print("  WORSE as the fit fattens — the signature of non-stationarity. If that is")
+        print("  right, fitting only the most recent W seasons should widen QB toward")
+        print("  nominal. Conditioning is FIXED at the flat pool's choice; W is the only")
+        print("  parameter. Gate: QB enters [0.75, 0.85] on survivors, no passing position")
+        print(f"  leaves it, CRPS degrades by <{CRPS_TOLERANCE:.0%} anywhere, AND the by-year")
+        print("  QB trend visibly flattens (the shape prediction, which is the real test).")
+
+        for variant in ("survivors", "with_busts"):
+            ev_all = dist_by_variant.get(variant)
+            if ev_all is None or ev_all.empty:
+                continue
+            print(f"\n    population: {variant}")
+            for posn in sorted(ev_all["pos"].unique()):
+                v = dist_verdict.get((variant, posn))
+                if not v:
+                    continue
+                cond = v["cond"]
+                base = None
+                print(f"\n      {posn}  (conditioning held at {cond})")
+                for w in FIT_WINDOWS:
+                    sel = (ev_all["window"].isna() if w is None else (ev_all["window"] == w))
+                    e = ev_all[sel & (ev_all["pos"] == posn) & (ev_all["cond"] == cond)]
+                    if not len(e):
+                        continue
+                    c80 = float(e["cov80_type6"].mean())
+                    crps = float(e["crps"].mean())
+                    med_n = float(e["cell_n"].median())
+                    if base is None:
+                        base = (c80, crps)
+                        tag = "flat pool (baseline)"
+                        dc = ""
+                    else:
+                        tag = f"window={w}"
+                        dc = (f"   CRPS {(crps - base[1]) / base[1]:+.1%} vs flat"
+                              f"{'' if crps <= base[1] * (1 + CRPS_TOLERANCE) else '  COSTS TOO MUCH'}")
+                    inband = COVERAGE_BAND[0] <= c80 <= COVERAGE_BAND[1]
+                    print(f"        {tag:<22} median cell n={med_n:<5.0f} cov80 {c80:.3f} "
+                          f"{'IN band' if inband else 'out of band'}  CRPS {crps:7.2f}{dc}")
+
+            # The shape test, for the position the hypothesis is about.
+            qb = dist_verdict.get((variant, "QB"))
+            if qb:
+                print(f"\n      QB by-year trend under each window "
+                      f"(the shape prediction — does the DECLINE flatten?):")
+                for w in FIT_WINDOWS:
+                    sel = (ev_all["window"].isna() if w is None else (ev_all["window"] == w))
+                    e = ev_all[sel & (ev_all["pos"] == "QB") & (ev_all["cond"] == qb["cond"])]
+                    if not len(e):
+                        continue
+                    yr = (e.groupby("year")["cov80_type6"].mean().reset_index()
+                            .sort_values("year"))
+                    series = "  ".join(f"{int(r.year)}:{r.cov80_type6:.3f}"
+                                       for _, r in yr.iterrows())
+                    # Spearman of coverage against year: the decline this is
+                    # meant to remove shows up as a strongly negative value.
+                    if len(yr) >= 3:
+                        rho = float(stats.spearmanr(yr["year"], yr["cov80_type6"]).statistic)
+                    else:
+                        rho = float("nan")
+                    label = "flat pool" if w is None else f"window={w}"
+                    print(f"        {label:<12} rho(cov80, year) {rho:+.2f}   {series}")
 
         print("\n  Note: nothing is wired into the frontend on this step regardless of the")
         print("  above — docs/ROADMAP.md 2.1 says the calibration check must pass BEFORE")
