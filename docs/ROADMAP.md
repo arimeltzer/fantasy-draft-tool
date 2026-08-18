@@ -500,7 +500,7 @@ The largest conceptual change in this document. Do not start it before Phase 1
 lands, because a distribution around a biased mean is a well-quantified wrong
 answer.
 
-### 2.1 Per-player outcome distributions
+### 2.1 Per-player outcome distributions — DONE, not yet usable
 Replace the point estimate with a distribution. Fit empirically from historical
 residuals by position, projected rank and age — not a parametric guess.
 
@@ -530,6 +530,52 @@ the bar, not numbers — these are the numbers, set in advance):
 Evaluated **per position**. Nothing is wired into the frontend on this step
 regardless of outcome — 2.1 produces a validated distribution or a documented
 negative result, and 2.2 is what would consume it.
+
+**RESULT — DONE, NOT YET USABLE. The method works; the left-tail treatment is
+unresolved and that is a blocker for 2.2.** Backtest `projection-backtest.yml`
+#32096610584, fit 2017-2025 on an expanding window (2017 has nothing prior and
+is not evaluated), ~3,700-3,800 held-out player-seasons.
+
+*Age is dead.* At **every position, in both populations**, adding age to the
+conditioning failed the 1% CRPS bar — usually landing at ±0.5% and four times
+actually making CRPS *worse* (RB -0.3%, TE -0.1/-0.2%, QB -0.6%). The roadmap
+named position, rank AND age; only the first two survive contact with the data.
+Rank earns its place at RB (+1.9%), WR (+1.5%) and TE (+1.3%) but not QB
+(+0.5%), so the fitted models are `pos_rank` for RB/TE/WR and `pos` for QB.
+
+*Calibration is close, but does not clear the gate at every position — and the
+two populations miss in OPPOSITE directions:*
+
+| pos | model | survivors cov80 | with_busts cov80 |
+|---|---|---|---|
+| QB | pos | **0.730** — too NARROW, FAIL | 0.760 — PASS |
+| RB | pos_rank | 0.798 — PASS | **0.857** — too WIDE, FAIL |
+| TE | pos_rank | 0.771 — PASS | 0.786 — PASS |
+| WR | pos_rank | 0.785 — PASS | **0.874** — too WIDE, FAIL |
+
+That opposition is the finding, and it is more useful than either column alone.
+Adding back ~2.8% market-ranked players who produced no season-Y line drags the
+10th percentile down far enough to over-widen RB and WR (the busts themselves
+are still *misses* — at a 2.8% base rate the 10th percentile never reaches
+zero — so the widening buys coverage on survivors it did not need), while it is
+exactly what QB was missing. **Only TE is calibrated under both.** cov50 sits
+at 0.47-0.53 and mean PIT at 0.49-0.54 essentially everywhere, so the centre and
+the bias are fine; the problem is localised entirely in the tails.
+
+The population is not a free parameter to pick after seeing which column looks
+better — that is the exact move this document exists to prevent. It is a real
+modelling decision (what fraction of drafted players produce nothing, and how
+that mass should enter the fit) and it has to be settled on its own evidence
+before any of this is trusted. **Not wired into anything**, per the rule above.
+
+*Open, and the next thing to do here*: (a) settle the bust rate directly rather
+than bracketing it — the ADP filter used here (season-Y ADP, prior history, no
+season-Y line) is one defensible construction, not a measurement; (b) check
+whether QB's too-narrow tails are the small-sample bias of an empirical
+quantile — the expanding window fits QB's earliest evaluated years on very
+little data, `MIN_CELL_N=40` puts the 10th percentile at the 4th order
+statistic, and that under-estimates tail width — by reporting coverage per
+year, which this run did not print.
 
 **Known population caveat, measured rather than hand-waved**: every correlation
 in this file is computed over players who APPEAR in season Y, so a player who
@@ -622,7 +668,7 @@ decided after the draft. Everything here reuses the Phase 2 objective.
 |---|---|---|---|
 | 0 | Days | Moderate, near-certain | Low — 0.1, 0.2 and 0.3 are all done; see their results above |
 | 1 | Weeks | Real, but position-specific | Moderate — 1.1/1.2 done, TE only; 1.3 done, team_change RB/WR only (qb_change/coach_change/pace failed); 1.4 done, not shipped (draft capital ≈ what ADP already knows for rookies) |
-| 2 | Weeks | Largest conceptual | **Highest** — calibration is hard and unglamorous |
+| 2 | Weeks | Largest conceptual | **Highest** — calibration is hard and unglamorous; 2.1 confirmed it (method sound, tails unresolved, age dead) |
 | 3 | Weeks | Large, format-specific | Moderate — depends entirely on Phase 2 |
 | 4 | Ongoing | Large over a season | Low technically, wide in scope |
 

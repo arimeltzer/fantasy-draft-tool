@@ -6,6 +6,31 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 2.1: outcome distributions built and validated; age dead, tails unresolved
+- Built `outcome_distribution.py` — a player's predictive distribution is his
+  live-board projection times the empirical sample of actual/projected ratios
+  from a matched (position, rank-tier, age-bucket) cell, fit on strictly prior
+  seasons. Empirical rather than parametric because fantasy outcomes are
+  strongly right-skewed; ratio rather than absolute residual because the errors
+  are heteroscedastic by construction. Scored with CRPS (a proper scoring rule)
+  as well as interval coverage, because coverage alone is trivially gamed by a
+  wider interval — the gate was written that way, in advance, for that reason.
+- **Age never earns its place** — at every position, in both populations, it
+  failed the pre-committed 1% CRPS bar, four times making CRPS actively worse.
+  The roadmap named position, rank and age; only the first two survive. Rank
+  earns it at RB (+1.9%), WR (+1.5%), TE (+1.3%) but not QB (+0.5%).
+- **Calibration is close but does not clear [0.75, 0.85] everywhere, and the
+  two populations miss in OPPOSITE directions**: on survivors QB is too narrow
+  (0.730) while RB/TE/WR pass; adding back market-ranked players who produced
+  no season-Y line fixes QB (0.760) but over-widens RB (0.857) and WR (0.874).
+  Only TE is calibrated under both. cov50 ~0.47-0.53 and mean PIT ~0.49-0.54
+  everywhere, so the centre and the bias are fine — the problem is entirely in
+  the tails, and specifically in how bust mass should enter the fit.
+- Nothing wired into the frontend, as the roadmap requires and as was committed
+  before the run. The population choice is a real modelling decision, not a
+  column to pick after seeing which looks better, and it blocks 2.2.
+  Backtest run: `projection-backtest.yml` #32096610584.
+
 ## 2026-08 — Roadmap 1.4 done, not shipped: draft capital ≈ what ADP already knows
 - Tested replacing rookies' ADP/ECR-curve fallback (`rookie_projection()`)
   with an empirical draft-round-based model: expected rookie-season pace as

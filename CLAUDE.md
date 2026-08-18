@@ -500,6 +500,36 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   the repo as a documented negative result, same treatment every other
   killed idea in this file gets. See `docs/ROADMAP.md` 1.4 for the full table.
 
+## Outcome distributions (built + validated, roadmap 2.1 — NOT wired in)
+
+- `data-pipeline/outcome_distribution.py`. A player's predictive distribution
+  is his live-board projection times the empirical sample of `actual/projected`
+  ratios from a matched cell, fit on strictly prior seasons. Empirical not
+  parametric (fantasy outcomes are strongly right-skewed); RATIO not absolute
+  residual (errors are heteroscedastic — pooling absolutely would give the deep
+  bench an absurd interval and the elite a too-tight one); ratios deliberately
+  NOT clipped, since clipping hides the tail the whole thing exists to describe.
+- Scored with **CRPS** as well as coverage, and that is load-bearing: interval
+  coverage alone is gamed by widening (a `[0, ∞)` interval covers 100%). CRPS is
+  computed exactly via the sorted sample's Gini mean difference closed form, and
+  pinned in the selftest to a hand-computed case plus both directions of its
+  properness. PIT is reported to locate *where* a miscalibration lives.
+- **Age was named by the roadmap and does not survive the data** — it failed the
+  pre-committed 1% CRPS bar at every position in both populations, four times
+  making CRPS worse. Rank earns it at RB/WR/TE, not QB. Same lesson as 1.3,
+  where three of four roadmap-named signals failed.
+- **Not usable yet, and the reason is precise.** Coverage misses the
+  [0.75, 0.85] gate in OPPOSITE directions depending on whether players who were
+  drafted and then never played are counted as zeros: survivors-only leaves QB
+  too narrow (0.730), adding busts back over-widens RB (0.857) and WR (0.874).
+  Only TE passes both. cov50 and PIT are fine everywhere, so the centre is
+  right and the problem is entirely the tails. That population choice is a real
+  modelling decision, **not** a column to select after seeing the results, and
+  it blocks 2.2. See `docs/ROADMAP.md` 2.1.
+- Nothing consumes these — the roadmap requires the calibration check to pass
+  first. `outcome_distribution_selftest.py` (47 assertions) runs in the
+  backtest workflow.
+
 ## Duplicate players & name matching
 
 - A duplicate board row is not cosmetic: drafting one copy leaves the twin
