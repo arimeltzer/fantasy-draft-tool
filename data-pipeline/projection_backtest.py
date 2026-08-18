@@ -72,8 +72,8 @@ from scipy import stats
 from projection_model import DEFAULT_PARAMS, default_scoring, points as _model_points, \
     project_points, rookie_projection, with_overrides
 from outcome_distribution import (
-    CONDITIONINGS, age_bucket, covers, crps_empirical, fit_residuals, lookup_ratios, pit,
-    predictive_sample, rank_tier, residual_ratio,
+    CONDITIONINGS, QUANTILE_METHODS, age_bucket, covers, crps_empirical,
+    expected_coverage, fit_residuals, lookup_ratios, pit, rank_tier, residual_ratio,
 )
 from projection_opportunity import league_efficiency, project_points_opportunity
 from projection_v2 import league_rates, stabilize_player
@@ -2048,16 +2048,29 @@ def main():
                         ck = (r.pos, r.tier, r.agebucket)
                         if ck not in cache:
                             vals, _ = lookup_ratios(fitted, r.pos, r.tier, r.agebucket, cond)
-                            cache[ck] = _thin(vals) if vals else None
-                        ratios = cache[ck]
-                        if not ratios or r.proj is None or r.proj <= 0:
+                            # Coverage and PIT are O(1)/O(log n) on the sorted
+                            # ratios, so they use the FULL cell — the whole
+                            # point of the type6/type7 diagnostic is how the
+                            # estimator behaves at the cell's real size, and
+                            # thinning would silently change that size. Only
+                            # CRPS, which is O(n), works off a thinned copy.
+                            cache[ck] = (vals, _thin(vals)) if vals else None
+                        cached = cache[ck]
+                        if not cached or r.proj is None or r.proj <= 0:
                             continue
-                        smp = predictive_sample(r.proj, ratios)
+                        ratios, ratios_thin = cached
+                        # Everything here is scale-equivariant in proj, so it is
+                        # computed on the RATIOS against actual/proj rather than
+                        # by materialising proj * every ratio: identical numbers,
+                        # no per-player list construction.
+                        z = r.actual / r.proj
                         rec = {"cond": cond, "year": year, "pos": r.pos,
-                               "crps": crps_empirical(smp, r.actual),
-                               "pit": pit(smp, r.actual), "proj": r.proj}
+                               "crps": r.proj * crps_empirical(ratios_thin, z),
+                               "pit": pit(ratios, z), "proj": r.proj,
+                               "cell_n": len(ratios)}
                         for lv in COVERAGE_LEVELS:
-                            rec[f"cov{int(lv * 100)}"] = covers(smp, lv, r.actual)
+                            for qm in QUANTILE_METHODS:
+                                rec[f"cov{int(lv * 100)}_{qm}"] = covers(ratios, lv, z, qm)
                         recs.append(rec)
 
             if not recs:
@@ -2074,7 +2087,6 @@ def main():
                     if not len(e):
                         continue
                     crps = float(e["crps"].mean())
-                    covs = {lv: float(e[f"cov{int(lv * 100)}"].mean()) for lv in COVERAGE_LEVELS}
                     if prev_crps is None:
                         earns, delta = True, 0.0      # the baseline conditioning
                     else:
@@ -2082,21 +2094,48 @@ def main():
                         earns = delta > CRPS_REL_EPS
                     if earns:
                         accepted, prev_crps = cond, crps
+                    c6 = float(e["cov80_type6"].mean())
+                    c7 = float(e["cov80_type7"].mean())
                     print(f"      {cond:<14} n={len(e):<5} CRPS {crps:7.2f} "
                           f"({'baseline' if delta == 0.0 else f'{delta:+.1%} vs prev'}"
                           f"{'' if delta == 0.0 else (', earns it' if earns else ', DOES NOT earn it')})"
-                          f"   cov50 {covs[0.50]:.3f}  cov80 {covs[0.80]:.3f}  cov90 {covs[0.90]:.3f}")
+                          f"   cov80 type6 {c6:.3f} / type7 {c7:.3f}")
 
                 fin = ev[(ev["pos"] == posn) & (ev["cond"] == accepted)]
-                cov80 = float(fin["cov80"].mean())
-                cov50 = float(fin["cov50"].mean())
-                cov90 = float(fin["cov90"].mean())
+                cov = {f"cov{int(lv * 100)}_{qm}": float(fin[f"cov{int(lv * 100)}_{qm}"].mean())
+                       for lv in COVERAGE_LEVELS for qm in QUANTILE_METHODS}
                 med_pit = float(fin["pit"].mean())
-                print(f"      -> model: {accepted}   cov80 {cov80:.3f}   mean PIT {med_pit:.3f} "
-                      f"(0.5 = unbiased; <0.5 means the board is systematically OPTIMISTIC)")
+                med_n = float(fin["cell_n"].median())
+                # What the estimator ALONE predicts the type6-over-type7 gain
+                # should be at this cell size: 1.6/(n+1). If the observed gain
+                # matches and the remaining shortfall does not close, the
+                # shortfall is the model's, not the estimator's.
+                pred_gain = (expected_coverage(med_n, 0.80, "type6")
+                             - expected_coverage(med_n, 0.80, "type7"))
+                obs_gain = cov["cov80_type6"] - cov["cov80_type7"]
+                print(f"      -> model: {accepted}   median cell n={med_n:.0f}   "
+                      f"cov80 {cov['cov80_type6']:.3f} (type6)   mean PIT {med_pit:.3f} "
+                      f"(0.5 = unbiased; <0.5 = board systematically OPTIMISTIC)")
+                print(f"         estimator check: type6-over-type7 gain {obs_gain:+.4f} "
+                      f"observed vs {pred_gain:+.4f} predicted at n={med_n:.0f}")
+
+                # Per-year, to test whether the thin-fit early years of the
+                # expanding window are what drags coverage down.
+                per_yr = (fin.groupby("year")
+                             .agg(n=("cov80_type6", "size"),
+                                  cell_n=("cell_n", "median"),
+                                  c6=("cov80_type6", "mean"),
+                                  c7=("cov80_type7", "mean"))
+                             .reset_index())
+                print("         by year (does a thin fit under-cover?):")
+                for _, yr in per_yr.iterrows():
+                    print(f"           {int(yr.year)}  players={int(yr.n):<4} fit cell n="
+                          f"{int(yr.cell_n):<5} cov80 type6 {yr.c6:.3f} / type7 {yr.c7:.3f}")
+
                 dist_verdict[(variant, posn)] = {
-                    "cond": accepted, "cov50": cov50, "cov80": cov80, "cov90": cov90,
-                    "pit": med_pit, "crps": prev_crps, "n": len(fin)}
+                    "cond": accepted, "pit": med_pit, "crps": prev_crps,
+                    "n": len(fin), "med_n": med_n,
+                    "obs_gain": obs_gain, "pred_gain": pred_gain, **cov}
 
         print(f"\n  --- ROADMAP 2.1 KILL GATE (cov80 within {COVERAGE_BAND}) ---")
         for variant in ("survivors", "with_busts"):
@@ -2107,11 +2146,15 @@ def main():
             print(f"\n    population: {variant}")
             for posn in sorted(rows_):
                 v = rows_[posn]
-                ok = COVERAGE_BAND[0] <= v["cov80"] <= COVERAGE_BAND[1]
+                ok = COVERAGE_BAND[0] <= v["cov80_type6"] <= COVERAGE_BAND[1]
+                was_ok = COVERAGE_BAND[0] <= v["cov80_type7"] <= COVERAGE_BAND[1]
                 passed[posn] = ok
-                print(f"      {posn}  model={v['cond']:<14} cov80 {v['cov80']:.3f}  "
-                      f"(cov50 {v['cov50']:.3f} / cov90 {v['cov90']:.3f})  "
-                      f"{'PASS' if ok else 'FAIL'}")
+                moved = "" if ok == was_ok else ("  <- FIXED by type6" if ok
+                                                 else "  <- BROKEN by type6")
+                print(f"      {posn}  model={v['cond']:<14} cov80 {v['cov80_type6']:.3f} "
+                      f"(was {v['cov80_type7']:.3f} under type7)  "
+                      f"(cov50 {v['cov50_type6']:.3f} / cov90 {v['cov90_type6']:.3f})  "
+                      f"{'PASS' if ok else 'FAIL'}{moved}")
             good = [p for p, ok in passed.items() if ok]
             bad = [p for p, ok in passed.items() if not ok]
             print(f"      -> calibrated for: {', '.join(good) or '(none)'}"

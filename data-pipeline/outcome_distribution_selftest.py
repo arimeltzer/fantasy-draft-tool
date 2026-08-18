@@ -4,6 +4,7 @@ import random
 from outcome_distribution import (
     CONDITIONINGS,
     MIN_CELL_N,
+    expected_coverage,
     MIN_PROJ_FOR_RATIO,
     age_bucket,
     covers,
@@ -94,11 +95,22 @@ check("no ratios -> no sample", predictive_sample(100.0, []) is None)
 
 # ── quantile / interval / covers ─────────────────────────────────────
 s = [float(i) for i in range(101)]        # 0..100
-check("median of 0..100 is 50", abs(quantile(s, 0.5) - 50.0) < 1e-9)
-check("10th percentile of 0..100 is 10", abs(quantile(s, 0.10) - 10.0) < 1e-9)
-lo, hi = interval(s, 0.80)
-check("the 80% interval is the 10th..90th percentile",
-      abs(lo - 10.0) < 1e-9 and abs(hi - 90.0) < 1e-9)
+check("median of 0..100 is 50 under either method",
+      abs(quantile(s, 0.5, "type6") - 50.0) < 1e-9
+      and abs(quantile(s, 0.5, "type7") - 50.0) < 1e-9)
+# The two definitions differ in the TAILS and agree at the centre, which is
+# the whole reason the choice matters for an interval-coverage gate and not
+# for a median. n=101: type7 puts q at 0.1*100=10.0, type6 at 0.1*102-1=9.2.
+check("type7's 10th percentile of 0..100 is 10 (the definition 2.1 first shipped)",
+      abs(quantile(s, 0.10, "type7") - 10.0) < 1e-9)
+check("type6 reaches FURTHER into the tail on the same sample",
+      abs(quantile(s, 0.10, "type6") - 9.2) < 1e-9)
+lo7, hi7 = interval(s, 0.80, "type7")
+lo6, hi6 = interval(s, 0.80, "type6")
+check("type7's 80% interval is the 10th..90th percentile",
+      abs(lo7 - 10.0) < 1e-9 and abs(hi7 - 90.0) < 1e-9)
+check("type6's 80% interval is strictly wider on both sides",
+      lo6 < lo7 and hi6 > hi7)
 check("an outcome inside the interval is covered", covers(s, 0.80, 50.0))
 check("an outcome below the interval is NOT covered", not covers(s, 0.80, 5.0))
 check("an outcome above the interval is NOT covered", not covers(s, 0.80, 95.0))
@@ -156,6 +168,56 @@ check("a correctly-specified generator yields ~80% coverage end to end",
       0.77 <= cov <= 0.83, f"coverage {cov:.3f}")
 
 check("MIN_CELL_N is the documented value", MIN_CELL_N == 40)
+
+# ── quantile method: the coverage property that makes type6 the right one ──
+# This is the claim the 2.1 follow-up rests on, so it is pinned by simulation
+# rather than asserted in a comment: fit an interval from n samples, then ask
+# how often a FRESH draw from the same distribution lands inside it.
+check("expected_coverage is exact for type6 at every n",
+      all(abs(expected_coverage(n, 0.80, "type6") - 0.80) < 1e-12
+          for n in (40, 100, 450, 5000)))
+check("expected_coverage for type7 reproduces the known 0.8(n-1)/(n+1) deficit",
+      abs(expected_coverage(40, 0.80, "type7") - 0.8 * 39 / 41) < 1e-12
+      and abs(expected_coverage(450, 0.80, "type7") - 0.8 * 449 / 451) < 1e-12)
+check("the type7 deficit shrinks as the cell fattens (so it is a THIN-cell problem)",
+      expected_coverage(40, 0.80, "type7") < expected_coverage(450, 0.80, "type7")
+      < expected_coverage(5000, 0.80, "type7") < 0.80)
+
+
+def _mc_coverage(n, method, trials=4000, seed=11):
+    r = random.Random(seed)
+    hits = 0
+    for _ in range(trials):
+        fit = sorted(r.lognormvariate(0, 0.5) for _ in range(n))
+        if covers(fit, 0.80, r.lognormvariate(0, 0.5), method):
+            hits += 1
+    return hits / trials
+
+
+mc6_40 = _mc_coverage(40, "type6")
+mc7_40 = _mc_coverage(40, "type7")
+check("simulation: type6 hits nominal 80% coverage on a thin (n=40) cell",
+      0.78 <= mc6_40 <= 0.82, f"{mc6_40:.3f}")
+check("simulation: type7 under-covers on the same cell, near its predicted 0.761",
+      abs(mc7_40 - expected_coverage(40, 0.80, "type7")) < 0.02, f"{mc7_40:.3f}")
+check("simulation: type6 beats type7 on a thin cell by roughly the predicted 1.6/(n+1)",
+      abs((mc6_40 - mc7_40) - 1.6 / 41) < 0.015, f"gain {mc6_40 - mc7_40:.3f}")
+
+mc6_400 = _mc_coverage(400, "type6", trials=1500)
+mc7_400 = _mc_coverage(400, "type7", trials=1500)
+check("simulation: on a FAT cell the two methods nearly agree — the fix buys "
+      "little where the sample is already large",
+      abs(mc6_400 - mc7_400) < 0.02, f"{mc6_400:.3f} vs {mc7_400:.3f}")
+
+check("a low quantile on a thin sample clamps at the sample minimum rather than "
+      "extrapolating past it", quantile([1.0, 2.0, 3.0], 0.01, "type6") == 1.0)
+check("a high quantile clamps at the sample maximum",
+      quantile([1.0, 2.0, 3.0], 0.99, "type6") == 3.0)
+try:
+    quantile([1.0, 2.0], 0.5, "type99")
+    check("an unknown quantile method raises", False)
+except ValueError:
+    check("an unknown quantile method raises", True)
 
 failed = [label for label, ok, _ in checks if not ok]
 for label, ok, extra in checks:

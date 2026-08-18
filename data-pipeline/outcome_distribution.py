@@ -145,28 +145,80 @@ def predictive_sample(proj, ratios):
     return [proj * r for r in ratios]
 
 
-def quantile(sorted_sample, q: float) -> float:
-    """Linear-interpolated empirical quantile. `q` in [0, 1]."""
+# Which empirical-quantile definition to use (Hyndman-Fan taxonomy). This is
+# NOT a cosmetic choice when the number being computed is an interval whose
+# coverage is the thing under test:
+#
+#   type7 (`q*(n-1)`, 0-indexed — numpy/R's default, and what 2.1 first shipped)
+#     puts the nominal-80% interval between order statistics spanning
+#     `0.8*(n-1)` gaps out of the `n+1` gaps a future observation can land in,
+#     so its EXPECTED coverage is 0.8*(n-1)/(n+1) — 0.761 at n=40, 0.784 at
+#     n=100, 0.796 at n=450. Always short, worst when the cell is thin.
+#
+#   type6 (`q*(n+1)`, 1-indexed — Weibull plotting position) spans 0.8*(n+1)
+#     of those same n+1 gaps, so its expected coverage is exactly 0.80 for
+#     EVERY n. That property is precisely what an interval-calibration gate
+#     measures, which makes it the correct estimator here rather than merely a
+#     different one.
+#
+# The difference is +1.6/(n+1) of coverage, so it is worth real points on a
+# thin cell and almost nothing on a fat one — which is exactly what makes it a
+# usable diagnostic for whether an under-covering position is a small-sample
+# artifact or genuinely mis-specified.
+QUANTILE_METHODS = ("type6", "type7")
+
+
+def quantile(sorted_sample, q: float, method: str = "type6") -> float:
+    """Linear-interpolated empirical quantile. `q` in [0, 1].
+
+    See QUANTILE_METHODS above for why the default is type6 and not the more
+    familiar type7."""
     if not sorted_sample:
         raise ValueError("empty sample")
-    if len(sorted_sample) == 1:
+    n = len(sorted_sample)
+    if n == 1:
         return sorted_sample[0]
-    pos = q * (len(sorted_sample) - 1)
+    if method == "type7":
+        pos = q * (n - 1)
+    elif method == "type6":
+        # 1-indexed q*(n+1) -> 0-indexed, clamped: an empirical distribution
+        # has no mass outside its own extremes, so the deepest this can reach
+        # is the sample min/max.
+        pos = q * (n + 1) - 1.0
+    else:
+        raise ValueError(f"unknown quantile method {method!r}")
+    pos = max(0.0, min(pos, n - 1.0))
     lo = int(pos)
-    hi = min(lo + 1, len(sorted_sample) - 1)
+    hi = min(lo + 1, n - 1)
     frac = pos - lo
     return sorted_sample[lo] * (1 - frac) + sorted_sample[hi] * frac
 
 
-def interval(sorted_sample, width: float) -> tuple:
+def interval(sorted_sample, width: float, method: str = "type6") -> tuple:
     """The central interval of the given nominal width (0.8 -> 10th..90th)."""
     tail = (1.0 - width) / 2.0
-    return quantile(sorted_sample, tail), quantile(sorted_sample, 1.0 - tail)
+    return (quantile(sorted_sample, tail, method),
+            quantile(sorted_sample, 1.0 - tail, method))
 
 
-def covers(sorted_sample, width: float, actual) -> bool:
-    lo, hi = interval(sorted_sample, width)
+def covers(sorted_sample, width: float, actual, method: str = "type6") -> bool:
+    lo, hi = interval(sorted_sample, width, method)
     return lo <= actual <= hi
+
+
+def expected_coverage(n: int, width: float, method: str = "type6") -> float:
+    """The coverage this estimator is expected to achieve for a FUTURE draw,
+    from a fit of size n, under the ideal case where the cell is correctly
+    specified and the sample is iid from it.
+
+    Used to state, in advance, how much of an observed coverage shortfall is
+    attributable to the estimator rather than to the model — the difference
+    between the two methods is the whole basis of that diagnostic."""
+    if method == "type6":
+        return width
+    if method == "type7":
+        return width * (n - 1) / (n + 1)
+    raise ValueError(f"unknown quantile method {method!r}")
 
 
 def crps_empirical(sorted_sample, actual) -> float:
