@@ -71,6 +71,10 @@ from scipy import stats
 
 from projection_model import DEFAULT_PARAMS, default_scoring, points as _model_points, \
     project_points, rookie_projection, with_overrides
+from outcome_distribution import (
+    CONDITIONINGS, age_bucket, covers, crps_empirical, fit_residuals, lookup_ratios, pit,
+    predictive_sample, rank_tier, residual_ratio,
+)
 from projection_opportunity import league_efficiency, project_points_opportunity
 from projection_v2 import league_rates, stabilize_player
 from rookie_capital import draft_capital_by_player, rookie_capital_curve, rookie_capital_projection
@@ -466,6 +470,42 @@ def build_players(data: pd.DataFrame, ages: dict, year: int) -> list[dict]:
     return out
 
 
+def build_vanished(data: pd.DataFrame, ages: dict, year: int) -> list[dict]:
+    """Players with season Y-1 / Y-2 history who produced NO season-Y stats
+    line at all (roadmap 2.1).
+
+    `build_players` iterates over players who APPEAR in year Y, so a player who
+    was drafted and then never played is silently absent rather than counted as
+    a zero. For a rank correlation that is a documented, evenly-applied caveat
+    (see the module docstring). For an outcome DISTRIBUTION it is a real
+    problem: it truncates precisely the left tail the distribution exists to
+    describe. These are those players, with `_actual = None` meaning an outcome
+    of zero. The caller is expected to keep only the ones the market ranked
+    (season-Y ADP) — a player nobody was drafting is not a bust anyone
+    suffered."""
+    prev = {r.player_id: r for r in data[data.season == year - 1].itertuples()}
+    prev2 = {r.player_id: r for r in data[data.season == year - 2].itertuples()}
+    appeared = set(data[data.season == year].player_id)
+
+    out = []
+    for pid in set(prev) | set(prev2):
+        if pid in appeared:
+            continue
+        p1, p2 = prev.get(pid), prev2.get(pid)
+        src = p1 if p1 is not None else p2
+        out.append({
+            "player_id": pid,
+            "name": src.name,
+            "pos": src.pos,
+            "team": src.team,
+            "age": ages.get((year, pid)),
+            "last": season_line(p1) if p1 is not None else None,
+            "last2": season_line(p2) if p2 is not None else None,
+            "_actual": None,          # produced nothing: outcome is 0
+        })
+    return out
+
+
 def build_rookies(data: pd.DataFrame, ages: dict, capital_by_player: dict, year: int) -> list[dict]:
     """The exact complement `build_players` excludes: true rookies (no
     season Y-1 AND no season Y-2 history), tagged with their draft round/pick
@@ -697,6 +737,8 @@ def main():
                     help="skip the team-context sweep (roadmap 1.3)")
     ap.add_argument("--no-rookie-capital", action="store_true",
                     help="skip the rookie draft-capital sweep (roadmap 1.4)")
+    ap.add_argument("--no-distributions", action="store_true",
+                    help="skip the outcome-distribution calibration (roadmap 2.1)")
     args = ap.parse_args()
 
     test_years = list(range(args.first, args.last + 1))
@@ -766,7 +808,9 @@ def main():
         print("\n! ADP baseline SKIPPED (no FANTASYPROS_API_KEY or --no-adp). "
               "The model-vs-market comparison is the point; run this where the key lives.")
 
+    use_distributions = not args.no_distributions
     per_year = []
+    dist_rows = []         # roadmap 2.1: (year, pos, proj, actual, rank, age, bust)
     dis_rows = []          # model-vs-market disagreement diagnostic
     coverage = []          # (year, ranked, total) — how much of the board ADP covers
     for year in test_years:
@@ -1237,6 +1281,59 @@ def main():
                         per_year.append({"year": year, "population": "rookies_merged",
                                          "model": "rookie_capital_stack", "variant": "current",
                                          "pos": pos, **m})
+
+        # ── roadmap 2.1: rows for the outcome-distribution fit/eval ───────
+        # Collected here, evaluated AFTER the loop, because the fit for test
+        # year Y may only use years STRICTLY BEFORE Y (an expanding window) —
+        # the same no-lookahead rule `rates`/`opp_rates`/the rookie curve get.
+        # The projection these residuals are measured against is the LIVE
+        # BOARD's own number (stack + market anchor), not the pure model: a
+        # distribution around a number the app never displays would describe
+        # nothing anyone sees.
+        if use_distributions and adp_by_player and expert_by_player and injury_by_player:
+            vanished = [p for p in build_vanished(data, ages, year)
+                        if adp.get((fp_norm(p["name"]), p["pos"]))]
+            dist_pop = players + vanished
+            dist_adp, dist_expert, dist_injury = {}, {}, {}
+            for p in dist_pop:
+                key = (fp_norm(p["name"]), p["pos"])
+                v = adp.get(key)
+                if v:
+                    dist_adp[p["player_id"]] = v
+                line = ep.get(key)
+                if line:
+                    ev = _points(line, sc)
+                    if ev > 0:
+                        dist_expert[p["player_id"]] = ev
+                row = inj.get(key)
+                if row:
+                    dist_injury[p["player_id"]] = row["severity"]
+
+            dist_base = [project_points(p, sc, DEFAULT_PARAMS)["proj"] for p in dist_pop]
+            dist_stack = apply_expert_shipped(
+                dist_pop, apply_injury_shipped(dist_pop, dist_base, dist_injury), dist_expert)
+            dist_final = blend_with_market(dist_pop, dist_stack, dist_adp, MARKET_ANCHOR_W)
+
+            # Projected rank WITHIN position, off the same number the board
+            # would rank on — that is what the tiers are meant to condition on.
+            order = {}
+            by_pos_idx = {}
+            for i, p in enumerate(dist_pop):
+                by_pos_idx.setdefault(p["pos"], []).append(i)
+            for pos_, idxs in by_pos_idx.items():
+                for r, i in enumerate(sorted(idxs, key=lambda i: -dist_final[i]), start=1):
+                    order[i] = r
+
+            for i, p in enumerate(dist_pop):
+                act = p["_actual"]
+                actual_total = _points(season_line(act), sc) if act is not None else 0.0
+                dist_rows.append({
+                    "year": year, "pos": p["pos"], "proj": dist_final[i],
+                    "actual": actual_total, "rank": order[i], "age": p["age"],
+                    "bust": act is None,
+                })
+            print(f"  {year}: {len(players)} returning + {len(vanished)} market-ranked "
+                  f"no-shows for the 2.1 distribution rows")
 
     df = pd.DataFrame(per_year)
     for c in ("blend_w", "k", "inj_k", "opp_k", "ctx_k"):
@@ -1892,6 +1989,137 @@ def main():
                   f"{'PASS' if ok else 'FAIL'}")
         print(f"\n  -> PASS for: {', '.join(ship) or '(none)'}."
               + (f" {', '.join(skip)} stay on the ADP/ECR-curve fallback." if skip else ""))
+
+    # ── roadmap 2.1: per-player outcome distributions, judged against the ──
+    # calibration + sharpness gate fixed in docs/ROADMAP.md before this ran ──
+    if dist_rows:
+        # Evaluating CRPS against a cell of several thousand ratios, for every
+        # player x year x conditioning x population, is the one genuinely hot
+        # loop in this file. Thinning each cell to at most this many evenly
+        # spaced order statistics is quantile thinning of an already-sorted
+        # sample — it preserves the distribution's shape (that is what an
+        # order statistic IS) rather than subsampling it randomly.
+        MAX_EVAL_SAMPLE = 1000
+        COVERAGE_LEVELS = (0.50, 0.80, 0.90)
+        COVERAGE_BAND = (0.75, 0.85)     # the gate, for the 80% interval
+        CRPS_REL_EPS = 0.01              # a conditioning variable must earn 1%
+
+        def _thin(vals):
+            if len(vals) <= MAX_EVAL_SAMPLE:
+                return vals
+            step = (len(vals) - 1) / (MAX_EVAL_SAMPLE - 1)
+            return [vals[int(round(i * step))] for i in range(MAX_EVAL_SAMPLE)]
+
+        dfr = pd.DataFrame(dist_rows)
+        dfr["tier"] = [rank_tier(r) for r in dfr["rank"]]
+        dfr["agebucket"] = [age_bucket(a if pd.notna(a) else None) for a in dfr["age"]]
+        years_sorted = sorted(dfr["year"].unique())
+
+        print("\n=== ROADMAP 2.1 — PER-PLAYER OUTCOME DISTRIBUTIONS ===")
+        print("Empirical: the predictive distribution is the player's own live-board")
+        print("projection times the historical sample of actual/projected ratios from a")
+        print("matched cell (position, projected-rank tier, age bucket), fit on seasons")
+        print("STRICTLY BEFORE the one being scored — an expanding window, so the first")
+        print("test year has nothing to fit on and is not evaluated.")
+        print(f"Gate: 80% interval coverage in {COVERAGE_BAND}, AND each conditioning")
+        print(f"variable must improve held-out CRPS by more than {CRPS_REL_EPS:.0%} relative.")
+        print("CRPS is a proper scoring rule — it is what stops a trivially wide interval")
+        print("from passing a coverage-only test. Lower is better.")
+
+        dist_verdict = {}
+        for variant, keep_busts in (("survivors", False), ("with_busts", True)):
+            sub = dfr if keep_busts else dfr[~dfr["bust"]]
+            print(f"\n  ── population: {variant} "
+                  f"({'includes' if keep_busts else 'excludes'} market-ranked players who "
+                  f"produced no season-Y line) — {len(sub)} player-seasons ──")
+
+            recs = []
+            for cond in CONDITIONINGS:
+                cache = {}
+                for yi, year in enumerate(years_sorted):
+                    if yi == 0:
+                        continue                     # nothing strictly before it
+                    hist = sub[sub["year"] < year]
+                    fitted = fit_residuals(
+                        (r.pos, r.tier, r.agebucket, residual_ratio(r.actual, r.proj))
+                        for r in hist.itertuples())
+                    cache.clear()
+                    for r in sub[sub["year"] == year].itertuples():
+                        ck = (r.pos, r.tier, r.agebucket)
+                        if ck not in cache:
+                            vals, _ = lookup_ratios(fitted, r.pos, r.tier, r.agebucket, cond)
+                            cache[ck] = _thin(vals) if vals else None
+                        ratios = cache[ck]
+                        if not ratios or r.proj is None or r.proj <= 0:
+                            continue
+                        smp = predictive_sample(r.proj, ratios)
+                        rec = {"cond": cond, "year": year, "pos": r.pos,
+                               "crps": crps_empirical(smp, r.actual),
+                               "pit": pit(smp, r.actual), "proj": r.proj}
+                        for lv in COVERAGE_LEVELS:
+                            rec[f"cov{int(lv * 100)}"] = covers(smp, lv, r.actual)
+                        recs.append(rec)
+
+            if not recs:
+                print("    ! no evaluable rows — skipping this population")
+                continue
+            ev = pd.DataFrame(recs)
+
+            for posn in sorted(ev["pos"].unique()):
+                print(f"\n    {posn}")
+                prev_crps = None
+                accepted = None
+                for cond in CONDITIONINGS:
+                    e = ev[(ev["pos"] == posn) & (ev["cond"] == cond)]
+                    if not len(e):
+                        continue
+                    crps = float(e["crps"].mean())
+                    covs = {lv: float(e[f"cov{int(lv * 100)}"].mean()) for lv in COVERAGE_LEVELS}
+                    if prev_crps is None:
+                        earns, delta = True, 0.0      # the baseline conditioning
+                    else:
+                        delta = (prev_crps - crps) / prev_crps
+                        earns = delta > CRPS_REL_EPS
+                    if earns:
+                        accepted, prev_crps = cond, crps
+                    print(f"      {cond:<14} n={len(e):<5} CRPS {crps:7.2f} "
+                          f"({'baseline' if delta == 0.0 else f'{delta:+.1%} vs prev'}"
+                          f"{'' if delta == 0.0 else (', earns it' if earns else ', DOES NOT earn it')})"
+                          f"   cov50 {covs[0.50]:.3f}  cov80 {covs[0.80]:.3f}  cov90 {covs[0.90]:.3f}")
+
+                fin = ev[(ev["pos"] == posn) & (ev["cond"] == accepted)]
+                cov80 = float(fin["cov80"].mean())
+                cov50 = float(fin["cov50"].mean())
+                cov90 = float(fin["cov90"].mean())
+                med_pit = float(fin["pit"].mean())
+                print(f"      -> model: {accepted}   cov80 {cov80:.3f}   mean PIT {med_pit:.3f} "
+                      f"(0.5 = unbiased; <0.5 means the board is systematically OPTIMISTIC)")
+                dist_verdict[(variant, posn)] = {
+                    "cond": accepted, "cov50": cov50, "cov80": cov80, "cov90": cov90,
+                    "pit": med_pit, "crps": prev_crps, "n": len(fin)}
+
+        print(f"\n  --- ROADMAP 2.1 KILL GATE (cov80 within {COVERAGE_BAND}) ---")
+        for variant in ("survivors", "with_busts"):
+            rows_ = {k[1]: v for k, v in dist_verdict.items() if k[0] == variant}
+            if not rows_:
+                continue
+            passed = {}
+            print(f"\n    population: {variant}")
+            for posn in sorted(rows_):
+                v = rows_[posn]
+                ok = COVERAGE_BAND[0] <= v["cov80"] <= COVERAGE_BAND[1]
+                passed[posn] = ok
+                print(f"      {posn}  model={v['cond']:<14} cov80 {v['cov80']:.3f}  "
+                      f"(cov50 {v['cov50']:.3f} / cov90 {v['cov90']:.3f})  "
+                      f"{'PASS' if ok else 'FAIL'}")
+            good = [p for p, ok in passed.items() if ok]
+            bad = [p for p, ok in passed.items() if not ok]
+            print(f"      -> calibrated for: {', '.join(good) or '(none)'}"
+                  + (f"; NOT calibrated for {', '.join(bad)}" if bad else ""))
+
+        print("\n  Note: nothing is wired into the frontend on this step regardless of the")
+        print("  above — docs/ROADMAP.md 2.1 says the calibration check must pass BEFORE")
+        print("  anything consumes the distributions, and 2.2 is what would consume them.")
 
     print(f"\n✓ wrote {args.out}/projection_backtest_summary.csv and _by_year.csv")
 
