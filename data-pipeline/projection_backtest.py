@@ -69,9 +69,11 @@ from scipy import stats
 # A module-level import would have made that check drag a season-data library
 # (and polars, and pyarrow) into a job that never touches the network.
 
-from projection_model import DEFAULT_PARAMS, default_scoring, project_points, with_overrides
+from projection_model import DEFAULT_PARAMS, default_scoring, points as _model_points, \
+    project_points, rookie_projection, with_overrides
 from projection_opportunity import league_efficiency, project_points_opportunity
 from projection_v2 import league_rates, stabilize_player
+from rookie_capital import draft_capital_by_player, rookie_capital_curve, rookie_capital_projection
 from team_context import (
     apply_flag_discount, apply_pace, apply_team_change_nuance, context_flags, team_qb_by_season,
 )
@@ -376,6 +378,63 @@ def load_commitment_context():
     return tc.commitment_by_player_season(rows)
 
 
+def load_draft_capital(years):
+    """draft_capital_by_player, roadmap 1.4 — see rookie_capital.py.
+    load_draft_picks() is one row per pick, PFR-sourced via nflverse;
+    filtered to the four skill positions this pipeline scores at all."""
+    import nflreadpy as nfl
+
+    picks = _pd(nfl.load_draft_picks(years))
+    pos_c = _col(picks, "position", "pos")
+    picks = picks[picks[pos_c].isin(FANTASY_POS)]
+    rows = (
+        (r.gsis_id, getattr(r, "round"), r.pick)
+        for r in picks.itertuples()
+        if pd.notna(r.gsis_id) and pd.notna(getattr(r, "round"))
+    )
+    return draft_capital_by_player(rows)
+
+
+def load_draft_seasons(years) -> dict:
+    """{gsis_id: draft season} — the ONE nflverse season out of a drafted
+    player's whole career that is actually their rookie season. Needed only
+    to fit rookie_capital_curve() (a player keeps their draft round for
+    every later season too, so `data` x `capital_by_player` alone would
+    silently pool a veteran's 3rd/4th/5th-year output in as if it were a
+    rookie pace). Not part of the shipped feature itself, which only needs
+    round/pick, never the draft year."""
+    import nflreadpy as nfl
+
+    picks = _pd(nfl.load_draft_picks(years))
+    out: dict = {}
+    for r in picks.itertuples():
+        gid = r.gsis_id
+        if pd.notna(gid) and pd.notna(r.season):
+            out.setdefault(gid, int(r.season))
+    return out
+
+
+def rookie_history_rows(data: pd.DataFrame, capital_by_player: dict,
+                        draft_season_by_player: dict) -> list[tuple]:
+    """(season, pos, round, pace) — one row per player's actual ROOKIE
+    season only (pinned by draft_season_by_player, see its docstring),
+    reusing whatever's already in `data` rather than a second network load.
+    Used ONLY to fit rookie_capital_curve(), never to score a test year
+    directly. Pace uses the SAME (points/gp * 17) unit projectPoints()
+    blends on, so the curve's output slots directly into
+    project_points()'s "proj"."""
+    sc = default_scoring(PPR)
+    out = []
+    for r in data.itertuples():
+        cap = capital_by_player.get(r.player_id)
+        draft_season = draft_season_by_player.get(r.player_id)
+        if not cap or draft_season is None or r.season != draft_season or not r.gp:
+            continue
+        pace = (_model_points(season_line(r), sc) / r.gp) * DEFAULT_PARAMS["projectedGames"]
+        out.append((r.season, r.pos, cap[0], pace))
+    return out
+
+
 def season_line(row) -> dict:
     return {"gp": int(row.gp),
             **{v: float(getattr(row, v)) for v in COMP.values()},
@@ -402,6 +461,36 @@ def build_players(data: pd.DataFrame, ages: dict, year: int) -> list[dict]:
             "age": ages.get((year, pid)),
             "last": season_line(p1) if p1 is not None else None,
             "last2": season_line(p2) if p2 is not None else None,
+            "_actual": act,
+        })
+    return out
+
+
+def build_rookies(data: pd.DataFrame, ages: dict, capital_by_player: dict, year: int) -> list[dict]:
+    """The exact complement `build_players` excludes: true rookies (no
+    season Y-1 AND no season Y-2 history), tagged with their draft round/pick
+    if `load_draft_picks` has one on record (roadmap 1.4). `last`/`last2`
+    stay None — same as what `build_players` would have given them, and what
+    `rookie_projection()`/`project_points()` already branch on."""
+    prev = {r.player_id: r for r in data[data.season == year - 1].itertuples()}
+    prev2 = {r.player_id: r for r in data[data.season == year - 2].itertuples()}
+    actual = {r.player_id: r for r in data[data.season == year].itertuples()}
+
+    out = []
+    for pid, act in actual.items():
+        if prev.get(pid) is not None or prev2.get(pid) is not None:
+            continue
+        cap = capital_by_player.get(pid)
+        out.append({
+            "player_id": pid,
+            "name": act.name,
+            "pos": act.pos,
+            "team": act.team,
+            "age": ages.get((year, pid)),
+            "last": None,
+            "last2": None,
+            "capital_round": cap[0] if cap else None,
+            "capital_pick": cap[1] if cap else None,
             "_actual": act,
         })
     return out
@@ -606,10 +695,19 @@ def main():
                     help="skip the injury-discount sweep (roadmap 0.3)")
     ap.add_argument("--no-team-context", action="store_true",
                     help="skip the team-context sweep (roadmap 1.3)")
+    ap.add_argument("--no-rookie-capital", action="store_true",
+                    help="skip the rookie draft-capital sweep (roadmap 1.4)")
     args = ap.parse_args()
 
     test_years = list(range(args.first, args.last + 1))
     need = sorted({y for t in test_years for y in (t - 2, t - 1, t)})
+    # Roadmap 1.4: fitting rookie_capital_curve() needs many more rookie
+    # classes than the t-2..t window every other feature in this file uses —
+    # a per-position, per-round mean is noisy on 2-3 draft classes. Widened
+    # here (not a second load_seasons call) so the one load_seasons(need)
+    # below already covers both purposes with no duplicate network fetch.
+    ROOKIE_HIST_START = 2005
+    need = sorted(set(need) | set(range(max(ROOKIE_HIST_START, args.first - 15), args.first)))
     print(f"Loading NFL data {need[0]}–{need[-1]}…")
     data = load_seasons(need)
     print(f"Loaded {len(data)} player-seasons")
@@ -641,6 +739,17 @@ def main():
         commitment_by_player = load_commitment_context()
         print(f"  {len(commitment_by_player)} player-seasons with a signed contract on record")
 
+    use_rookie_capital = not args.no_rookie_capital
+    capital_by_player = {}
+    rookie_curve_rows = []
+    if use_rookie_capital:
+        print("Loading draft capital (round/pick) from PFR via nflverse…")
+        capital_by_player = load_draft_capital(need)
+        draft_season_by_player = load_draft_seasons(need)
+        rookie_curve_rows = rookie_history_rows(data, capital_by_player, draft_season_by_player)
+        print(f"  {len(capital_by_player)} drafted skill players on record, "
+              f"{len(rookie_curve_rows)} rookie-season pace rows to fit rookie_capital_curve() from")
+
     sc = default_scoring(PPR)
 
     # The parameters the SHIPPED model actually uses.
@@ -664,6 +773,7 @@ def main():
         players = build_players(data, ages, year)
         if not players:
             continue
+        rookies = build_rookies(data, ages, capital_by_player, year) if use_rookie_capital else []
 
         # League scoring rates for v2, from seasons STRICTLY BEFORE the test
         # year — the only ones a drafter would have had. Reading the test
@@ -1005,6 +1115,128 @@ def main():
                             per_year.append({"year": year, "population": pop_name,
                                              "model": "team_change_commitment_stack", "variant": f"k{k}",
                                              "ctx_k": k, "pos": pos, **m})
+
+        # ── roadmap 1.4: rookie draft-capital model ───────────────────────
+        # Rookies are a population of their own (build_players() excludes
+        # them on purpose — no last/last2 to project from), so they are
+        # scored here rather than folded into "all"/"matched_adp" above,
+        # which are both defined over RETURNING players only. ADP/expert/
+        # injury matching reuses the `adp`/`ep`/`inj` dicts already fetched
+        # for `players` this year — no extra network call.
+        if use_rookie_capital and rookies:
+            adp_by_rookie = {}
+            if use_adp:
+                for p in rookies:
+                    v = adp.get((fp_norm(p["name"]), p["pos"]))
+                    if v:
+                        adp_by_rookie[p["player_id"]] = v
+
+            # The market projection a rookie already has, if any — exactly
+            # what rookie_projection()'s market_pts short-circuit reads.
+            if use_expert:
+                for p in rookies:
+                    line = ep.get((fp_norm(p["name"]), p["pos"]))
+                    if line:
+                        v = _points(line, sc)
+                        if v > 0:
+                            p["proj"] = {"pts": v}
+
+            injury_by_rookie = {}
+            if use_injury:
+                for p in rookies:
+                    row = inj.get((fp_norm(p["name"]), p["pos"]))
+                    if row:
+                        injury_by_rookie[p["player_id"]] = row["severity"]
+
+            # Fit the curve from every OTHER season's rookies only — zero
+            # lookahead, same discipline `rates`/`opp_rates` use above.
+            curve = rookie_capital_curve(
+                (pos, rnd, pace) for (s, pos, rnd, pace) in rookie_curve_rows if s < year)
+
+            PP = DEFAULT_PARAMS["projection"]
+            baseline_vals, capital_vals = [], []
+            for p in rookies:
+                baseline_vals.append(rookie_projection(p, sc, PP))
+                capital_vals.append(rookie_capital_projection(p["pos"], p.get("capital_round"), curve))
+
+            # Candidate REPLACES the ADP/ECR-curve fallback only — a rookie
+            # with a real market projection (market_pts > 0 inside
+            # rookie_projection) is untouched either way, matching the
+            # roadmap's own framing ("rookies currently get an ADP-curve
+            # fallback"), not a blend layered on top of expert coverage.
+            candidate_vals = []
+            for p, base, cap in zip(rookies, baseline_vals, capital_vals):
+                market_pts = _points(p.get("proj") or {}, sc)
+                candidate_vals.append(cap if (market_pts <= 0 and cap is not None) else base)
+
+            for pos, m in score(rookies, baseline_vals, sc).items():
+                per_year.append({"year": year, "population": "rookies",
+                                 "model": "rookie_baseline", "variant": "current", "pos": pos, **m})
+            for pos, m in score(rookies, candidate_vals, sc).items():
+                per_year.append({"year": year, "population": "rookies",
+                                 "model": "rookie_capital", "variant": "current", "pos": pos, **m})
+
+            if adp_by_rookie:
+                for pos, m in disagreement_signal(rookies, candidate_vals, adp_by_rookie, sc).items():
+                    dis_rows.append({"year": year, "variant": "rookie_capital",
+                                     "population": "rookies", "pos": pos, **m})
+                for pos, m in disagreement_signal(rookies, baseline_vals, adp_by_rookie, sc).items():
+                    dis_rows.append({"year": year, "variant": "rookie_baseline",
+                                     "population": "rookies", "pos": pos, **m})
+
+            # ── the merge that matters: the FULL board, rookies alongside
+            # returning players, anchored TOGETHER in one ladder per
+            # position — exactly what useBoard.ts's marketAnchor() actually
+            # does (a rookie with real ADP, e.g. a top-10 pick, is ranked
+            # among veterans at the position, not in an isolated
+            # rookie-only ladder built separately from them).
+            if adp_by_player:
+                base_projs_players = [project_points(p, sc, DEFAULT_PARAMS)["proj"] for p in players]
+                combined_pop = players + rookies
+                combined_adp = {**adp_by_player, **adp_by_rookie}
+
+                merged_baseline = blend_with_market(
+                    combined_pop, base_projs_players + baseline_vals, combined_adp, MARKET_ANCHOR_W)
+                for pos, m in score(combined_pop, merged_baseline, sc).items():
+                    per_year.append({"year": year, "population": "rookies_merged",
+                                     "model": "rookie_baseline_merged", "variant": "current",
+                                     "pos": pos, **m})
+
+                merged_candidate = blend_with_market(
+                    combined_pop, base_projs_players + candidate_vals, combined_adp, MARKET_ANCHOR_W)
+                for pos, m in score(combined_pop, merged_candidate, sc).items():
+                    per_year.append({"year": year, "population": "rookies_merged",
+                                     "model": "rookie_capital_merged", "variant": "current",
+                                     "pos": pos, **m})
+
+                # Re-baseline against the ACTUAL live board (injury discount
+                # + expert blend already applied on the returning-player
+                # side, matching every other roadmap-1.x re-baseline in this
+                # file). Expert blend is deliberately SKIPPED for rookies
+                # here, mirroring blendExpertAll()'s own rookie skip in
+                # engine-core.js: rookie_projection() already used
+                # player.proj at the model stage, so blending it in again
+                # would double-count the same number.
+                if injury_by_player and expert_by_player:
+                    shipped_players = apply_expert_shipped(
+                        players, apply_injury_shipped(players, base_projs_players, injury_by_player),
+                        expert_by_player)
+                    inj_baseline_rookies = apply_injury_shipped(rookies, baseline_vals, injury_by_rookie)
+                    inj_candidate_rookies = apply_injury_shipped(rookies, candidate_vals, injury_by_rookie)
+
+                    merged_baseline_stack = blend_with_market(
+                        combined_pop, shipped_players + inj_baseline_rookies, combined_adp, MARKET_ANCHOR_W)
+                    for pos, m in score(combined_pop, merged_baseline_stack, sc).items():
+                        per_year.append({"year": year, "population": "rookies_merged",
+                                         "model": "rookie_baseline_stack", "variant": "current",
+                                         "pos": pos, **m})
+
+                    merged_candidate_stack = blend_with_market(
+                        combined_pop, shipped_players + inj_candidate_rookies, combined_adp, MARKET_ANCHOR_W)
+                    for pos, m in score(combined_pop, merged_candidate_stack, sc).items():
+                        per_year.append({"year": year, "population": "rookies_merged",
+                                         "model": "rookie_capital_stack", "variant": "current",
+                                         "pos": pos, **m})
 
     df = pd.DataFrame(per_year)
     for c in ("blend_w", "k", "inj_k", "opp_k", "ctx_k"):
@@ -1593,6 +1825,73 @@ def main():
             skip_here = [p for p, ok in passed_here.items() if not ok]
             print(f"\n  -> {label} nuance beats the flat discount for: {', '.join(ship_here) or '(none)'}"
                   f"{'; ' + ', '.join(skip_here) + ' stay on the flat discount' if skip_here else ''}.")
+
+    # ── roadmap 1.4: rookie draft-capital model, judged against its gate ──
+    rka = agg[(agg["population"] == "rookies") &
+              (agg["model"].isin(["rookie_baseline", "rookie_capital"]))]
+    if len(rka) and dis_rows:
+        print("\n=== ROADMAP 1.4 — ROOKIE DRAFT-CAPITAL MODEL ===")
+        print("rookie_baseline = today's shipped ADP/ECR-curve fallback (rookie_projection()).")
+        print("rookie_capital  = draft round -> empirical rookie-year pace, fit leave-one-")
+        print("                  year-out, REPLACING the fallback only where no market")
+        print("                  projection covers the player (matches the roadmap's own")
+        print("                  framing — not a blend layered on top of expert coverage).")
+        print(f"Gate (docs/ROADMAP.md 1.4, set before running): partial correlation vs ADP")
+        print(f"must clear baseline by more than {MATERIAL_EPS}, AND the FULL BOARD merged")
+        print(f"(rookies anchored together with returning players, restricted to the rookie")
+        print(f"population, vs the ACTUAL live board — injury discount + expert blend on")
+        print(f"the returning-player side) must beat it by more than {MERGE_EPS} (v2's bar).")
+
+        dp = pd.DataFrame(dis_rows)
+        rm = agg[agg["population"] == "rookies_merged"]
+        verdict = {}
+        for posn in sorted(rka["pos"].unique()):
+            base = rka[(rka["pos"] == posn) & (rka["model"] == "rookie_baseline")]
+            cap = rka[(rka["pos"] == posn) & (rka["model"] == "rookie_capital")]
+            b0 = float(base.spearman_total.iloc[0]) if len(base) else float("nan")
+            c0 = float(cap.spearman_total.iloc[0]) if len(cap) else float("nan")
+
+            bpr = dp[(dp["pos"] == posn) & (dp["variant"] == "rookie_baseline")]
+            cpr = dp[(dp["pos"] == posn) & (dp["variant"] == "rookie_capital")]
+            base_partial = float(bpr["partial_model"].mean()) if len(bpr) else float("nan")
+            cap_partial = float(cpr["partial_model"].mean()) if len(cpr) else float("nan")
+
+            print(f"\n  {posn}   solo: baseline {b0:.4f}   capital {c0:.4f} ({c0 - b0:+.4f})")
+            print(f"        partial vs ADP (n={len(bpr)} yrs base / {len(cpr)} yrs cap): "
+                  f"baseline {base_partial:+.4f}   capital {cap_partial:+.4f}")
+
+            base_m = rm[(rm["pos"] == posn) & (rm["model"] == "rookie_baseline_merged")]
+            cap_m = rm[(rm["pos"] == posn) & (rm["model"] == "rookie_capital_merged")]
+            base_s = rm[(rm["pos"] == posn) & (rm["model"] == "rookie_baseline_stack")]
+            cap_s = rm[(rm["pos"] == posn) & (rm["model"] == "rookie_capital_stack")]
+            bm = float(base_m.spearman_total.iloc[0]) if len(base_m) else float("nan")
+            cm = float(cap_m.spearman_total.iloc[0]) if len(cap_m) else float("nan")
+            bs = float(base_s.spearman_total.iloc[0]) if len(base_s) else float("nan")
+            cs = float(cap_s.spearman_total.iloc[0]) if len(cap_s) else float("nan")
+            print(f"        merged, pure model : baseline {bm:.4f}   capital {cm:.4f} ({cm - bm:+.4f})")
+            print(f"        merged, LIVE board : baseline {bs:.4f}   capital {cs:.4f} ({cs - bs:+.4f})")
+
+            partial_ok = (base_partial == base_partial and cap_partial == cap_partial and
+                          cap_partial > base_partial + MATERIAL_EPS)
+            merge_ref = bs if bs == bs else bm       # prefer the live-board bar; fall back
+            merge_cand = cs if cs == cs else cm      # to the pure-model merge if injury/expert
+            merge_ok = (merge_ref == merge_ref and merge_cand == merge_cand and  # data was thin
+                        merge_cand > merge_ref + MERGE_EPS)
+            verdict[posn] = {"partial_ok": partial_ok, "merge_ok": merge_ok,
+                             "merge_ref": merge_ref, "merge_cand": merge_cand}
+
+        print("\n  --- ROADMAP 1.4 KILL GATE ---")
+        ship, skip = [], []
+        for posn in sorted(verdict):
+            v = verdict[posn]
+            ok = v["partial_ok"] and v["merge_ok"]
+            (ship if ok else skip).append(posn)
+            print(f"    {posn}  partial {'material' if v['partial_ok'] else 'NOT material'}   "
+                  f"merged {v['merge_cand']:.4f} vs {v['merge_ref']:.4f} "
+                  f"({'beats live board' if v['merge_ok'] else 'does NOT beat live board'})   "
+                  f"{'PASS' if ok else 'FAIL'}")
+        print(f"\n  -> PASS for: {', '.join(ship) or '(none)'}."
+              + (f" {', '.join(skip)} stay on the ADP/ECR-curve fallback." if skip else ""))
 
     print(f"\n✓ wrote {args.out}/projection_backtest_summary.csv and _by_year.csv")
 
