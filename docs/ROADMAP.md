@@ -963,6 +963,58 @@ under both populations already; QB is carved out by the decision above. The
 directly rather than bracketing it) is the one open item left before 2.1 can
 be called fully usable for the positions that remain in scope.
 
+**FOLLOW-UP (a) — pre-registration, written before the code exists.**
+
+*The original open item*: `with_busts` adds back every market-ranked player
+with prior history who produced zero season-Y stats, scored as an actual
+outcome of 0. That is one defensible construction, not a measurement, and it
+conflates two different real outcomes: a player who was ACTIVE on an NFL
+roster all season and genuinely produced nothing — season-ending injury after
+final cuts, lost every snap of a committee, a healthy scratch all year, the
+textbook fantasy bust a real drafter actually lived through — and a player who
+never had a roster spot in season Y at all — cut before Week 1, retired, never
+signed anywhere. Those are not the same risk, and the current construction
+prices them identically.
+
+*Hypothesis*: RB/WR's `with_busts` over-widening comes disproportionately from
+the second group. Teams carry far more RB/WR camp bodies than QB/TE and cut
+down harder before Week 1, so the RB/WR vanished-player pool should skew
+toward "never rostered" more than QB/TE's does — which would explain the
+position-specific over-widening (RB/WR fail `with_busts`, QB needed it,
+TE passes either way) without inventing any position-specific tuning.
+
+*Measurement, not a guess*: pull `nflreadpy.load_rosters(year)` — already used
+in this file for `load_ages()` — and check, for every "vanished" player,
+whether `(year, player_id)` appears on ANY team's roster that season,
+independent of whether they ever recorded a stat. Report the rostered-vs-
+never-rostered split by position BEFORE touching the fit, so the measurement
+stands on its own regardless of what the fit does with it afterward.
+
+*Form*: a THIRD population, `rostered_busts` — survivors plus only the subset
+of vanished players who WERE rostered that season. Re-run the identical
+CRPS-conditioning-earns-its-place + `cov80` kill-gate machinery already built
+for `survivors`/`with_busts`, unchanged, against it.
+
+*Held fixed*: flat pool, the conditioning sweep, the `type6` estimator, the
+`COVERAGE_BAND`. Only which bust rows enter the population changes.
+
+*Gate*: `rostered_busts` becomes 2.1's actual population — replacing the
+survivors/with_busts bracket — only if its `cov80` lands in `[0.75, 0.85]`
+for **both RB and WR**, the two positions failing today, **without pushing TE
+out of band** (it passes both existing populations already). QB is reported
+for completeness but is not a blocking condition either way — it is already
+carved out of 2.2 by the decision above regardless of what this shows. CRPS
+is reported per population for transparency, not as a formal cross-population
+gate: the populations differ in composition, not just conditioning, so it is
+not the apples-to-apples comparison it is inside the existing conditioning
+sweep.
+
+*What a pass would NOT prove*: that "never rostered" players carry zero
+fantasy risk worth pricing in anywhere — only that folding them into the fit
+as a hard zero specifically over-widens the left tail more than this gate
+tolerates. A softer treatment (e.g. a non-zero floor for that group) is a
+separate, un-pre-registered idea and out of scope here.
+
 ### 2.2 Weekly-lineup-aware season simulator
 Season totals are the wrong unit: you start ~9 of 15 players each week. Simulate
 weeks, set lineups, score the lineup. This makes bench depth worth its true

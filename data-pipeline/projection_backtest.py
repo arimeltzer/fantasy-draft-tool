@@ -286,6 +286,35 @@ def load_ages(years) -> dict:
     return ages
 
 
+def load_roster_ids(years) -> set:
+    """{(season, player_id)} for every player who appeared on an NFL roster
+    that season at all — independent of whether they ever recorded a stat
+    (roadmap 2.1 follow-up (a)). Used to split "vanished" players (build_
+    vanished: prior history, no season-Y stats line) into a real fantasy
+    bust (rostered all year, produced nothing) vs never having a roster spot
+    that season at all (cut before Week 1, retired, never signed) — two
+    different risks the flat with_busts population currently prices as one.
+
+    A second, independent `nfl.load_rosters(y)` call rather than sharing
+    load_ages()'s — every other loader in this file fetches its own data
+    too, and rosters are a small dataset, so the duplicate call is cheap."""
+    import nflreadpy as nfl
+    ids = set()
+    for y in years:
+        try:
+            r = _pd(nfl.load_rosters(y))
+        except Exception as e:
+            print(f"  ! rosters {y} unavailable ({e}); roster presence blank for that year")
+            continue
+        id_c = _col(r, "gsis_id", "player_id")
+        if not id_c:
+            continue
+        for pid in r[id_c]:
+            if pid:
+                ids.add((y, pid))
+    return ids
+
+
 def load_team_context(years):
     """(coach_by_team, pace_by_team, quality_by_team, ts) for roadmap 1.3 —
     see team_context.py for what each is and why it's read the way it is.
@@ -759,6 +788,9 @@ def main():
     print("Loading ages from rosters…")
     ages = load_ages(test_years)
     print(f"  {len(ages)} player-ages")
+    print("Loading roster presence (roadmap 2.1 follow-up (a))…")
+    roster_ids = load_roster_ids(test_years)
+    print(f"  {len(roster_ids)} (season, player) roster appearances")
 
     use_team_context = not args.no_team_context
     qb_by_team = coach_by_team = pace_by_team = quality_by_team = {}
@@ -811,7 +843,8 @@ def main():
 
     use_distributions = not args.no_distributions
     per_year = []
-    dist_rows = []         # roadmap 2.1: (year, pos, proj, actual, rank, age, bust)
+    dist_rows = []         # roadmap 2.1: year, pos, proj, actual, rank, adp_rank,
+                            # age, bust, rostered (follow-up (a))
     dis_rows = []          # model-vs-market disagreement diagnostic
     coverage = []          # (year, ranked, total) — how much of the board ADP covers
     for year in test_years:
@@ -1345,11 +1378,17 @@ def main():
             for i, p in enumerate(dist_pop):
                 act = p["_actual"]
                 actual_total = _points(season_line(act), sc) if act is not None else 0.0
+                # roadmap 2.1 follow-up (a): only meaningful for busts (act is
+                # None) — a returning player obviously played, so True. For a
+                # bust, whether they were ever on an NFL roster that season at
+                # all separates "genuinely produced nothing despite a real
+                # shot" from "never had a shot in season Y to begin with".
+                rostered = True if act is not None else (year, p["player_id"]) in roster_ids
                 dist_rows.append({
                     "year": year, "pos": p["pos"], "proj": dist_final[i],
                     "actual": actual_total, "rank": order[i],
                     "adp_rank": adp_order.get(i), "age": p["age"],
-                    "bust": act is None,
+                    "bust": act is None, "rostered": rostered,
                 })
             print(f"  {year}: {len(players)} returning + {len(vanished)} market-ranked "
                   f"no-shows for the 2.1 distribution rows")
@@ -2054,13 +2093,37 @@ def main():
         print("CRPS is a proper scoring rule — it is what stops a trivially wide interval")
         print("from passing a coverage-only test. Lower is better.")
 
+        # ── follow-up (a) measurement: rostered vs never-rostered among busts ──
+        # Stands on its own regardless of what the fit below does with it —
+        # printed BEFORE the fit touches it, not read off after.
+        busts = dfr[dfr["bust"]]
+        print("\n  --- 2.1 FOLLOW-UP (a): BUST ROSTER PRESENCE ---")
+        print("  Of market-ranked players with prior history who produced no season-Y")
+        print("  stats line, how many were on an NFL roster that season at all (a real,")
+        print("  if unproductive, shot) vs never rostered (cut before Week 1, retired,")
+        print("  never signed)? From nflreadpy.load_rosters(), not assumed.")
+        for posn in sorted(busts["pos"].unique()):
+            p = busts[busts["pos"] == posn]
+            n = len(p)
+            rostered_n = int(p["rostered"].sum())
+            pct = rostered_n / n if n else float("nan")
+            print(f"      {posn:<4} n={n:<4} rostered {rostered_n:<4} ({pct:.0%})   "
+                  f"never-rostered {n - rostered_n:<4} ({1 - pct:.0%})")
+
         dist_verdict = {}
         dist_by_variant = {}
-        for variant, keep_busts in (("survivors", False), ("with_busts", True)):
-            sub = dfr if keep_busts else dfr[~dfr["bust"]]
-            print(f"\n  ── population: {variant} "
-                  f"({'includes' if keep_busts else 'excludes'} market-ranked players who "
-                  f"produced no season-Y line) — {len(sub)} player-seasons ──")
+        POPULATIONS = (
+            ("survivors", lambda d: d[~d["bust"]],
+             "excludes market-ranked players who produced no season-Y line"),
+            ("with_busts", lambda d: d,
+             "includes ALL of them, scored as an outcome of 0"),
+            ("rostered_busts", lambda d: d[~d["bust"] | d["rostered"]],
+             "includes only the ones who were on an NFL roster that season "
+             "(roadmap 2.1 follow-up (a))"),
+        )
+        for variant, select, desc in POPULATIONS:
+            sub = select(dfr)
+            print(f"\n  ── population: {variant} ({desc}) — {len(sub)} player-seasons ──")
 
             recs = []
             for window in FIT_WINDOWS:
@@ -2178,7 +2241,8 @@ def main():
             dist_by_variant[variant] = ev_all
 
         print(f"\n  --- ROADMAP 2.1 KILL GATE (cov80 within {COVERAGE_BAND}) ---")
-        for variant in ("survivors", "with_busts"):
+        passed_by_variant = {}
+        for variant in ("survivors", "with_busts", "rostered_busts"):
             rows_ = {k[1]: v for k, v in dist_verdict.items() if k[0] == variant}
             if not rows_:
                 continue
@@ -2199,6 +2263,28 @@ def main():
             bad = [p for p, ok in passed.items() if not ok]
             print(f"      -> calibrated for: {', '.join(good) or '(none)'}"
                   + (f"; NOT calibrated for {', '.join(bad)}" if bad else ""))
+            passed_by_variant[variant] = passed
+
+        # ── follow-up (a) verdict — pre-registered in docs/ROADMAP.md before ──
+        # this existed: rostered_busts replaces the survivors/with_busts
+        # bracket only if it passes RB AND WR without breaking TE. QB is
+        # reported, not a blocking condition — already carved out of 2.2.
+        print("\n  --- 2.1 FOLLOW-UP (a) VERDICT ---")
+        rb_wr_pass = all(passed_by_variant.get("rostered_busts", {}).get(p) for p in ("RB", "WR"))
+        te_ok = bool(passed_by_variant.get("rostered_busts", {}).get("TE"))
+        qb_note = passed_by_variant.get("rostered_busts", {}).get("QB")
+        gate_pass = rb_wr_pass and te_ok
+        print(f"    RB and WR both pass under rostered_busts: {rb_wr_pass}")
+        print(f"    TE still passes under rostered_busts (it passes both existing "
+              f"populations already): {te_ok}")
+        print(f"    QB under rostered_busts (informational only, not gating): "
+              f"{'PASS' if qb_note else 'FAIL'}")
+        if gate_pass:
+            print("    -> GATE CLEARS: rostered_busts should replace the survivors/"
+                  "with_busts bracket as 2.1's shipped population.")
+        else:
+            print("    -> GATE DOES NOT CLEAR: the survivors/with_busts bracket stands; "
+                  "rostered_busts is reported but not adopted.")
 
         # ── follow-up (c): does a ROLLING WINDOW fix QB? ──────────────────
         # Pre-registered in docs/ROADMAP.md before this existed. Conditioning

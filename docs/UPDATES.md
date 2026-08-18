@@ -6,6 +6,34 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 2.1 follow-up (a): pre-registered + implemented, not yet run — settling the bust rate via roster presence
+- Original open item: `with_busts` scores every market-ranked player with no
+  season-Y stats as an outcome of 0, conflating "rostered all season and
+  genuinely produced nothing" (a real fantasy bust) with "never had a roster
+  spot that season at all" (cut before Week 1, retired, never signed) — two
+  different risks priced identically. Hypothesis: RB/WR's over-widening under
+  `with_busts` comes disproportionately from the second group, since teams
+  carry far more RB/WR camp bodies than QB/TE and cut down harder.
+- `load_roster_ids()` (new, `projection_backtest.py`) pulls
+  `nflreadpy.load_rosters()` for the test years and returns every
+  `(season, player_id)` that appeared on ANY roster that season, regardless of
+  stats produced — verified live against 2023 (3,090 roster appearances,
+  `gsis_id` column present as expected). Each "vanished" (bust) dist_row is
+  now tagged `rostered` from this set.
+- New third population, `rostered_busts`: survivors plus only the bust rows
+  that WERE rostered. Wired through the same CRPS-conditioning + `cov80` kill
+  gate machinery already built for `survivors`/`with_busts`, plus a new
+  "FOLLOW-UP (a) VERDICT" block that checks the pre-registered gate
+  automatically: RB and WR both pass under `rostered_busts`, AND TE (already
+  passing both existing populations) keeps passing. QB is reported but not
+  gating — already carved out of 2.2 separately. Also prints the raw
+  rostered-vs-never-rostered split by position before the fit runs, so the
+  measurement stands on its own.
+- Population-selection and gate logic smoke-tested against synthetic
+  DataFrames (survivors/with_busts/rostered_busts row counts, all four gate
+  branches: clean pass, RB fail, TE break, empty input). 73/73 outcome-
+  distribution selftests still pass. **Not yet run against real data.**
+
 ## 2026-08 — Roadmap 2.1: QB decision — excluded from 2.2, not chasing starter/backup conditioning
 - With follow-ups (b)/(c)/(e) all closing off fit-side fixes for QB's narrow
   tails (estimator bias, rolling window, and a position-specific rank split
