@@ -133,12 +133,53 @@ def in_window(row_year: int, test_year: int, window) -> bool:
     return row_year >= test_year - window
 
 
+# ── weekly conditioning (roadmap 2.2a) ───────────────────────────────
+# A SEASON distribution conditions on age; a WEEKLY one conditions on the
+# defense faced, which has no season-level analogue. Kept as its own ladder
+# rather than a fourth level on CONDITIONINGS so the 2.1 season fit is
+# untouched — mixing them would silently change what `pos_rank_age` means.
+WEEKLY_CONDITIONINGS = ("pos", "pos_rank", "pos_rank_opp")
+
+# Defense strength faced, as tertiles of prior-season fantasy points allowed to
+# the position. Prior season only — a rating built from the season being
+# predicted would be lookahead, the same rule `league_rates`/`opp_rates` follow.
+OPP_BUCKETS = ("soft", "neutral", "tough")
+
+
+def opp_bucket(rating, cuts):
+    """Defense rating -> bucket label. `cuts` is (lo, hi) tertile boundaries.
+
+    A missing rating is its OWN bucket rather than being folded into
+    "neutral" — the coverage rule the rest of this module follows (a missing
+    signal falls back, it never masquerades as a value). A team with no prior
+    season on record (an expansion team, or the first year of the backtest)
+    genuinely has no reading, and pretending it is average would be a guess."""
+    if rating is None or cuts is None:
+        return "unknown"
+    lo, hi = cuts
+    if rating <= lo:
+        return "soft"
+    if rating >= hi:
+        return "tough"
+    return "neutral"
+
+
 def _keys_for(pos, tier, age_b):
     """The cell key at each conditioning level, coarsest first — parallel to
     CONDITIONINGS by index."""
     return (("pos", pos),
             ("pos_rank", pos, tier),
             ("pos_rank_age", pos, tier, age_b))
+
+
+def _weekly_keys_for(pos, tier, opp_b):
+    """Weekly analogue of `_keys_for`, parallel to WEEKLY_CONDITIONINGS.
+
+    The key prefixes are distinct ("wpos..." not "pos...") so a weekly cell can
+    never collide with a season cell if both ever share a fitted dict."""
+    return (("wpos", pos),
+            ("wpos_rank", pos, tier),
+            ("wpos_rank_opp", pos, tier, opp_b))
 
 
 def fit_residuals(rows) -> dict:
@@ -169,6 +210,37 @@ def lookup_ratios(fitted: dict, pos, tier, age_b, conditioning: str):
         raise ValueError(f"unknown conditioning {conditioning!r}")
     depth = CONDITIONINGS.index(conditioning)
     for key in reversed(_keys_for(pos, tier, age_b)[: depth + 1]):
+        vals = fitted.get(key)
+        if vals is not None and len(vals) >= MIN_CELL_N:
+            return vals, key
+    return None, None
+
+
+def fit_weekly_residuals(rows) -> dict:
+    """rows: iterable of (pos, tier, opp_bucket, ratio). Weekly analogue of
+    `fit_residuals` — same accumulation, weekly key ladder.
+
+    BYES MUST ALREADY BE EXCLUDED by the caller. A bye is deterministic and
+    known in August, so it is not an outcome the distribution should describe;
+    an INACTIVE week is stochastic and belongs in as a real zero. That
+    distinction is the whole reason this fit is trustworthy for lineup
+    decisions, and it cannot be enforced here — the schedule is the caller's."""
+    acc: dict = {}
+    for pos, tier, opp_b, ratio in rows:
+        if ratio is None or pos is None:
+            continue
+        for key in _weekly_keys_for(pos, tier, opp_b):
+            acc.setdefault(key, []).append(ratio)
+    return {k: sorted(v) for k, v in acc.items()}
+
+
+def lookup_weekly_ratios(fitted: dict, pos, tier, opp_b, conditioning: str):
+    """Weekly analogue of `lookup_ratios`: finest cell at or below
+    `conditioning` clearing MIN_CELL_N, else fall back, else (None, None)."""
+    if conditioning not in WEEKLY_CONDITIONINGS:
+        raise ValueError(f"unknown weekly conditioning {conditioning!r}")
+    depth = WEEKLY_CONDITIONINGS.index(conditioning)
+    for key in reversed(_weekly_keys_for(pos, tier, opp_b)[: depth + 1]):
         vals = fitted.get(key)
         if vals is not None and len(vals) >= MIN_CELL_N:
             return vals, key

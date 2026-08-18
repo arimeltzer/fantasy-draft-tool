@@ -7,7 +7,11 @@ from outcome_distribution import (
     expected_coverage,
     MIN_PROJ_FOR_RATIO,
     RANK_TIERS_BY_POS,
+    WEEKLY_CONDITIONINGS,
     age_bucket,
+    fit_weekly_residuals,
+    lookup_weekly_ratios,
+    opp_bucket,
     covers,
     crps_empirical,
     fit_residuals,
@@ -252,6 +256,57 @@ try:
     check("an unknown quantile method raises", False)
 except ValueError:
     check("an unknown quantile method raises", True)
+
+# ── weekly conditioning (roadmap 2.2a) ───────────────────────────────
+check("WEEKLY_CONDITIONINGS is coarsest-first like its season counterpart",
+      WEEKLY_CONDITIONINGS[0] == "pos")
+check("the weekly ladder conditions on OPPONENT, not age",
+      WEEKLY_CONDITIONINGS[-1] == "pos_rank_opp")
+
+check("a soft defense buckets soft", opp_bucket(5.0, (8.0, 12.0)) == "soft")
+check("a tough defense buckets tough", opp_bucket(20.0, (8.0, 12.0)) == "tough")
+check("a middling defense buckets neutral", opp_bucket(10.0, (8.0, 12.0)) == "neutral")
+check("bucket boundaries are inclusive on both ends",
+      opp_bucket(8.0, (8.0, 12.0)) == "soft" and opp_bucket(12.0, (8.0, 12.0)) == "tough")
+check("a missing rating is its OWN bucket, not silently neutral",
+      opp_bucket(None, (8.0, 12.0)) == "unknown")
+check("no cuts on record also yields unknown rather than a guess",
+      opp_bucket(10.0, None) == "unknown")
+
+wrows = [("WR", "1-6", "soft", 1.0 + i * 0.01) for i in range(MIN_CELL_N)]
+wfit = fit_weekly_residuals(wrows)
+check("a weekly row lands in all three weekly cells",
+      ("wpos", "WR") in wfit and ("wpos_rank", "WR", "1-6") in wfit
+      and ("wpos_rank_opp", "WR", "1-6", "soft") in wfit)
+check("weekly keys cannot collide with season keys",
+      ("pos", "WR") not in wfit)
+check("a None weekly ratio is skipped",
+      len(fit_weekly_residuals([("WR", "1-6", "soft", None)])) == 0)
+
+wvals, wkey = lookup_weekly_ratios(wfit, "WR", "1-6", "soft", "pos_rank_opp")
+check("a well-sampled weekly cell is used at full conditioning",
+      wkey == ("wpos_rank_opp", "WR", "1-6", "soft"))
+check("asking for less weekly conditioning honours the request",
+      lookup_weekly_ratios(wfit, "WR", "1-6", "soft", "pos")[1] == ("wpos", "WR"))
+
+wthin = fit_weekly_residuals(
+    [("WR", "1-6", "soft", 1.0)] * (MIN_CELL_N - 1)
+    + [("WR", "7-12", "tough", 1.2)] * MIN_CELL_N)
+check("a thin weekly cell falls back to a coarser one",
+      lookup_weekly_ratios(wthin, "WR", "1-6", "soft", "pos_rank_opp")[1] == ("wpos", "WR"))
+check("a weekly position with no history yields no distribution",
+      lookup_weekly_ratios(wfit, "QB", "1-6", "soft", "pos_rank_opp") == (None, None))
+try:
+    lookup_weekly_ratios(wfit, "WR", "1-6", "soft", "pos_rank_age")
+    check("a season conditioning name is rejected by the weekly lookup", False)
+except ValueError:
+    check("a season conditioning name is rejected by the weekly lookup", True)
+
+# A weekly zero is a REAL outcome (inactive), not a dropped row — the whole
+# reason bench depth has option value. Byes are the caller's job to exclude.
+check("an inactive week is a ratio of 0, kept, not dropped",
+      residual_ratio(0.0, 12.0) == 0.0
+      and len(fit_weekly_residuals([("WR", "1-6", "soft", 0.0)])[("wpos", "WR")]) == 1)
 
 failed = [label for label, ok, _ in checks if not ok]
 for label, ok, extra in checks:

@@ -72,9 +72,10 @@ from scipy import stats
 from projection_model import DEFAULT_PARAMS, default_scoring, points as _model_points, \
     project_points, rookie_projection, with_overrides
 from outcome_distribution import (
-    CONDITIONINGS, QUANTILE_METHODS, age_bucket, covers, crps_empirical,
-    expected_coverage, fit_residuals, in_window, interval, lookup_ratios, pit,
-    quantile, rank_tier, residual_ratio,
+    CONDITIONINGS, MIN_CELL_N, QUANTILE_METHODS, age_bucket, covers,
+    crps_empirical, expected_coverage, fit_residuals, fit_weekly_residuals,
+    in_window, interval, lookup_ratios, lookup_weekly_ratios, opp_bucket, pit,
+    quantile, rank_tier, residual_ratio, WEEKLY_CONDITIONINGS,
 )
 from projection_opportunity import league_efficiency, project_points_opportunity
 from projection_v2 import league_rates, stabilize_player
@@ -284,6 +285,102 @@ def load_ages(years) -> dict:
                 ages[(y, pid)] = round(
                     (ref - bd.date()).days / 365.25, 1)
     return ages
+
+
+def load_weeks(years) -> pd.DataFrame:
+    """One row per (season, player, week) — the weekly analogue of
+    load_seasons(), for roadmap 2.2a. Same COMP/VOLUME mapping so the SAME
+    `points()` scorer produces weekly fantasy points; a second scorer would be
+    a second thing to keep in sync with the shipped engine."""
+    import nflreadpy as nfl
+    frames = []
+    for y in years:
+        print(f"  loading {y} weekly…", end=" ", flush=True)
+        df = _pd(nfl.load_player_stats(y, summary_level="week"))
+        pos_c = _col(df, "position", "pos")
+        df = df[df[pos_c].isin(FANTASY_POS)].copy()
+        id_c = _col(df, "player_id", "gsis_id")
+        team_c = _col(df, "team", "recent_team", "off_team")
+        opp_c = _col(df, "opponent_team", "opponent", "def_team")
+
+        keep = pd.DataFrame({
+            "season": y,
+            "player_id": df[id_c],
+            "pos": df[pos_c],
+            "team": df[team_c] if team_c else "",
+            "week": df["week"].astype(int),
+            "opp": df[opp_c] if opp_c else "",
+            "gp": 1,
+        })
+        for src, dst in {**COMP, **VOLUME}.items():
+            keep[dst] = df[src].fillna(0) if src in df.columns else 0
+        fum = 0
+        for c in ("rushing_fumbles_lost", "receiving_fumbles_lost", "sack_fumbles_lost"):
+            if c in df.columns:
+                fum = fum + df[c].fillna(0)
+        keep["fumbles"] = fum
+        frames.append(keep)
+        print(f"{len(keep)} rows")
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def load_team_weeks(years) -> dict:
+    """{(season, team): {week: opp}} from the REGULAR-season schedule.
+
+    This is what makes byes derivable: a team's bye is a week absent from its
+    own entry. Same construction `ingest_nflverse.build_schedule()` uses, so
+    the backtest and the shipped app agree on what a bye is."""
+    import nflreadpy as nfl
+    out: dict = {}
+    sched = _pd(nfl.load_schedules(list(years)))
+    typ = _col(sched, "game_type", "season_type")
+    if typ:
+        sched = sched[sched[typ] == "REG"]
+    for g in sched.itertuples():
+        season, wk = int(g.season), int(g.week)
+        home, away = g.home_team, g.away_team
+        if home != home or away != away:        # NaN bye/placeholder
+            continue
+        out.setdefault((season, home), {})[wk] = away
+        out.setdefault((season, away), {})[wk] = home
+    return out
+
+
+def defense_ratings(weeks: pd.DataFrame, sc: dict) -> tuple[dict, dict]:
+    """({(season, def_team, pos): fp_allowed_per_game}, {(season, pos): (lo, hi)}).
+
+    Fantasy points a defense allowed to a position, per game, plus the tertile
+    cuts within each (season, position). Callers must read season Y-1's entry
+    when predicting year Y — the cuts are stored per season precisely so that
+    no-lookahead is the caller's explicit choice rather than an accident."""
+    if weeks.empty:
+        return {}, {}
+    fp = [_points(
+        {"gp": 1,
+         **{v: float(getattr(r, v, 0) or 0) for v in COMP.values()},
+         **{v: float(getattr(r, v, 0) or 0) for v in VOLUME.values()},
+         "fumbles": float(getattr(r, "fumbles", 0) or 0)}, sc)
+        for r in weeks.itertuples()]
+    w = weeks.assign(fp=fp)
+    w = w[(w["opp"].notna()) & (w["opp"] != "")]
+
+    # Sum per (season, defense, pos, week) first: "points allowed to RBs" is a
+    # team-week quantity, not a per-player one, so averaging player rows would
+    # weight a committee backfield differently from a bellcow.
+    per_week = (w.groupby(["season", "opp", "pos", "week"])["fp"].sum().reset_index())
+    per_game = (per_week.groupby(["season", "opp", "pos"])["fp"].mean().reset_index())
+
+    ratings = {(int(r.season), r.opp, r.pos): float(r.fp) for r in per_game.itertuples()}
+
+    cuts = {}
+    for (season, pos), grp in per_game.groupby(["season", "pos"]):
+        vals = sorted(grp["fp"])
+        if len(vals) < 6:            # too few teams to cut into tertiles
+            continue
+        lo = vals[len(vals) // 3]
+        hi = vals[(2 * len(vals)) // 3]
+        cuts[(int(season), pos)] = (lo, hi)
+    return ratings, cuts
 
 
 def load_roster_ids(years) -> set:
@@ -767,6 +864,8 @@ def main():
                     help="skip the team-context sweep (roadmap 1.3)")
     ap.add_argument("--no-rookie-capital", action="store_true",
                     help="skip the rookie draft-capital sweep (roadmap 1.4)")
+    ap.add_argument("--no-weekly", action="store_true",
+                    help="skip the roadmap 2.2a weekly-distribution fit")
     ap.add_argument("--no-distributions", action="store_true",
                     help="skip the outcome-distribution calibration (roadmap 2.1)")
     args = ap.parse_args()
@@ -791,6 +890,20 @@ def main():
     print("Loading roster presence (roadmap 2.1 follow-up (a))…")
     roster_ids = load_roster_ids(test_years)
     print(f"  {len(roster_ids)} (season, player) roster appearances")
+
+    use_weekly = not args.no_weekly
+    weeks_df = pd.DataFrame()
+    team_weeks: dict = {}
+    if use_weekly:
+        # Y-1 is needed as well as Y: the opponent-strength rating for a test
+        # year is built from the PRIOR season, so the first test year needs a
+        # season of weekly history behind it.
+        wneed = sorted({y for t in test_years for y in (t - 1, t)})
+        print(f"Loading weekly stats {wneed[0]}–{wneed[-1]} (roadmap 2.2a)…")
+        weeks_df = load_weeks(wneed)
+        team_weeks = load_team_weeks(wneed)
+        print(f"  {len(weeks_df)} player-weeks, "
+              f"{len(team_weeks)} team-seasons of schedule (byes derived as missing weeks)")
 
     use_team_context = not args.no_team_context
     qb_by_team = coach_by_team = pace_by_team = quality_by_team = {}
@@ -827,6 +940,13 @@ def main():
 
     sc = default_scoring(PPR)
 
+    # Opponent-strength ratings, keyed BY SEASON so the no-lookahead read
+    # (year - 1) is explicit at every call site rather than baked in here.
+    def_ratings, opp_cuts = defense_ratings(weeks_df, sc) if use_weekly else ({}, {})
+    if use_weekly:
+        print(f"  {len(def_ratings)} (season, defense, pos) ratings, "
+              f"{len(opp_cuts)} (season, pos) tertile cuts")
+
     # The parameters the SHIPPED model actually uses.
     GRID = {
         "primaryWeight": [0.5, 0.6, 0.7, 0.8, 1.0],
@@ -845,6 +965,7 @@ def main():
     per_year = []
     dist_rows = []         # roadmap 2.1: year, pos, proj, actual, rank, adp_rank,
                             # age, bust, rostered (follow-up (a))
+    week_rows = []         # roadmap 2.2a: year, pos, week, proj, actual, rank, opp_bucket
     dis_rows = []          # model-vs-market disagreement diagnostic
     coverage = []          # (year, ranked, total) — how much of the board ADP covers
     for year in test_years:
@@ -1392,6 +1513,43 @@ def main():
                 })
             print(f"  {year}: {len(players)} returning + {len(vanished)} market-ranked "
                   f"no-shows for the 2.1 distribution rows")
+
+            # ── roadmap 2.2a: the WEEKLY rows ─────────────────────────────
+            if use_weekly and not weeks_df.empty:
+                wk_y = weeks_df[weeks_df["season"] == year]
+                actual_wk = {}
+                for r in wk_y.itertuples():
+                    actual_wk[(r.player_id, int(r.week))] = _points(
+                        {"gp": 1,
+                         **{v: float(getattr(r, v, 0) or 0) for v in COMP.values()},
+                         **{v: float(getattr(r, v, 0) or 0) for v in VOLUME.values()},
+                         "fumbles": float(getattr(r, "fumbles", 0) or 0)}, sc)
+                horizon = max((int(w) for sched in
+                               (team_weeks.get((year, t)) or {} for t in
+                                {p["team"] for p in dist_pop if p.get("team")})
+                               for w in sched), default=0)
+
+                for i, p in enumerate(dist_pop):
+                    team = p.get("team")
+                    sched = team_weeks.get((year, team)) if team else None
+                    if not sched or not horizon:
+                        continue          # no schedule on record: no weekly rows
+                    per_week_proj = dist_final[i] / DEFAULT_PARAMS["projectedGames"]
+                    for wk in range(1, horizon + 1):
+                        opp = sched.get(wk)
+                        if opp is None:
+                            continue      # BYE — deterministic, excluded by design
+                        # An absent stat line in a week the team PLAYED is an
+                        # inactive/injured week: a real zero, and exactly the
+                        # outcome bench depth exists to cover.
+                        act = actual_wk.get((p["player_id"], wk), 0.0)
+                        rating = def_ratings.get((year - 1, opp, p["pos"]))
+                        week_rows.append({
+                            "year": year, "pos": p["pos"], "week": wk,
+                            "proj": per_week_proj, "actual": act,
+                            "rank": order[i],
+                            "opp_bucket": opp_bucket(rating, opp_cuts.get((year - 1, p["pos"]))),
+                        })
 
     df = pd.DataFrame(per_year)
     for c in ("blend_w", "k", "inj_k", "opp_k", "ctx_k"):
@@ -2414,6 +2572,146 @@ def main():
                     print(f"        -> shallowest usable tier (ADP {first_lbl}) width "
                           f"{first_w:.3f} vs deepest usable tier (ADP {last_lbl}) width "
                           f"{last_w:.3f}  ({last_w / first_w:.2f}x)")
+
+        # ── roadmap 2.2a: WEEKLY outcome distributions ────────────────────
+        # Pre-registered in docs/ROADMAP.md before this existed. Fit weekly
+        # DIRECTLY rather than allocating a season draw, because bench option
+        # value is paid out of week-to-week volatility and allocating would
+        # make that volatility an artifact of the share model.
+        if week_rows:
+            WEEK_BAND = (0.75, 0.85)
+            SEASON_COHERENCE_TOL = 0.15    # implied season width vs 2.1's
+            dfw = pd.DataFrame(week_rows)
+            dfw["tier"] = [rank_tier(r, p) for r, p in zip(dfw["rank"], dfw["pos"])]
+            wyears = sorted(dfw["year"].unique())
+
+            print("\n=== ROADMAP 2.2a — WEEKLY OUTCOME DISTRIBUTIONS ===")
+            print(f"{len(dfw)} player-weeks. BYES ARE EXCLUDED (deterministic, known in")
+            print("August); inactive weeks stay IN as real zeros (stochastic, and exactly")
+            print("what bench depth exists to cover). Opponent strength is the prior")
+            print("season's fantasy points allowed to the position, in tertiles.")
+            print(f"Gate: cov80 in {WEEK_BAND} for RB/WR/TE, each conditioning variable")
+            print(f"earning >{CRPS_REL_EPS:.0%} relative CRPS, and the implied season width")
+            print(f"within +/-{SEASON_COHERENCE_TOL:.0%} of 2.1's.")
+
+            zero_share = float((dfw["actual"] == 0).mean())
+            print(f"\n  Weeks scoring exactly 0 (inactive or shut out): {zero_share:.1%}")
+
+            wverdict = {}
+            for posn in sorted(dfw["pos"].unique()):
+                if posn not in ("RB", "WR", "TE", "QB"):
+                    continue
+                print(f"\n    {posn}")
+                prev_crps, accepted = None, None
+                for cond in WEEKLY_CONDITIONINGS:
+                    recs = []
+                    for yi, year in enumerate(wyears):
+                        if yi == 0:
+                            continue
+                        hist = dfw[(dfw["year"] < year) & (dfw["pos"] == posn)]
+                        cur = dfw[(dfw["year"] == year) & (dfw["pos"] == posn)]
+                        if hist.empty or cur.empty:
+                            continue
+                        fitted = fit_weekly_residuals(
+                            (r.pos, r.tier, r.opp_bucket, residual_ratio(r.actual, r.proj))
+                            for r in hist.itertuples())
+                        cache = {}
+                        for r in cur.itertuples():
+                            ck = (r.tier, r.opp_bucket)
+                            if ck not in cache:
+                                vals, _ = lookup_weekly_ratios(
+                                    fitted, r.pos, r.tier, r.opp_bucket, cond)
+                                cache[ck] = (vals, _thin(vals)) if vals else None
+                            cached = cache[ck]
+                            if not cached or not r.proj or r.proj <= 0:
+                                continue
+                            ratios, thin = cached
+                            z = r.actual / r.proj
+                            w_lo, w_hi = interval(ratios, 0.80)
+                            recs.append({
+                                "crps": r.proj * crps_empirical(thin, z),
+                                "cov80": covers(ratios, 0.80, z),
+                                "cov50": covers(ratios, 0.50, z),
+                                "pit": pit(ratios, z),
+                                "cell_n": len(ratios),
+                                "width": w_hi - w_lo,
+                            })
+                    if not recs:
+                        continue
+                    e = pd.DataFrame(recs)
+                    crps = float(e["crps"].mean())
+                    if prev_crps is None:
+                        earns, delta = True, 0.0
+                    else:
+                        delta = (prev_crps - crps) / prev_crps
+                        earns = delta > CRPS_REL_EPS
+                    if earns:
+                        accepted, prev_crps = cond, crps
+                        wverdict[posn] = {
+                            "cond": cond, "crps": crps,
+                            "cov80": float(e["cov80"].mean()),
+                            "cov50": float(e["cov50"].mean()),
+                            "pit": float(e["pit"].mean()),
+                            "width": float(e["width"].mean()),
+                            "cell_n": float(e["cell_n"].median()),
+                            "n": len(e),
+                        }
+                    print(f"      {cond:<14} n={len(e):<6} CRPS {crps:6.2f} "
+                          f"({'baseline' if delta == 0.0 else f'{delta:+.1%} vs prev'}"
+                          f"{'' if delta == 0.0 else (', earns it' if earns else ', DOES NOT earn it')})"
+                          f"   cov80 {float(e['cov80'].mean()):.3f}")
+                if accepted:
+                    v = wverdict[posn]
+                    print(f"      -> model: {accepted}   median cell n={v['cell_n']:.0f}   "
+                          f"cov80 {v['cov80']:.3f}   cov50 {v['cov50']:.3f}   "
+                          f"mean PIT {v['pit']:.3f}")
+
+            print(f"\n  --- 2.2a GATE 1+2: WEEKLY CALIBRATION (cov80 in {WEEK_BAND}) ---")
+            wpass = {}
+            for posn in sorted(wverdict):
+                v = wverdict[posn]
+                ok = WEEK_BAND[0] <= v["cov80"] <= WEEK_BAND[1]
+                wpass[posn] = ok
+                gated = posn in ("RB", "WR", "TE")
+                print(f"      {posn}  model={v['cond']:<14} cov80 {v['cov80']:.3f}  "
+                      f"{'PASS' if ok else 'FAIL'}"
+                      f"{'' if gated else '   (QB not gated — excluded from distributions)'}")
+            shipped = [p for p in ("RB", "WR", "TE") if wpass.get(p)]
+            print(f"      -> weekly-calibrated for: {', '.join(shipped) or '(none)'}")
+
+            # ── GATE 3: season coherence ──────────────────────────────────
+            # The failure that passes every weekly check and still breaks the
+            # simulator: 17 INDEPENDENT weekly draws concentrate toward the
+            # mean by CLT, so a weekly-calibrated model can imply a season
+            # distribution far narrower than the one 2.1 validated.
+            print("\n  --- 2.2a GATE 3: SEASON COHERENCE (independent weekly draws vs 2.1) ---")
+            print("  Implied season 80% width = weekly width x sqrt(17) if the weeks were")
+            print("  independent, compared against 2.1's own fitted season width.")
+            import math
+            for posn in sorted(wverdict):
+                if posn not in ("RB", "WR", "TE"):
+                    continue
+                sv = dist_verdict.get(("survivors", posn))
+                if not sv:
+                    continue
+                wk = wverdict[posn]
+                games = DEFAULT_PARAMS["projectedGames"]
+                # Weekly width is in RATIO units of a per-week projection;
+                # scaling by sqrt(games)/games puts it in season-ratio units.
+                implied = wk["width"] * math.sqrt(games) / games
+                # 2.1's season width in the same ratio units.
+                season_sub = dfr[(dfr["pos"] == posn) & (~dfr["bust"])]
+                sratios = sorted(r for r in
+                                 (residual_ratio(r_.actual, r_.proj)
+                                  for r_ in season_sub.itertuples()) if r is not None)
+                if len(sratios) < MIN_CELL_N:
+                    continue
+                slo, shi = interval(sratios, 0.80)
+                actual_season = shi - slo
+                ratio = implied / actual_season if actual_season else float("nan")
+                ok = abs(ratio - 1.0) <= SEASON_COHERENCE_TOL
+                print(f"      {posn}  implied {implied:.3f}  vs 2.1 season {actual_season:.3f}  "
+                      f"({ratio:.2f}x)  {'PASS' if ok else 'FAIL — needs a player-season form factor'}")
 
         print("\n  Note: nothing is wired into the frontend on this step regardless of the")
         print("  above — docs/ROADMAP.md 2.1 says the calibration check must pass BEFORE")
