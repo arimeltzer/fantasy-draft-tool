@@ -12,9 +12,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from team_context import (
-    apply_flag_discount, apply_pace, apply_team_change_quality, context_flags,
-    league_quality_stats, team_coach_by_season, team_pace_by_season,
-    team_qb_by_season, team_quality_by_season,
+    apply_flag_discount, apply_pace, apply_team_change_nuance, apply_team_change_quality,
+    commitment_by_player_season, context_flags, league_commitment_stats, league_quality_stats,
+    team_coach_by_season, team_dropbacks_by_season, team_pace_by_season, team_pass_pro_by_season,
+    team_qb_by_season, team_quality_by_season, team_run_block_by_season,
 )
 
 FAILS = []
@@ -77,6 +78,47 @@ check("league mean/stdev computed across the season's teams", mean is not None a
 check("a single-team season has no spread to z-score against",
       league_quality_stats({(2023, "ONLY"): 0.05}, 2023) == (None, None))
 
+print("\nteam_run_block_by_season / team_dropbacks_by_season / team_pass_pro_by_season")
+run_block_rows = [
+    (2023, "BAL", 250.0, 100),   # 2.5 ybc/carry
+    (2023, "TB", 150.0, 100),    # 1.5 ybc/carry -- worse blocking
+]
+run_block = team_run_block_by_season(run_block_rows)
+check("yards before contact per carry, credited to blocking not the runner",
+      abs(run_block[(2023, "BAL")] - 2.5) < 1e-9)
+check("a worse-blocking team reads lower", run_block[(2023, "TB")] < run_block[(2023, "BAL")])
+check("zero carries doesn't divide-by-zero",
+      (2023, "BYE") not in team_run_block_by_season([(2023, "BYE", 10.0, 0)]))
+
+dropbacks = team_dropbacks_by_season([(2023, "BAL", 500, 30)])
+check("dropbacks = attempts + sacks_suffered", dropbacks[(2023, "BAL")] == 530)
+
+pass_pro = team_pass_pro_by_season(
+    [(2023, "BAL", 100.0), (2023, "BAL", 20.0)],  # two QBs on the same team, summed
+    {(2023, "BAL"): 530, (2023, "TB"): 200})
+check("times_pressured summed across a team's passers, over dropbacks",
+      abs(pass_pro[(2023, "BAL")] - 120.0 / 530) < 1e-9)
+check("a team missing from dropbacks_by_team has no reading (can't divide by nothing)",
+      (2023, "TB") not in team_pass_pro_by_season([(2023, "TB", 50.0)], {(2023, "BAL"): 530}))
+
+print("\ncommitment_by_player_season / league_commitment_stats")
+contract_rows = [
+    (2022, "00-001", "WR", 0.086),   # Kirk-sized JAX deal
+    (2022, "00-002", "WR", 0.010),   # a minimum-ish deal, same season/pos
+    (2022, "00-003", "RB", 0.045),   # different position -- own group
+    (2022, "00-001", "WR", 0.040),   # a second, SMALLER row same player/season -- larger wins
+]
+commitment = commitment_by_player_season(contract_rows)
+check("the LARGEST apy_cap_pct wins when a player has two rows the same season",
+      abs(commitment[(2022, "00-001")][0] - 0.086) < 1e-9)
+check("position is carried alongside the value for later position-scoped z-scoring",
+      commitment[(2022, "00-001")][1] == "WR")
+mean_wr, sd_wr = league_commitment_stats(commitment, 2022, "WR")
+check("commitment stats are computed within (season, position), not across positions",
+      mean_wr is not None and abs(mean_wr - (0.086 + 0.010) / 2) < 1e-9)
+check("a position with fewer than 2 signings that season has no spread",
+      league_commitment_stats(commitment, 2022, "RB") == (None, None))
+
 print("\ncontext_flags")
 # CLE: same team, but a NEW starter actually took over in Y (the case
 # team_changed structurally can't see). HOU: same team, SAME starter both
@@ -136,9 +178,49 @@ f_quality_bad = context_flags("WR", "CLE", "NYJ", 2023, qb_by_team, coach_by_tea
 check("moving to a well-below-average offense (NYJ) -> negative quality_z",
       f_quality_bad["quality_z"] < 0)
 
-check("QUALITY_Z_CLAMP actually bounds an extreme value",
+check("Z_CLAMP actually bounds an extreme value",
       context_flags("WR", "HOU", "DAL", 2023, qb_by_team, coach_by_team, pace_by_team,
                      {**quality_by_team, (2022, "DAL"): 50.0})["quality_z"] <= 2.0)
+
+run_block_by_team = {(2022, "CLE"): 2.0, (2022, "HOU"): 3.0, (2022, "DAL"): 3.5,
+                     (2022, "NYJ"): 1.5, (2022, "MIA"): 2.2}
+pass_pro_by_team = {(2022, "CLE"): 0.20, (2022, "HOU"): 0.30, (2022, "DAL"): 0.10,
+                    (2022, "NYJ"): 0.35, (2022, "MIA"): 0.18}
+
+f_oline_none = context_flags("RB", "HOU", "CLE", 2023, qb_by_team, coach_by_team, pace_by_team)
+check("oline_z is None when no oline tables are passed at all",
+      f_oline_none["oline_z"] is None)
+
+f_rb_good_line = context_flags("RB", "HOU", "DAL", 2023, qb_by_team, coach_by_team, pace_by_team,
+                               None, run_block_by_team, pass_pro_by_team)
+check("RB moving to a good run-blocking team -> positive oline_z, from run_block not pass_pro",
+      f_rb_good_line["oline_z"] is not None and f_rb_good_line["oline_z"] > 0)
+
+f_wr_good_line = context_flags("WR", "HOU", "DAL", 2023, qb_by_team, coach_by_team, pace_by_team,
+                               None, run_block_by_team, pass_pro_by_team)
+check("WR/QB/TE read pass_pro instead — DAL allows the LOWEST pressure rate -> positive oline_z",
+      f_wr_good_line["oline_z"] is not None and f_wr_good_line["oline_z"] > 0)
+
+f_wr_bad_line = context_flags("WR", "CLE", "NYJ", 2023, qb_by_team, coach_by_team, pace_by_team,
+                              None, run_block_by_team, pass_pro_by_team)
+check("NYJ allows the HIGHEST pressure rate -> negative oline_z for a pass-catcher",
+      f_wr_bad_line["oline_z"] is not None and f_wr_bad_line["oline_z"] < 0)
+
+commitment_by_player = {(2023, "wr_big"): (0.09, "WR"), (2023, "wr_small"): (0.01, "WR"),
+                        (2023, "wr_mid"): (0.03, "WR")}
+f_commit_none = context_flags("WR", "HOU", "CLE", 2023, qb_by_team, coach_by_team, pace_by_team)
+check("commitment_z is None when no commitment table is passed at all",
+      f_commit_none["commitment_z"] is None)
+
+f_big_deal = context_flags("WR", "HOU", "CLE", 2023, qb_by_team, coach_by_team, pace_by_team,
+                           None, None, None, commitment_by_player, player_id="wr_big")
+check("a big new contract -> positive commitment_z",
+      f_big_deal["commitment_z"] is not None and f_big_deal["commitment_z"] > 0)
+
+f_no_new_deal = context_flags("WR", "HOU", "CLE", 2023, qb_by_team, coach_by_team, pace_by_team,
+                              None, None, None, commitment_by_player, player_id="someone_else")
+check("no contract on record that season (e.g. a trade, not free agency) -> commitment_z None",
+      f_no_new_deal["commitment_z"] is None)
 
 print("\napply_flag_discount / apply_pace")
 players = [{"player_id": "a"}, {"player_id": "b"}, {"player_id": "c"}]
@@ -187,11 +269,38 @@ check("a mover with no quality_z on record falls back to the flat discount, "
 
 extreme_out = apply_team_change_quality(
     [100.0], [{"player_id": "x"}], {"x": {"team_changed": True, "quality_z": 2.0}}, k=10.0)
-check("QUALITY_MULT_FLOOR/CEIL bound an absurd k rather than inverting the projection",
+check("NUANCE_MULT_FLOOR/CEIL bound an absurd k rather than inverting the projection",
       0.0 <= extreme_out[0] <= 200.0)
 
 check("k=0 reproduces the input exactly (the sweep's own baseline arm)",
       apply_team_change_quality(tcq_projs, tcq_players, tcq_flags, k=0.0) == tcq_projs)
+
+print("\napply_team_change_nuance (generic — oline_z and commitment_z, not just quality_z)")
+check("apply_team_change_quality IS apply_team_change_nuance with signal_key='quality_z'",
+      apply_team_change_quality(tcq_projs, tcq_players, tcq_flags, k=0.1)
+      == apply_team_change_nuance(tcq_projs, tcq_players, tcq_flags, "quality_z", k=0.1))
+
+nuance_players = [{"player_id": "good_line"}, {"player_id": "bad_line"}, {"player_id": "big_deal"}]
+nuance_flags = {
+    "good_line": {"team_changed": True, "oline_z": 1.5},
+    "bad_line": {"team_changed": True, "oline_z": -1.5},
+    "big_deal": {"team_changed": True, "commitment_z": 2.0},
+}
+nuance_projs = [100.0] * 3
+oline_out = apply_team_change_nuance(nuance_projs, nuance_players, nuance_flags, "oline_z", k=0.2)
+by_nuance = dict(zip((p["player_id"] for p in nuance_players), oline_out))
+check("a good-oline mover is discounted LESS than the flat (1-k) rate",
+      by_nuance["good_line"] > 80.0)
+check("a bad-oline mover is discounted MORE than the flat rate",
+      by_nuance["bad_line"] < 80.0)
+
+commit_out = apply_team_change_nuance(nuance_projs, nuance_players, nuance_flags, "commitment_z", k=0.2)
+by_commit = dict(zip((p["player_id"] for p in nuance_players), commit_out))
+check("a big-contract mover is discounted less using commitment_z as the signal",
+      by_commit["big_deal"] > 80.0)
+check("a mover with no commitment_z at all (only has oline_z) falls back to the "
+      "flat discount when signal_key='commitment_z'",
+      abs(by_commit["good_line"] - 80.0) < 1e-9)
 
 print(f"\nteam_context_selftest: {'FAILED: ' + ', '.join(FAILS) if FAILS else 'all checks passed'}")
 if FAILS:

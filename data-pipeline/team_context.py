@@ -83,7 +83,50 @@ guessing undocumented mappings applies to features, not just column names:
     team_now's prior season, expressed as a z-score against that season's
     league distribution (not a plain ratio — EPA straddles zero, so
     value/average is ill-defined near a near-zero league mean the way it
-    isn't for pace, which is always positive).
+    isn't for pace, which is always positive). Killed — underperformed the
+    flat discount at every position.
+
+  - offensive line (roadmap 1.3 second follow-up — testing whether a MORE
+    targeted proxy than whole-team EPA does better): two flavors, from
+    `load_pfr_advstats` (Pro Football Reference's advanced stats, per
+    player-game). RUN blocking — rushing yards before contact per carry
+    (stat_type='rush'), applied to RB — is credited to the blocker, not the
+    runner, by construction; receiving/rushing EPA are not, which is exactly
+    the gap this is meant to close. PASS protection — pressure rate ALLOWED
+    (times_pressured / dropbacks, stat_type='pass', dropbacks from
+    load_team_stats' attempts+sacks_suffered, NOT team_pace_by_season's
+    plays which also counts rushes) — applied to QB/WR/TE, since a
+    well-protected quarterback benefits the whole passing game, not just
+    himself. Spot-checked 2023 run-blocking: BAL/ARI/MIA lead the league —
+    real, but confounded by QB-mobility/RPO scheme (a zone-read look
+    generates yards before contact from broken angles, not pure blocking),
+    a genuine limitation disclosed rather than hidden. PFR's advanced stats
+    only go back to 2018 (nflreadpy raises outside 2018-2025), so this
+    signal is unavailable for earlier test years — a real coverage gap,
+    not a bug; context_flags returns None there, same "missing -> no
+    adjustment" rule as everywhere else in this file. Same zero-lookahead
+    discipline: read ONLY from team_now's prior season, z-scored against
+    that season's league distribution (pass protection's raw rate is
+    negated before z-scoring so, like every other signal here, a positive
+    z always means "better for the player").
+
+  - commitment (roadmap 1.3 second follow-up — does the SIZE of the
+    contract a mover signed predict how big a discount he actually needs?):
+    `apy_cap_pct` from `load_contracts` — average-per-year value as a share
+    of that year's salary cap, which is what makes it comparable ACROSS
+    seasons despite salary inflation (a flat dollar figure would not be).
+    Matched by `gsis_id` (same ID scheme as `load_player_stats`', spot-
+    checked — 8% null, an acceptable match-rate gap, not a silent failure)
+    and `year_signed == season_now`, i.e. the specific contract a player
+    signed to make THIS move — not his cap hit in some other year. Spot-
+    checked against real, well-known deals: Christian Kirk's 2022 JAX
+    contract ($18M APY, 8.6% of cap) and Saquon Barkley's 2024 PHI deal
+    ($12.6M APY, 4.9% of cap) both match public reporting. Z-scored within
+    (season, position) — dollar scale differs enormously by position, so a
+    QB's contract can't be compared to a WR's on the same axis. A player
+    who did not sign a new contract that season (most trades — the
+    acquiring team inherits the existing deal rather than negotiating a
+    new one) has no reading here, same "missing -> no adjustment" rule.
 """
 from __future__ import annotations
 
@@ -155,11 +198,76 @@ def team_quality_by_season(rows) -> dict:
     return out
 
 
-def league_quality_stats(quality_by_team: dict, season: int):
-    """(mean, stdev) of offensive EPA/play across the league that season,
-    for z-scoring one team against its actual peers — None, None when there
-    is nothing to compute a spread from."""
-    vals = [v for (s, _t), v in quality_by_team.items() if s == season]
+def team_run_block_by_season(rows) -> dict:
+    """rows: iterable of (season, team, yards_before_contact, carries), from
+    PFR advanced rushing stats aggregated across a team's runners. Returns
+    {(season, team): yards before contact per carry} — credited to the
+    blocking, not the runner, by construction."""
+    acc: dict = {}
+    for season, team, ybc, carries in rows:
+        if not team or not carries:
+            continue
+        a = acc.setdefault((season, team), [0.0, 0.0])
+        a[0] += ybc or 0.0
+        a[1] += carries
+    return {k: v[0] / v[1] for k, v in acc.items() if v[1]}
+
+
+def team_dropbacks_by_season(rows) -> dict:
+    """rows: iterable of (season, team, attempts, sacks_suffered). Returns
+    {(season, team): dropbacks} — pass attempts + sacks, deliberately NOT
+    team_pace_by_season's `plays` (which also counts rushes)."""
+    out = {}
+    for season, team, attempts, sacks in rows:
+        if not team:
+            continue
+        out[(season, team)] = (attempts or 0) + (sacks or 0)
+    return out
+
+
+def team_pass_pro_by_season(pressure_rows, dropbacks_by_team: dict) -> dict:
+    """pressure_rows: iterable of (season, team, times_pressured), from PFR
+    advanced passing stats aggregated across a team's passer(s).
+    dropbacks_by_team: from team_dropbacks_by_season(). Returns
+    {(season, team): pressure rate ALLOWED} — LOWER is better; callers that
+    z-score this should negate it first so a positive z means "better" like
+    every other signal here."""
+    acc: dict = {}
+    for season, team, pressured in pressure_rows:
+        if not team:
+            continue
+        acc[(season, team)] = acc.get((season, team), 0.0) + (pressured or 0.0)
+    out = {}
+    for key, total in acc.items():
+        db = dropbacks_by_team.get(key)
+        if db:
+            out[key] = total / db
+    return out
+
+
+def commitment_by_player_season(rows) -> dict:
+    """rows: iterable of (season_signed, player_id, pos, apy_cap_pct), from
+    load_contracts (year_signed, gsis_id, position, apy_cap_pct) — one row
+    per contract a player signed. When a player signed more than one
+    contract in the same season (rare; a restructure or a mid-year
+    re-signing on record twice), the LARGEST apy_cap_pct wins, since a
+    smaller duplicate is more likely a data artifact than the real deal.
+    Returns {(season, player_id): (apy_cap_pct, pos)}."""
+    out: dict = {}
+    for season, player_id, pos, apy_cap_pct in rows:
+        if not player_id or apy_cap_pct is None:
+            continue
+        key = (season, player_id)
+        cur = out.get(key)
+        if cur is None or apy_cap_pct > cur[0]:
+            out[key] = (apy_cap_pct, pos)
+    return out
+
+
+def league_zscore_stats(values_by_key: dict, season: int):
+    """(mean, stdev) of a {(season, key): value} table's values for one
+    season — None, None when there is nothing to compute a spread from."""
+    vals = [v for (s, _k), v in values_by_key.items() if s == season]
     if len(vals) < 2:
         return None, None
     mean = sum(vals) / len(vals)
@@ -167,13 +275,38 @@ def league_quality_stats(quality_by_team: dict, season: int):
     return mean, var ** 0.5
 
 
-QUALITY_Z_CLAMP = 2.0  # a team more than 2 sd from the mean is rare enough
-                       # that the raw z shouldn't extrapolate further un-clamped
+# Backward-compatible alias — league_quality_stats(x, season) reads the same
+# as league_zscore_stats(x, season).
+def league_quality_stats(quality_by_team: dict, season: int):
+    return league_zscore_stats(quality_by_team, season)
+
+
+def league_commitment_stats(commitment_by_player: dict, season: int, pos: str):
+    """(mean, stdev) of apy_cap_pct among players who signed a contract in
+    `season` at `pos` — commitment is not comparable across positions on
+    the same dollar axis, so this is always position-scoped, unlike
+    league_zscore_stats above. None, None when there's nothing to compute
+    a spread from."""
+    vals = [apy for (s, _pid), (apy, p) in commitment_by_player.items()
+            if s == season and p == pos]
+    if len(vals) < 2:
+        return None, None
+    mean = sum(vals) / len(vals)
+    var = sum((v - mean) ** 2 for v in vals) / (len(vals) - 1)
+    return mean, var ** 0.5
+
+
+Z_CLAMP = 2.0  # a team/player more than 2 sd from the mean is rare enough
+              # that the raw z shouldn't extrapolate further un-clamped
 
 
 def context_flags(pos: str, team_prev, team_now, season_now: int,
                    qb_by_team: dict, coach_by_team: dict, pace_by_team: dict,
-                   quality_by_team: dict | None = None) -> dict:
+                   quality_by_team: dict | None = None,
+                   run_block_by_team: dict | None = None,
+                   pass_pro_by_team: dict | None = None,
+                   commitment_by_player: dict | None = None,
+                   player_id=None) -> dict:
     """One player-season's raw signals. Each is None when not computable (a
     true rookie's team_prev is unknown, a team/QB pair below
     MIN_QB_ATTEMPTS, etc.) — the caller treats None as "no adjustment",
@@ -205,14 +338,41 @@ def context_flags(pos: str, team_prev, team_now, season_now: int,
     quality_z = None
     if team_now and quality_by_team is not None:
         q = quality_by_team.get((season_now - 1, team_now))
-        mean, sd = league_quality_stats(quality_by_team, season_now - 1)
+        mean, sd = league_zscore_stats(quality_by_team, season_now - 1)
         if q is not None and mean is not None and sd:
             z = (q - mean) / sd
-            quality_z = max(-QUALITY_Z_CLAMP, min(QUALITY_Z_CLAMP, z))
+            quality_z = max(-Z_CLAMP, min(Z_CLAMP, z))
+
+    # O-line: run blocking for RB, pass protection for QB/WR/TE — different
+    # underlying data, same "oline_z" name (never both computed for the
+    # same player, so no collision).
+    oline_z = None
+    if team_now and pos == "RB" and run_block_by_team is not None:
+        v = run_block_by_team.get((season_now - 1, team_now))
+        mean, sd = league_zscore_stats(run_block_by_team, season_now - 1)
+        if v is not None and mean is not None and sd:
+            z = (v - mean) / sd
+            oline_z = max(-Z_CLAMP, min(Z_CLAMP, z))
+    elif team_now and pos in ("QB", "WR", "TE") and pass_pro_by_team is not None:
+        v = pass_pro_by_team.get((season_now - 1, team_now))
+        mean, sd = league_zscore_stats(pass_pro_by_team, season_now - 1)
+        if v is not None and mean is not None and sd:
+            z = (mean - v) / sd  # flipped: LOWER pressure rate = better = positive z
+            oline_z = max(-Z_CLAMP, min(Z_CLAMP, z))
+
+    commitment_z = None
+    if commitment_by_player is not None and player_id is not None:
+        rec = commitment_by_player.get((season_now, player_id))
+        if rec is not None:
+            apy, contract_pos = rec
+            mean, sd = league_commitment_stats(commitment_by_player, season_now, contract_pos)
+            if mean is not None and sd:
+                z = (apy - mean) / sd
+                commitment_z = max(-Z_CLAMP, min(Z_CLAMP, z))
 
     return {"team_changed": team_changed, "qb_changed": qb_changed,
             "coach_changed": coach_changed, "pace_ratio": pace_ratio,
-            "quality_z": quality_z}
+            "quality_z": quality_z, "oline_z": oline_z, "commitment_z": commitment_z}
 
 
 def apply_flag_discount(projs, players, flags_by_id: dict, key: str, k: float):
@@ -234,28 +394,33 @@ def apply_pace(projs, players, flags_by_id: dict, k: float):
     return out
 
 
-# Bounds on the quality-nuanced multiplier itself, separate from the z clamp
-# above — a defensive floor/ceiling so a large k can't invert a projection to
+# Bounds on ANY z-scored nuance multiplier, separate from the z clamp above
+# — a defensive floor/ceiling so a large k can't invert a projection to
 # near-zero or inflate it past what any k this small should plausibly do.
-QUALITY_MULT_FLOOR = 0.4
-QUALITY_MULT_CEIL = 1.3
+# Shared across every nuance variant (quality/oline/commitment) so they're
+# judged on the same terms.
+NUANCE_MULT_FLOOR = 0.2
+NUANCE_MULT_CEIL = 1.5
 
 
-def apply_team_change_quality(projs, players, flags_by_id: dict, k: float):
-    """Nuances the flat team_changed discount with WHERE a player landed,
-    not just THAT he moved: multiplier = 1 - k*(1 - quality_z). At
-    quality_z=0 (a league-average destination) this is IDENTICAL to
-    apply_flag_discount's flat (1-k) — a strict generalization, not a
-    different feature. A below-average destination (negative z) pushes the
-    discount deeper than flat; an above-average one shrinks it, and a
-    strongly above-average one can flip it into a bonus (multiplier > 1).
+def apply_team_change_nuance(projs, players, flags_by_id: dict, signal_key: str, k: float):
+    """Nuances the flat team_changed discount with a z-scored signal —
+    quality_z (offensive EPA/play), oline_z (run block/pass pro), or
+    commitment_z (contract size) — instead of a flat fraction:
+    multiplier = 1 - k*(1 - z). At z=0 (a league-average reading) this is
+    IDENTICAL to apply_flag_discount's flat (1-k) — a strict
+    generalization, not a different feature. A below-average reading
+    (negative z) pushes the discount deeper than flat; an above-average one
+    shrinks it, and a strongly above-average one can flip it into a bonus
+    (multiplier > 1).
 
     Only applies to a player who actually changed teams (team_changed is
     True) — untouched otherwise, same as apply_flag_discount. A mover with
-    no quality_z available (destination quality couldn't be computed) falls
-    back to quality_z=0, i.e. the flat discount — the move itself is still
-    real signal even without a quality read on it, so this must not un-flag
-    a player who apply_flag_discount would have discounted.
+    no reading for `signal_key` (e.g. no PFR coverage before 2018, or no
+    contract signed that season) falls back to z=0, i.e. the flat discount
+    — the move itself is still real signal even without this particular
+    read on it, so this must not un-flag a player who apply_flag_discount
+    would have discounted.
     """
     out = []
     for p, proj in zip(players, projs):
@@ -263,10 +428,17 @@ def apply_team_change_quality(projs, players, flags_by_id: dict, k: float):
         if not flags.get("team_changed"):
             out.append(proj)
             continue
-        z = flags.get("quality_z")
+        z = flags.get(signal_key)
         if z is None:
             z = 0.0
         mult = 1 - k * (1 - z)
-        mult = max(QUALITY_MULT_FLOOR, min(QUALITY_MULT_CEIL, mult))
+        mult = max(NUANCE_MULT_FLOOR, min(NUANCE_MULT_CEIL, mult))
         out.append(proj * mult)
     return out
+
+
+# Back-compat: the roadmap 1.3 follow-up shipped this under its own name
+# before oline/commitment existed; kept as a thin wrapper so nothing that
+# already calls it by name breaks.
+def apply_team_change_quality(projs, players, flags_by_id: dict, k: float):
+    return apply_team_change_nuance(projs, players, flags_by_id, "quality_z", k)

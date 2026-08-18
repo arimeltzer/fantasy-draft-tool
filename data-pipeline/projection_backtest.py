@@ -73,7 +73,7 @@ from projection_model import DEFAULT_PARAMS, default_scoring, project_points, wi
 from projection_opportunity import league_efficiency, project_points_opportunity
 from projection_v2 import league_rates, stabilize_player
 from team_context import (
-    apply_flag_discount, apply_pace, apply_team_change_quality, context_flags, team_qb_by_season,
+    apply_flag_discount, apply_pace, apply_team_change_nuance, context_flags, team_qb_by_season,
 )
 
 # Prior strength for v2's touchdown shrinkage, as a multiple of a typical
@@ -106,6 +106,13 @@ PACE_K = [0.0, 0.25, 0.5, 1.0, 1.5, 2.0]
 # climbing at its top value (0.25) when it was shipped, so the true optimum
 # was never actually found; this grid checks whether it's out past there.
 TEAM_CHANGE_QUALITY_K = [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5]
+
+# Second follow-up: two MORE targeted nuances than whole-team EPA — O-line
+# (run block for RB, pass pro for QB/WR/TE) and contract commitment (does
+# the SIZE of the deal a mover signed predict how big a discount he needs).
+# Same grid shape and k=0 convention as TEAM_CHANGE_QUALITY_K.
+TEAM_CHANGE_OLINE_K = [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5]
+TEAM_CHANGE_COMMITMENT_K = [0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5]
 
 # Prior strength for the opportunity model's efficiency shrinkage (roadmap
 # 1.1/1.2), same units as V2_K. Unlike V2_K, k=0 here is NOT the shipped
@@ -273,11 +280,12 @@ def load_ages(years) -> dict:
 
 
 def load_team_context(years):
-    """(coach_by_team, pace_by_team, quality_by_team) for roadmap 1.3 — see
-    team_context.py for what each is and why it's read the way it is. All
-    three are independent of load_seasons()/load_ages(); the QB-starter
+    """(coach_by_team, pace_by_team, quality_by_team, ts) for roadmap 1.3 —
+    see team_context.py for what each is and why it's read the way it is.
+    All are independent of load_seasons()/load_ages(); the QB-starter
     signal reuses load_seasons()'s own player rows instead of a fourth
-    network call."""
+    network call. `ts` (the raw team_stats frame) is returned too so
+    load_oline_context() can reuse it for dropbacks instead of re-fetching."""
     import nflreadpy as nfl
     import team_context as tc
 
@@ -302,7 +310,70 @@ def load_team_context(years):
         for r in ts.itertuples()
     )
     quality_by_team = tc.team_quality_by_season(quality_rows)
-    return coach_by_team, pace_by_team, quality_by_team
+    return coach_by_team, pace_by_team, quality_by_team, ts
+
+
+# PFR advanced stats only cover 2018-2025 — nflreadpy raises for a mixed
+# request outside that range, so the year list has to be pre-filtered
+# rather than caught after the fact.
+PFR_ADVSTATS_MIN_YEAR = 2018
+PFR_ADVSTATS_MAX_YEAR = 2025
+
+
+def load_oline_context(years, ts):
+    """(run_block_by_team, pass_pro_by_team) for the roadmap 1.3 second
+    follow-up — see team_context.py for what each is and why. `ts` is the
+    team_stats frame load_team_context() already fetched (for dropbacks);
+    passed in rather than re-fetched. Real coverage gap, not a bug: PFR
+    advanced stats only go back to 2018, so years before that return
+    nothing for either dict (context_flags() reads that as "no signal",
+    same as every other missing-data case in this pipeline)."""
+    import nflreadpy as nfl
+    import team_context as tc
+
+    pfr_years = [y for y in years if PFR_ADVSTATS_MIN_YEAR <= y <= PFR_ADVSTATS_MAX_YEAR]
+    if not pfr_years:
+        print(f"  ! no seasons in {PFR_ADVSTATS_MIN_YEAR}-{PFR_ADVSTATS_MAX_YEAR} range — "
+              "oline signals will be empty for this run")
+        return {}, {}
+
+    rush = _pd(nfl.load_pfr_advstats(pfr_years, stat_type="rush"))
+    run_block_rows = (
+        (int(r.season), r.team, r.rushing_yards_before_contact, r.carries)
+        for r in rush.itertuples()
+    )
+    run_block_by_team = tc.team_run_block_by_season(run_block_rows)
+
+    dropback_rows = (
+        (int(r.season), r.team, r.attempts, getattr(r, "sacks_suffered", 0))
+        for r in ts.itertuples()
+    )
+    dropbacks_by_team = tc.team_dropbacks_by_season(dropback_rows)
+
+    pass_df = _pd(nfl.load_pfr_advstats(pfr_years, stat_type="pass"))
+    pressure_rows = (
+        (int(r.season), r.team, r.times_pressured)
+        for r in pass_df.itertuples()
+    )
+    pass_pro_by_team = tc.team_pass_pro_by_season(pressure_rows, dropbacks_by_team)
+    return run_block_by_team, pass_pro_by_team
+
+
+def load_commitment_context():
+    """commitment_by_player, roadmap 1.3 second follow-up — see
+    team_context.py. load_contracts() is a full historical table (no year
+    filter accepted/needed); every contract a player ever signed, keyed by
+    year_signed."""
+    import nflreadpy as nfl
+    import team_context as tc
+
+    contracts = _pd(nfl.load_contracts())
+    rows = (
+        (int(r.year_signed), r.gsis_id, r.position, r.apy_cap_pct)
+        for r in contracts.itertuples()
+        if pd.notna(r.gsis_id) and pd.notna(r.year_signed) and pd.notna(r.apy_cap_pct)
+    )
+    return tc.commitment_by_player_season(rows)
 
 
 def season_line(row) -> dict:
@@ -550,15 +621,25 @@ def main():
 
     use_team_context = not args.no_team_context
     qb_by_team = coach_by_team = pace_by_team = quality_by_team = {}
+    run_block_by_team = pass_pro_by_team = commitment_by_player = {}
     team_by_ps = {}
     if use_team_context:
         print("Loading team context (coaches + pace + quality) from schedules/team stats…")
-        coach_by_team, pace_by_team, quality_by_team = load_team_context(need)
+        coach_by_team, pace_by_team, quality_by_team, ts = load_team_context(need)
         qb_by_team = team_qb_by_season(data.itertuples())
         team_by_ps = {(r.season, r.player_id): r.team for r in data.itertuples()}
         print(f"  {len(coach_by_team)} team-seasons with a coach, "
               f"{len(pace_by_team)} with a pace, {len(quality_by_team)} with an offensive "
               f"quality reading, {len(qb_by_team)} with a starting QB")
+
+        print("Loading O-line context (PFR advanced stats, 2018+ only)…")
+        run_block_by_team, pass_pro_by_team = load_oline_context(need, ts)
+        print(f"  {len(run_block_by_team)} team-seasons with run-block data, "
+              f"{len(pass_pro_by_team)} with pass-protection data")
+
+        print("Loading commitment context (contracts)…")
+        commitment_by_player = load_commitment_context()
+        print(f"  {len(commitment_by_player)} player-seasons with a signed contract on record")
 
     sc = default_scoring(PPR)
 
@@ -792,7 +873,9 @@ def main():
                     p["player_id"]: context_flags(
                         p["pos"], team_by_ps.get((year - 1, p["player_id"])),
                         team_by_ps.get((year, p["player_id"])), year,
-                        qb_by_team, coach_by_team, pace_by_team, quality_by_team)
+                        qb_by_team, coach_by_team, pace_by_team, quality_by_team,
+                        run_block_by_team, pass_pro_by_team, commitment_by_player,
+                        player_id=p["player_id"])
                     for p in pop
                 }
                 tc_features = (
@@ -809,7 +892,15 @@ def main():
                     # version? k=0 here is the pure model (no adjustment at
                     # all), same convention as the other four.
                     ("team_change_quality", TEAM_CHANGE_QUALITY_K,
-                     lambda projs, k: apply_team_change_quality(projs, pop, flags_by_player, k)),
+                     lambda projs, k: apply_team_change_nuance(projs, pop, flags_by_player, "quality_z", k)),
+                    # Second follow-up: more TARGETED nuances than whole-team
+                    # EPA — O-line (run block RB / pass pro QB-WR-TE) and
+                    # contract commitment (does the SIZE of the deal predict
+                    # how big a discount is actually needed).
+                    ("team_change_oline", TEAM_CHANGE_OLINE_K,
+                     lambda projs, k: apply_team_change_nuance(projs, pop, flags_by_player, "oline_z", k)),
+                    ("team_change_commitment", TEAM_CHANGE_COMMITMENT_K,
+                     lambda projs, k: apply_team_change_nuance(projs, pop, flags_by_player, "commitment_z", k)),
                 )
                 for feat_name, K_grid, apply_fn in tc_features:
                     for k in K_grid:
@@ -882,13 +973,37 @@ def main():
                     # stack is worth building even though team_change_quality
                     # is a brand-new idea, not yet shipped in any form.
                     for k in TEAM_CHANGE_QUALITY_K:
-                        tcq_adj = apply_team_change_quality(shipped_for_tc, pop, flags_by_player, k)
+                        tcq_adj = apply_team_change_nuance(shipped_for_tc, pop, flags_by_player, "quality_z", k)
                         tcq_stack = apply_expert_shipped(
                             pop, apply_injury_shipped(pop, tcq_adj, injury_by_player), expert_by_player)
                         tcq_stack_merged = blend_with_market(pop, tcq_stack, adp_by_player, MARKET_ANCHOR_W)
                         for pos, m in score(pop, tcq_stack_merged, sc).items():
                             per_year.append({"year": year, "population": pop_name,
                                              "model": "team_change_quality_stack", "variant": f"k{k}",
+                                             "ctx_k": k, "pos": pos, **m})
+
+                    # Same re-baseline for the second follow-up (oline /
+                    # commitment) — same reasoning as the quality stack
+                    # above: the bar that matters is "beats what SHIPS
+                    # today", not "beats the pure model".
+                    for k in TEAM_CHANGE_OLINE_K:
+                        tco_adj = apply_team_change_nuance(shipped_for_tc, pop, flags_by_player, "oline_z", k)
+                        tco_stack = apply_expert_shipped(
+                            pop, apply_injury_shipped(pop, tco_adj, injury_by_player), expert_by_player)
+                        tco_stack_merged = blend_with_market(pop, tco_stack, adp_by_player, MARKET_ANCHOR_W)
+                        for pos, m in score(pop, tco_stack_merged, sc).items():
+                            per_year.append({"year": year, "population": pop_name,
+                                             "model": "team_change_oline_stack", "variant": f"k{k}",
+                                             "ctx_k": k, "pos": pos, **m})
+
+                    for k in TEAM_CHANGE_COMMITMENT_K:
+                        tcc_adj = apply_team_change_nuance(shipped_for_tc, pop, flags_by_player, "commitment_z", k)
+                        tcc_stack = apply_expert_shipped(
+                            pop, apply_injury_shipped(pop, tcc_adj, injury_by_player), expert_by_player)
+                        tcc_stack_merged = blend_with_market(pop, tcc_stack, adp_by_player, MARKET_ANCHOR_W)
+                        for pos, m in score(pop, tcc_stack_merged, sc).items():
+                            per_year.append({"year": year, "population": pop_name,
+                                             "model": "team_change_commitment_stack", "variant": f"k{k}",
                                              "ctx_k": k, "pos": pos, **m})
 
     df = pd.DataFrame(per_year)
@@ -1264,7 +1379,8 @@ def main():
     # phase kill gate INDEPENDENTLY — one feature clearing it does not carry
     # the others, the same reason 0.3 and 1.1/1.2 report per position rather
     # than as a single phase-wide verdict.
-    tc_feature_names = ["team_change", "qb_change", "coach_change", "pace", "team_change_quality"]
+    tc_feature_names = ["team_change", "qb_change", "coach_change", "pace", "team_change_quality",
+                        "team_change_oline", "team_change_commitment"]
     tca = agg[(agg["population"] == "all") & (agg["model"].isin(tc_feature_names))]
     if len(tca) and dis_rows:
         print("\n=== ROADMAP 1.3 — TEAM CONTEXT (team/QB/coach change, pace) ===")
@@ -1429,8 +1545,54 @@ def main():
                       f"{'PASS' if ok else 'FAIL'}")
             ship4 = [p for p, ok in tcq_pass.items() if ok]
             skip4 = [p for p, ok in tcq_pass.items() if not ok]
-            print(f"\n  -> Nuancing beats the flat discount for: {', '.join(ship4) or '(none)'}"
-                  f"{'; ' + ', '.join(skip4) + ' stay on the flat 0.25 discount' if skip4 else ''}.")
+            print(f"\n  -> Quality-nuancing beats the flat discount for: {', '.join(ship4) or '(none)'}"
+                  f"{'; ' + ', '.join(skip4) + ' stay on the flat discount' if skip4 else ''}.")
+
+        # ── same re-baseline for the second follow-up: O-line (run block ──
+        # RB / pass pro QB-WR-TE) and contract commitment.
+        for label, model_name, feat_name in (
+            ("O-line", "team_change_oline_stack", "team_change_oline"),
+            ("commitment", "team_change_commitment_stack", "team_change_commitment"),
+        ):
+            stacked = agg[(agg["population"] == "all") & (agg["model"] == model_name)]
+            if not (len(stacked) and len(ssa)):
+                continue
+            print(f"\n=== {feat_name} vs THE CURRENT LIVE BOARD (incl. shipped team_change) ===")
+            pure_pass_set = {posn for (feat, posn), ok in tc_passed.items()
+                             if feat == feat_name and ok}
+            restacked = {}
+            for posn in sorted(stacked["pos"].unique()):
+                if posn not in pure_pass_set:
+                    continue
+                base_row = ssa[ssa["pos"] == posn]
+                if not len(base_row):
+                    continue
+                base_bare = float(base_row.iloc[0].spearman_total)
+                shipped_ref = tc_restacked.get(posn, {}).get("best", base_bare)
+                s = stacked[stacked["pos"] == posn].sort_values("ctx_k")
+                print(f"\n  {posn}   (live, no team_change: {base_bare:.4f}   "
+                      f"live, flat team_change: {shipped_ref:.4f})")
+                for _, r in s.iterrows():
+                    print(f"    k={r.ctx_k:<5} {r.spearman_total:.4f}  "
+                          f"(vs no-adj {r.spearman_total - base_bare:+.4f})  "
+                          f"(vs flat {r.spearman_total - shipped_ref:+.4f})")
+                best = s.loc[s.spearman_total.idxmax()]
+                restacked[posn] = {"base_bare": base_bare, "shipped_ref": shipped_ref,
+                                   "best": float(best.spearman_total), "best_k": float(best.ctx_k)}
+
+            print(f"\n  --- {feat_name} VERDICT (must beat the FLAT discount already shipped) ---")
+            passed_here = {}
+            for posn in sorted(restacked):
+                v = restacked[posn]
+                ok = v["best"] > v["shipped_ref"] + MERGE_EPS
+                passed_here[posn] = ok
+                print(f"    {posn}  k={v['best_k']}  {v['best']:.4f} vs flat-shipped "
+                      f"{v['shipped_ref']:.4f} ({v['best'] - v['shipped_ref']:+.4f})   "
+                      f"{'PASS' if ok else 'FAIL'}")
+            ship_here = [p for p, ok in passed_here.items() if ok]
+            skip_here = [p for p, ok in passed_here.items() if not ok]
+            print(f"\n  -> {label} nuance beats the flat discount for: {', '.join(ship_here) or '(none)'}"
+                  f"{'; ' + ', '.join(skip_here) + ' stay on the flat discount' if skip_here else ''}.")
 
     print(f"\n✓ wrote {args.out}/projection_backtest_summary.csv and _by_year.csv")
 
