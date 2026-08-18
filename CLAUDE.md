@@ -383,6 +383,22 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   including RB/WR where the flat version is strongest. Not shipped in any
   form; the binary "did you move" signal turned out to be doing real work
   that a continuous quality read diluted rather than sharpened.
+- **Two more destination-quality proxies were tried and killed the same
+  way.** O-line quality (`nflreadpy.load_pfr_advstats`, 2018-2025 only —
+  RB signal = yards-before-contact/carry, QB/WR/TE signal = pressure rate
+  allowed) and contract commitment (`nflreadpy.load_contracts()`,
+  `apy_cap_pct`, position-scoped z-score) — both verified real before use,
+  both reusing the same `apply_team_change_nuance(..., signal_key, k)`
+  shape as the EPA attempt. Motivated by whether the WR discount (70%) is
+  overly punitive for movers into a good spot. Against the pure model,
+  commitment looked promising at every position; against the bar that
+  actually matters — beating the flat discount ALREADY shipped — both
+  failed everywhere tested, and WR's best commitment result at any k is
+  still *worse* than the flat 70% (-0.0013). A big new contract, like a
+  good landing-spot EPA reading, does not mark a mover the flat discount
+  is overcharging. Not shipped in any form; `TEAM_CHANGE_K = { RB: 0.4,
+  WR: 0.7 }` unchanged. See `docs/ROADMAP.md` 1.3 follow-up #2 for the
+  full table.
 - **A first pass at `qb_change` was a bug, not a result.** It compared
   team_now's QB using ONLY season Y-1 data on both sides — trivially
   identical to `team_changed` whenever the team didn't change (same lookup

@@ -296,6 +296,76 @@ constants (RB 0.4, WR 0.7). Backtest runs: `projection-backtest.yml`
 > nuance this with information about the team they are joining?" ...
 > "Yes, do both"
 
+**FOLLOW-UP #2 — O-line quality and contract commitment tried as nuances;
+both killed too.** EPA-based destination quality (above) failed
+comprehensively, but it's one specific construction of "quality" — two
+more independent tier-1 proxies were tested before giving up on the idea:
+O-line quality (does the runner/passer land behind good blocking?) and
+contract commitment (does the size of the new deal signal the team's own
+confidence in the player?). Motivating question: is the shipped WR
+discount (70%) overly punitive for movers into a good spot that one of
+these could differentiate?
+
+Both reuse the exact same generalized shape as the EPA experiment —
+`apply_team_change_nuance(..., signal_key, k)`, `multiplier = 1 - k*(1 -
+z)`, identical to the flat `(1-k)` discount at `z=0` — so neither is a
+competing feature, only a possible refinement of the one already shipped.
+
+*Data, verified before use*: O-line — `nflreadpy.load_pfr_advstats`
+(2018-2025 only; the call raises for the whole range if any requested
+year is out of range, so years are pre-filtered rather than
+try/excepted). RB signal = yards-before-contact per carry, credited to
+blocking not the runner (confound disclosed: RPO/QB mobility also move
+this number); QB/WR/TE signal = pressure rate allowed, sign-flipped
+before z-scoring (lower is better). Spot-checked against 2023 reality.
+Commitment — `nflreadpy.load_contracts()`, `apy_cap_pct` (contract value
+as % of that year's cap — the one metric comparable across seasons
+despite salary inflation), matched via `gsis_id`, position-scoped
+z-scoring (`league_commitment_stats`, kept separate from the generic
+z-score helper since dollar amounts aren't comparable across positions).
+Spot-checked against three known real contracts (Kirk, Barkley,
+Smith-Schuster).
+
+**Result: both failed, at every position that mattered, against the bar
+that matters.** Against the pure model, commitment actually looked
+promising — QB/RB/TE/WR all cleared the merge bar (oline cleared only
+QB) — but that measure doesn't ask whether a nuance beats what's ALREADY
+shipping. Re-baselined against the live board **including the shipped
+flat `team_change` discount itself** (RB=0.4, WR=0.7):
+
+| feature | pos | best k | nuanced vs flat-shipped | verdict |
+|---|---|---|---|---|
+| team_change_oline | QB | 0.2 | +0.0007 | FAIL (below +0.003) |
+| team_change_commitment | QB | 0.3 | -0.0004 | FAIL |
+| team_change_commitment | RB | 0.4 | +0.0013 | FAIL (below +0.003) |
+| team_change_commitment | TE | 0.5 | +0.0009 | FAIL (below +0.003) |
+| team_change_commitment | WR | 0.5 | **-0.0013** | FAIL (worse than flat) |
+
+Neither RB nor WR — the two positions with a live flat discount, and WR
+specifically the motivating question — showed a nuance that beat the flat
+version. WR's best commitment result at any k tried is still *worse* than
+just applying the flat 70% to everyone who moved: a big new contract does
+not reliably mark a WR the flat discount is overcharging. Same story as
+the EPA attempt: the binary "did you move" signal is carrying real
+information; none of the three quality-proxy constructions tried so far
+(EPA, O-line, contract commitment) sharpen it. Not shipped in any form —
+`TEAM_CHANGE_K = { RB: 0.4, WR: 0.7 }` unchanged. QB-quality proxy (tier-1
+idea #2) was skipped as too correlated with the already-failed EPA
+signal to be worth an independent test.
+
+`team_context.py` gained the general-purpose O-line/commitment tables
+(`team_run_block_by_season`, `team_dropbacks_by_season`,
+`team_pass_pro_by_season`, `commitment_by_player_season`,
+`league_commitment_stats`) and `apply_team_change_quality` was
+generalized into `apply_team_change_nuance(..., signal_key, k)` so all
+three nuance ideas share one implementation — kept in the codebase as
+documented, fixture-tested (51 assertions) negative results, same as the
+EPA attempt. Backtest run: `projection-backtest.yml` #32092900025.
+
+> **Prompt** — "do we need to test other nuances in your tier 1?" ...
+> "let's run 3 and 4 -- in part, I want to make sure we aren't overly
+> discounting WRs if there is a more nuanced adjustment"
+
 ### 1.4 Rookie model on draft capital
 Rookies currently get an ADP-curve fallback. NFL draft round and pick are far
 stronger priors for opportunity.

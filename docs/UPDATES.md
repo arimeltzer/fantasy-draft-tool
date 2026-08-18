@@ -6,6 +6,31 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 1.3 follow-up #2: O-line and contract-commitment nuances tried and killed
+- Motivated by whether the shipped WR discount (70%) is overly punitive for
+  movers into a good spot, tested the next two tier-1 destination-quality
+  proxies (after EPA, already killed): O-line quality and contract
+  commitment. Both reuse the generalized `apply_team_change_nuance(...,
+  signal_key, k)` shape — `multiplier = 1 - k*(1 - z)`, identical to the
+  flat discount at `z=0`.
+- O-line: `nflreadpy.load_pfr_advstats` (2018-2025 only), RB signal =
+  yards-before-contact/carry, QB/WR/TE signal = pressure rate allowed
+  (sign-flipped). Commitment: `nflreadpy.load_contracts()`, `apy_cap_pct`
+  (comparable across seasons unlike raw dollars), position-scoped z-score.
+  Both spot-checked against real data before use.
+- Against the pure model, commitment looked promising (QB/RB/TE/WR all
+  cleared the merge bar). Against the bar that actually matters — beating
+  the flat discount ALREADY shipped (RB=0.4, WR=0.7) — both failed at
+  every position tested: oline QB +0.0007, commitment QB -0.0004, RB
+  +0.0013, TE +0.0009, WR **-0.0013 (worse than flat)**. WR's best
+  commitment result at any k is still worse than the flat 70% — a big new
+  contract does not mark a WR the flat discount is overcharging. Not
+  shipped in any form; `TEAM_CHANGE_K = { RB: 0.4, WR: 0.7 }` unchanged.
+- `team_context.py` gained general-purpose O-line/commitment tables
+  (kept, documented, fixture-tested — 51 assertions) as a negative result,
+  same treatment as the killed EPA nuance. Backtest run:
+  `projection-backtest.yml` #32092900025.
+
 ## 2026-08 — Roadmap 1.3 follow-up: RB/WR re-tuned to found peaks, quality nuance killed
 - Re-checked whether the shipped `TEAM_CHANGE_K=0.25` was an actual optimum
   or just the top of a grid that hadn't turned over yet (it was the latter).
