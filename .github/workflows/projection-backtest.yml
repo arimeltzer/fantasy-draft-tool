@@ -40,6 +40,12 @@ jobs:
       - name: Team context selftest (roadmap 1.3 — team/QB/coach/pace)
         working-directory: data-pipeline
         run: python team_context_selftest.py
+      - name: Rookie capital selftest (roadmap 1.4 — draft-round curve)
+        working-directory: data-pipeline
+        run: python rookie_capital_selftest.py
+      - name: Outcome distribution selftest (roadmap 2.1 — CRPS/coverage)
+        working-directory: data-pipeline
+        run: python outcome_distribution_selftest.py
       - name: Backtest
         working-directory: data-pipeline
         env:
