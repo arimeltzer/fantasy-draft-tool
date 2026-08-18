@@ -6,6 +6,35 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 2.1 follow-up (d) RESULT: widening confirmed everywhere; QB's tier boundary looks like the real culprit
+- Ran `projection-backtest.yml` #32135813303 against live FantasyPros/nflverse
+  data (2017-2025, ~2,000 ADP-ranked player-seasons) — confirmed the run
+  actually authenticated (no `ADP baseline SKIPPED` in the log; every test
+  year populated real market-ranked rows).
+- **The core hypothesis holds at every position**: empirical 80%-interval
+  width grows from shallowest to deepest usable ADP tier — QB 2.7x, RB 1.3x,
+  TE 3.1x, WR 2.6x. ADP is genuinely more trustworthy at the top of a position
+  than at the bottom, everywhere.
+- **But the tier-by-tier curve is noisy at n≈20-40/cell** — same non-monotone
+  signature follow-up (c) already taught this file to distrust as structure.
+  One signal survives that caution anyway: QB's ADP 7-9 tier (width 0.531) to
+  ADP 10-12 (width 1.310) is a ~2.5x jump INSIDE the single existing
+  `RANK_TIERS` bucket (7-12) — a plausible reason `pos_rank` conditioning
+  never earned its 1% CRPS bar for QB originally: not that rank carries no
+  QB signal, but that the shared boundary doesn't isolate where QB's real
+  cliff sits. RB/WR/TE show no comparable single-tier discontinuity.
+- **New finding this diagnostic wasn't built to look for**: median ratio
+  drifts DOWN with depth at every position, not just the spread. QB1-3 sits
+  at 0.98 (unbiased); QB28-33 at 0.71-0.73. Same shape at RB/WR/TE. The
+  live-board projection isn't just less precise for deep picks — it's
+  systematically optimistic there. Separate question from calibration width;
+  not examined by (a)/(b)/(c) or the original gate.
+- **Doesn't resolve either open blocker on its own.** RB/WR's `with_busts`
+  over-width still reads as follow-up (a)'s bust-population question (the
+  widening here is gradual for RB/WR, not cliffed). A QB-specific tier split
+  clearing 2.1's actual CRPS gate needs a real re-run with that boundary, not
+  just this descriptive pass. Nothing shipped or wired in.
+
 ## 2026-08 — Roadmap 2.1 follow-up (d): pre-registered, not yet run — ADP's own accuracy by position-specific draft depth
 - User-proposed hypothesis: 2.1's fitted models condition on OUR blended board
   rank (`RANK_TIERS`, one shared 1-6/7-12/13-24/25-48/49+ layout across all

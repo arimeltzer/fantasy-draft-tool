@@ -801,6 +801,57 @@ three existing conditioning levels already clear: >1% relative CRPS
 improvement, held-out, without pushing any currently-passing position's cov80
 out of `[0.75, 0.85]`.
 
+**RESULT — the widening intuition holds directionally at every position, but
+the tier-level detail is too noisy on this sample to read as a precise cliff
+location. QB is the one place the finding looks like an actual smoking gun.**
+Backtest `projection-backtest.yml` #32135813303, 2017-2025, ~2,000 ADP-ranked
+player-seasons.
+
+*The headline holds everywhere.* Comparing the shallowest to the deepest
+usable tier (floor of 20 raw ratios), the empirical 80%-width grows at every
+position: QB 0.61 → 1.67 (2.7x), RB 1.04 → 1.35 (1.3x, survivors), TE 0.80 →
+2.47 (3.1x), WR 0.74 → 1.91 (2.6x). ADP genuinely is more trustworthy near the
+top of a position than at the bottom, at every position tested.
+
+*But the tier-by-tier curve inside that range is not smooth* — e.g. QB's ADP
+7-9 tier (width 0.531) is narrower than BOTH neighbors (4-6: 0.687, 10-12:
+1.310). That is the same non-monotone signature (c) taught this file to read
+as noise rather than structure at n≈20-40 per cell — reading a precise "cliff
+point" off single-tier jumps here would repeat exactly the mistake (c)'s gate
+1 existed to catch (W=3 landing on a boundary via a curve that wasn't actually
+monotone).
+
+*One signal survives that caution: QB's jump from ADP 7-9 (width 0.531) to
+ADP 10-12 (width 1.310) — a ~2.5x jump inside a SINGLE existing `RANK_TIERS`
+bucket (7-12)* — averaging a genuinely tight top-9 into the same cell as a
+genuinely wide 10-12. That is a plausible reason `pos_rank` never earned its
+1% CRPS bar for QB in the original 2.1 sweep: not that rank carries no signal
+for QB, but that the shared tier boundary does not isolate wherever QB's real
+cliff sits. RB/WR/TE's growth over the same range is comparatively gradual —
+nothing resembling a single-tier discontinuity that size.
+
+*Median ratio drifts DOWN with depth too, not just spread* — at every
+position, not only QB. QB1-3 sits at median 0.98 (essentially unbiased);
+QB28-33 sits at 0.71-0.73. RB1-5 sits at 0.87 (survivors); RB's deep tiers
+fall to 0.64-0.72 there, lower once busts are folded back in. Same pattern at
+WR/TE. This is a DIFFERENT claim than the width numbers: the live-board
+projection (`dist_final` — post market-anchor, post expert-blend, post
+injury-discount) is not just less PRECISE for deep picks, it is systematically
+OPTIMISTIC there. That is a bias question, not the calibration-interval
+question 2.1's kill gate measures, and none of (a)/(b)/(c) nor the original
+gate looked at it directly.
+
+*What this changes and doesn't.* Does not resolve RB/WR's `with_busts`
+over-width — still follow-up (a)'s territory; the widening pattern found here
+for RB/WR is gradual, consistent with the bust population being the driver
+rather than a missed tier cliff. Does not, on its own, prove a finer QB split
+would clear 2.1's gate — that needs an actual re-run of the CRPS-earns-its-
+place test with a QB-specific boundary near ADP 9/10, not just this
+descriptive read. *If pursued*: re-fit QB under a QB-only tier split and
+re-run the existing 1% CRPS bar against the `pos`-only baseline QB currently
+ships with — same discipline every other conditioning choice in this file
+already clears, not a new standard invented for QB.
+
 ### 2.2 Weekly-lineup-aware season simulator
 Season totals are the wrong unit: you start ~9 of 15 players each week. Simulate
 weeks, set lineups, score the lineup. This makes bench depth worth its true
