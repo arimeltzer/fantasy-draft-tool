@@ -1300,6 +1300,64 @@ schedule derivation as above. Scoped as a recommender penalty plus a visible
 surface, not a hard gate — a bye clash is a real cost but a small one next to
 player quality, and over-weighting it would be worse than ignoring it.
 
+**2.2b WEEKLY-LINEUP SEASON SIMULATOR — pre-registration, written before the code
+exists.**
+
+*Goal*: consume validated weekly outcome distributions (once 2.2a and form-factor
+gates pass) to simulate full seasons week by week, setting optimal lineups each
+week and scoring them. This surfaces the true value of bench depth via option
+value — a backup player has zero probability of starting most weeks, but nonzero
+probability in bad luck (injury/bye clash) weeks, and that optionality cannot be
+valued on season totals alone.
+
+*Architecture*:
+  - **Lineup optimizer** (`optimizeLineup()`): given a roster, week, and weekly
+    outcome draws, choose the best starting lineup subject to position limits and
+    availability (byes, injuries). Returns starters (in position order), bench,
+    and the predicted score for this lineup.
+  - **Season simulator** (`simulateSeason()`): iterate through all weeks of a
+    season, each time drawing from the weekly outcome distributions (form once
+    per player-season, residual per week, composed per week's projection),
+    optimizing lineups, recording week-by-week scores and final totals.
+  - **Roster value decomposition** (byproduct): MVP analysis — which positions
+    contributed most value, how much came from starters vs bench, how much
+    optionality was actually exercised. Useful diagnostics once the simulator is
+    live.
+
+*Inputs*:
+  - League settings (roster spots per position, bench depth, number of weeks).
+  - Roster (player list with weekly outcome distributions fit by 2.2a/form-factor).
+  - Schedule (byes, to exclude from draws — same as weekly fit excluded them).
+
+*Gate, all three required*:
+1. **Standings calibration**: simulated season points-for and win-total
+   distributions must match historical empirical distributions (2017–2025 from
+   league rosters + lineups). Specifically: for each percentile bucket (5th/25th/
+   50th/75th/95th), the empirical quantile must land within ±1 SD of the
+   simulated distribution's mean. A simulator that is sharp but biased would
+   systematically over/understate every team's season outcome; this catches it.
+2. **Bench value signal**: simulated value of the bench (cumulative points scored
+   by non-starters across season) must be >5 points per bench slot on average.
+   If it's <5, bench depth is mostly sitting idle and the simulator is not
+   surfacing material optionality. If it's >20 (top quartile), the weekly draw
+   is too volatile or the lineup optimizer is not tight enough.
+3. **Lineup stability across draws**: for a fixed roster, running the simulator
+   twice with different random seeds should give the same week-level lineup
+   decisions at least 85% of the time for starters. If lineups are dancing around
+   due to sampling noise, the optimization is picking signal that isn't there.
+   Replicability matters.
+
+*What 2.2b does NOT handle*: same-team correlation (stacking for salary cap or
+upside), opponent roster contents (you're not playing against a roster yet, so
+can't measure win probability per week — that is 2.3). This step measures
+within-one-roster value, not head-to-head outcomes yet.
+
+*Selftest strategy*: fixture rosters (real 2024 draft results) with real 2024
+outcomes, run the simulator expecting it to recover actual 2024 weekly lineups
+and season scores within noise tolerance. Does not require live distribution
+validation — uses the form-factor code as-is and tests whether the lineup
+optimization and compositing is correct.
+
 ### 2.3 Championship probability
 Simulate your roster against opponents' actual rosters to get P(title). This
 becomes the objective every later phase optimizes.
