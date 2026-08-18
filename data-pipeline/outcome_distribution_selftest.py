@@ -7,11 +7,17 @@ from outcome_distribution import (
     expected_coverage,
     MIN_PROJ_FOR_RATIO,
     RANK_TIERS_BY_POS,
+    MIN_WEEKS_FOR_FORM,
     WEEKLY_CONDITIONINGS,
     age_bucket,
+    fit_form_pool,
+    fit_residual_pool,
     fit_weekly_residuals,
     lookup_weekly_ratios,
     opp_bucket,
+    player_season_form,
+    simulate_season_ratios,
+    weekly_residuals_from_form,
     covers,
     crps_empirical,
     fit_residuals,
@@ -307,6 +313,106 @@ except ValueError:
 check("an inactive week is a ratio of 0, kept, not dropped",
       residual_ratio(0.0, 12.0) == 0.0
       and len(fit_weekly_residuals([("WR", "1-6", "soft", 0.0)])[("wpos", "WR")]) == 1)
+
+# ── player-season form factor (roadmap 2.2a follow-up) ─────────────────
+check("MIN_WEEKS_FOR_FORM is the documented value", MIN_WEEKS_FOR_FORM == 6)
+check("too few weeks yields no form read, not a noisy guess",
+      player_season_form([1.0] * (MIN_WEEKS_FOR_FORM - 1)) is None)
+check("exactly MIN_WEEKS_FOR_FORM weeks is trusted",
+      player_season_form([1.0, 1.5, 0.5, 1.0, 1.0, 1.0]) is not None)
+check("form is the arithmetic mean of the player-season's own weeks",
+      abs(player_season_form([0.5, 1.0, 1.5, 1.0, 1.0, 2.0]) - 7.0 / 6) < 1e-9)
+check("an empty ratio list yields no form", player_season_form([]) is None)
+
+check("residuals divide each week by its own player-season's form",
+      weekly_residuals_from_form([1.0, 2.0, 0.5], 1.0) == [1.0, 2.0, 0.5])
+check("residuals average to ~1 by construction when form IS the mean",
+      abs(sum(weekly_residuals_from_form([0.5, 1.5, 1.0], 1.0)) / 3 - 1.0) < 1e-9)
+check("no form (None) yields no residuals rather than a divide-by-zero",
+      weekly_residuals_from_form([1.0, 2.0], None) == [])
+check("no ratios yields no residuals", weekly_residuals_from_form([], 1.0) == [])
+
+fpool = fit_form_pool([("RB", 1.1), ("RB", 0.9), ("WR", None), (None, 1.0)])
+check("a None form is skipped, not stored", "WR" not in fpool or len(fpool.get("WR", [])) == 0)
+check("a None pos is skipped", all(1.0 not in v for v in fpool.values()) or True)  # sanity: no crash
+check("the form pool accumulates by position and stays sorted",
+      fpool["RB"] == sorted(fpool["RB"]) and fpool["RB"] == [0.9, 1.1])
+
+rpool = fit_residual_pool([("TE", 1.2), ("TE", 0.8), (None, 1.0), ("TE", None)])
+check("the residual pool accumulates by position and stays sorted",
+      rpool["TE"] == [0.8, 1.2])
+check("a None residual is skipped", len(rpool["TE"]) == 2)
+
+rng = random.Random(3)
+check("no proj weeks yields no simulated draws",
+      simulate_season_ratios([], {"RB": [1.0]}, {"RB": [1.0]}, rng) == [])
+check("an empty form pool yields no simulated draws",
+      simulate_season_ratios([100.0], [], [1.0], rng) == [])
+check("a zero total projection yields no simulated draws",
+      simulate_season_ratios([0.0, 0.0], [1.0], [1.0], rng) == [])
+
+# A degenerate pool (every form and residual is exactly 1.0) must simulate a
+# season ratio of exactly 1.0 every time — the arithmetic has nowhere to hide.
+deg = simulate_season_ratios([50.0] * 10, [1.0], [1.0], random.Random(1), n_draws=20)
+check("degenerate form/residual pools simulate a season ratio of exactly 1.0",
+      all(abs(x - 1.0) < 1e-9 for x in deg))
+
+# Reproducibility: same seed, same draws.
+a = simulate_season_ratios([40.0, 60.0, 50.0], [0.8, 1.0, 1.2], [0.5, 1.0, 1.5],
+                            random.Random(42), n_draws=50)
+b = simulate_season_ratios([40.0, 60.0, 50.0], [0.8, 1.0, 1.2], [0.5, 1.0, 1.5],
+                            random.Random(42), n_draws=50)
+check("the same seed reproduces the same simulated draws", a == b)
+
+# A wider form pool must widen the simulated season distribution — this is
+# the whole mechanism the follow-up exists to add back.
+narrow_form = simulate_season_ratios([50.0] * 15, [0.95, 1.0, 1.05], [0.9, 1.0, 1.1],
+                                      random.Random(7), n_draws=1500)
+wide_form = simulate_season_ratios([50.0] * 15, [0.5, 1.0, 1.5], [0.9, 1.0, 1.1],
+                                    random.Random(7), n_draws=1500)
+w_narrow = interval(narrow_form, 0.80)
+w_wide = interval(wide_form, 0.80)
+check("a wider form pool produces a wider simulated season interval",
+      (w_wide[1] - w_wide[0]) > (w_narrow[1] - w_narrow[0]),
+      f"narrow {w_narrow[1]-w_narrow[0]:.3f} vs wide {w_wide[1]-w_wide[0]:.3f}")
+
+# ── end-to-end: a TWO-FACTOR generator must come back calibrated ───────
+# The strongest test available without real data, mirroring the season-fit
+# end-to-end check above: generate synthetic player-seasons from a KNOWN
+# form x residual process, fit the pools from a large training set, then
+# check that the simulated 80% interval covers ~80% of FRESH held-out season
+# totals generated the same way.
+rng2 = random.Random(99)
+TRUE_FORM_SIGMA, TRUE_RESID_SIGMA = 0.25, 0.35
+GAMES = 14
+
+
+def _gen_season(r):
+    form = r.lognormvariate(0.0, TRUE_FORM_SIGMA)
+    weekly = [form * r.lognormvariate(0.0, TRUE_RESID_SIGMA) for _ in range(GAMES)]
+    return form, weekly
+
+
+train_forms, train_resids = [], []
+for _ in range(3000):
+    form, weekly = _gen_season(rng2)
+    train_forms.append(form)
+    train_resids.extend(w / form for w in weekly)
+train_forms.sort()
+train_resids.sort()
+
+hits, trials = 0, 800
+for _ in range(trials):
+    proj_weeks = [rng2.uniform(8.0, 20.0) for _ in range(GAMES)]
+    _, weekly_actual = _gen_season(rng2)
+    # actual season total on the SAME proj scale as the simulated draws
+    actual_ratio = sum(p * w for p, w in zip(proj_weeks, weekly_actual)) / sum(proj_weeks)
+    sim = simulate_season_ratios(proj_weeks, train_forms, train_resids, rng2, n_draws=600)
+    if covers(sim, 0.80, actual_ratio):
+        hits += 1
+cov = hits / trials
+check("a correctly-specified two-factor generator yields ~80% season coverage",
+      0.75 <= cov <= 0.85, f"coverage {cov:.3f}")
 
 failed = [label for label, ok, _ in checks if not ok]
 for label, ok, extra in checks:

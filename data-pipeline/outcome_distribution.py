@@ -363,3 +363,97 @@ def pit(sorted_sample, actual) -> float:
     if not sorted_sample:
         raise ValueError("empty sample")
     return bisect.bisect_right(sorted_sample, actual) / len(sorted_sample)
+
+
+# ── player-season FORM FACTOR (roadmap 2.2a follow-up) ─────────────────
+# 2.2a fit weekly ratios as i.i.d. draws from one pooled cell and found the
+# implied season variance collapses to ~0.3x the real thing: summing 17
+# INDEPENDENT weeks throws away the fact that a player's own weeks, within a
+# season, are correlated (health, role, matchup quality all move together for
+# the SAME player). This decomposes ratio = form x residual: `form` drawn once
+# per player-season (how good was his season, overall), `residual` drawn
+# independently week to week (this week's luck, uncorrelated with next
+# week's). Both pools stay EMPIRICAL — raw historical values resampled, no
+# assumed shape — same discipline every other pool in this module follows.
+
+# A player-season needs this many played weeks (byes already excluded) before
+# its own mean is trusted as a `form` read rather than being mostly
+# week-to-week noise wearing a season number's clothes — the same reasoning
+# MIN_CELL_N applies to a tail quantile, applied here to a mean instead.
+MIN_WEEKS_FOR_FORM = 6
+
+
+def player_season_form(ratios):
+    """Mean of one player-season's own weekly ratios — the empirical estimate
+    of that player-season's `form` multiplier. None below MIN_WEEKS_FOR_FORM:
+    a player-season admitted with too few weeks would also mechanically
+    produce near-zero residuals around its own barely-sampled mean, polluting
+    the residual pool with fake precision."""
+    if not ratios or len(ratios) < MIN_WEEKS_FOR_FORM:
+        return None
+    return sum(ratios) / len(ratios)
+
+
+def weekly_residuals_from_form(ratios, form):
+    """Each week's ratio divided by its own player-season's form — the
+    within-season component, independent BY CONSTRUCTION of how good the
+    season was overall. Empty/None inputs yield no residuals rather than a
+    divide-by-zero guess."""
+    if not ratios or not form:
+        return []
+    return [r / form for r in ratios]
+
+
+def fit_form_pool(rows) -> dict:
+    """rows: iterable of (pos, form). Returns {pos: sorted [form, ...]} — the
+    empirical distribution of player-season form multipliers. Conditioning is
+    held at `pos` only (roadmap 2.2a's own sweep found nothing finer earned
+    its place for the positions this applies to), so this is a flat pool per
+    position rather than a fallback ladder like `fit_residuals`."""
+    acc: dict = {}
+    for pos, form in rows:
+        if form is None or pos is None:
+            continue
+        acc.setdefault(pos, []).append(form)
+    return {k: sorted(v) for k, v in acc.items()}
+
+
+def fit_residual_pool(rows) -> dict:
+    """rows: iterable of (pos, residual). Returns {pos: sorted [residual, ...]}
+    — the empirical within-season week-to-week distribution, same flat-per-
+    position shape as `fit_form_pool` and for the same reason."""
+    acc: dict = {}
+    for pos, resid in rows:
+        if resid is None or pos is None:
+            continue
+        acc.setdefault(pos, []).append(resid)
+    return {k: sorted(v) for k, v in acc.items()}
+
+
+def simulate_season_ratios(proj_weeks, form_pool, resid_pool, rng, n_draws=2000):
+    """Monte Carlo season composition: for each of `n_draws`, draw ONE `form`
+    (shared across the whole simulated season) and one INDEPENDENT `residual`
+    per week in `proj_weeks` (the player's own per-week projections for weeks
+    actually played — byes already excluded by the caller), multiply and sum,
+    then divide by the season's total projection.
+
+    Returns a SORTED list of simulated season ratios, directly usable by
+    quantile()/interval()/covers() — the same machinery 2.1's direct season
+    fit already uses, so the two are comparable on equal footing.
+
+    `rng` is an explicit random.Random instance (not the global module),
+    so a caller can seed it for a reproducible test or an independent stream
+    per player."""
+    if not proj_weeks or not form_pool or not resid_pool:
+        return []
+    total_proj = sum(proj_weeks)
+    if total_proj <= 0:
+        return []
+    n_form, n_resid = len(form_pool), len(resid_pool)
+    out = []
+    for _ in range(n_draws):
+        form = form_pool[rng.randrange(n_form)]
+        season_total = sum(
+            wp * form * resid_pool[rng.randrange(n_resid)] for wp in proj_weeks)
+        out.append(season_total / total_proj)
+    return sorted(out)

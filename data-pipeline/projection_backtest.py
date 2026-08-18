@@ -57,6 +57,7 @@ import argparse
 import json
 import math
 import os
+import random
 from datetime import date
 from itertools import product
 
@@ -72,10 +73,12 @@ from scipy import stats
 from projection_model import DEFAULT_PARAMS, default_scoring, points as _model_points, \
     project_points, rookie_projection, with_overrides
 from outcome_distribution import (
-    CONDITIONINGS, MIN_CELL_N, QUANTILE_METHODS, age_bucket, covers,
-    crps_empirical, expected_coverage, fit_residuals, fit_weekly_residuals,
-    in_window, interval, lookup_ratios, lookup_weekly_ratios, opp_bucket, pit,
-    quantile, rank_tier, residual_ratio, WEEKLY_CONDITIONINGS,
+    CONDITIONINGS, MIN_CELL_N, MIN_WEEKS_FOR_FORM, QUANTILE_METHODS, age_bucket,
+    covers, crps_empirical, expected_coverage, fit_form_pool, fit_residual_pool,
+    fit_residuals, fit_weekly_residuals, in_window, interval, lookup_ratios,
+    lookup_weekly_ratios, opp_bucket, pit, player_season_form, quantile,
+    rank_tier, residual_ratio, simulate_season_ratios, weekly_residuals_from_form,
+    WEEKLY_CONDITIONINGS,
 )
 from projection_opportunity import league_efficiency, project_points_opportunity
 from projection_v2 import league_rates, stabilize_player
@@ -965,7 +968,8 @@ def main():
     per_year = []
     dist_rows = []         # roadmap 2.1: year, pos, proj, actual, rank, adp_rank,
                             # age, bust, rostered (follow-up (a))
-    week_rows = []         # roadmap 2.2a: year, pos, week, proj, actual, rank, opp_bucket
+    week_rows = []         # roadmap 2.2a: year, pos, week, proj, actual, rank,
+                            # player_id, opp_bucket
     dis_rows = []          # model-vs-market disagreement diagnostic
     coverage = []          # (year, ranked, total) — how much of the board ADP covers
     for year in test_years:
@@ -1547,7 +1551,7 @@ def main():
                         week_rows.append({
                             "year": year, "pos": p["pos"], "week": wk,
                             "proj": per_week_proj, "actual": act,
-                            "rank": order[i],
+                            "rank": order[i], "player_id": p["player_id"],
                             "opp_bucket": opp_bucket(rating, opp_cuts.get((year - 1, p["pos"]))),
                         })
 
@@ -2712,6 +2716,127 @@ def main():
                 ok = abs(ratio - 1.0) <= SEASON_COHERENCE_TOL
                 print(f"      {posn}  implied {implied:.3f}  vs 2.1 season {actual_season:.3f}  "
                       f"({ratio:.2f}x)  {'PASS' if ok else 'FAIL — needs a player-season form factor'}")
+
+            # ── 2.2a FOLLOW-UP: player-season form factor ───────────────────
+            # Pre-registered in docs/ROADMAP.md before this existed. Splits
+            # ratio = form x residual; conditioning HELD FIXED at `pos` (what
+            # 2.2a's own sweep already accepted for RB/TE/WR — nothing finer
+            # earned its place there), so this tests exactly one hypothesis:
+            # does the split fix gate 3's out-of-sample season coverage.
+            print("\n  --- 2.2a FOLLOW-UP: PLAYER-SEASON FORM FACTOR ---")
+            print("  ratio = form (drawn once per player-season) x residual (drawn per")
+            print(f"  week). Both pools stay empirical. A player-season needs "
+                  f"{MIN_WEEKS_FOR_FORM}+")
+            print("  played weeks to enter either pool. Primary gate: out-of-sample SEASON")
+            print(f"  cov80 in {WEEK_BAND} for RB, WR, AND TE (all three required).")
+
+            FORM_MC_DRAWS = 500
+            form_rng = random.Random(20260818)   # fixed seed: reproducible CI runs
+            fverdict = {}
+            for posn in ("RB", "WR", "TE"):
+                sub = dfw[dfw["pos"] == posn]
+                if sub.empty:
+                    continue
+                hits, n_eval, crps_vals = 0, 0, []
+                for yi, year in enumerate(wyears):
+                    if yi == 0:
+                        continue
+                    hist = sub[sub["year"] < year]
+                    cur = sub[sub["year"] == year]
+                    if hist.empty or cur.empty:
+                        continue
+
+                    # Fit form/residual pools from every STRICTLY PRIOR
+                    # player-season with enough played weeks.
+                    form_rows, resid_rows = [], []
+                    for pid, grp in hist.groupby("player_id"):
+                        if len(grp) < MIN_WEEKS_FOR_FORM:
+                            continue
+                        ratios = [r for r in
+                                  (residual_ratio(r_.actual, r_.proj) for r_ in grp.itertuples())
+                                  if r is not None]
+                        form = player_season_form(ratios)
+                        if form is None:
+                            continue
+                        form_rows.append((posn, form))
+                        resid_rows.extend(
+                            (posn, r) for r in weekly_residuals_from_form(ratios, form))
+                    form_pool = fit_form_pool(form_rows).get(posn)
+                    resid_pool = fit_residual_pool(resid_rows).get(posn)
+                    if not form_pool or not resid_pool \
+                            or len(form_pool) < MIN_CELL_N or len(resid_pool) < MIN_CELL_N:
+                        continue
+
+                    # Evaluate every held-out player-season with enough played
+                    # weeks THIS year — same threshold as the fit population,
+                    # so train and eval populations are directly comparable.
+                    for pid, grp in cur.groupby("player_id"):
+                        if len(grp) < MIN_WEEKS_FOR_FORM:
+                            continue
+                        proj_weeks = list(grp["proj"])
+                        total_proj = sum(proj_weeks)
+                        if total_proj <= 0:
+                            continue
+                        actual_ratio = sum(grp["actual"]) / total_proj
+                        sim = simulate_season_ratios(
+                            proj_weeks, form_pool, resid_pool, form_rng, n_draws=FORM_MC_DRAWS)
+                        if not sim:
+                            continue
+                        n_eval += 1
+                        if covers(sim, 0.80, actual_ratio):
+                            hits += 1
+                        crps_vals.append(total_proj * crps_empirical(_thin(sim), actual_ratio))
+
+                if n_eval == 0:
+                    continue
+                cov80 = hits / n_eval
+                mean_crps = sum(crps_vals) / len(crps_vals)
+                # 2.1's own aggregate season CRPS for this position, as a sanity
+                # benchmark — NOT the same matched player-seasons, just the
+                # already-computed aggregate 2.1 fit already produced.
+                benchmark = dist_verdict.get(("survivors", posn), {}).get("crps")
+                bench_txt = (f"  vs 2.1 season CRPS (aggregate benchmark) {benchmark:.2f} "
+                             f"({(mean_crps - benchmark) / benchmark:+.1%})"
+                             if benchmark else "")
+                fverdict[posn] = {"cov80": cov80, "n": n_eval, "crps": mean_crps}
+                ok = WEEK_BAND[0] <= cov80 <= WEEK_BAND[1]
+                print(f"      {posn}  n={n_eval:<5} season cov80 {cov80:.3f}  "
+                      f"{'PASS' if ok else 'FAIL'}   mean CRPS {mean_crps:.2f}{bench_txt}")
+
+            fpass = len(fverdict) == 3 and all(
+                WEEK_BAND[0] <= fverdict[p]["cov80"] <= WEEK_BAND[1] for p in fverdict)
+            print(f"\n      -> FOLLOW-UP GATE: {'CLEARS' if fpass else 'DOES NOT CLEAR'} "
+                  f"(requires RB, WR, AND TE all in band)")
+
+            # Reported, not gated: how much of total weekly-ratio variance is
+            # between-player-season (form) vs within (residual) — informative
+            # on its own regardless of what the coverage gate decides.
+            print("\n      Variance split (form vs residual), full pool, reported not gated:")
+            for posn in ("RB", "WR", "TE"):
+                sub = dfw[dfw["pos"] == posn]
+                if sub.empty:
+                    continue
+                all_form, all_resid = [], []
+                for pid, grp in sub.groupby("player_id"):
+                    if len(grp) < MIN_WEEKS_FOR_FORM:
+                        continue
+                    ratios = [r for r in
+                              (residual_ratio(r_.actual, r_.proj) for r_ in grp.itertuples())
+                              if r is not None]
+                    form = player_season_form(ratios)
+                    if form is None:
+                        continue
+                    all_form.append(form)
+                    all_resid.extend(weekly_residuals_from_form(ratios, form))
+                if len(all_form) < 5 or len(all_resid) < 5:
+                    continue
+                var_form = pd.Series(all_form).var()
+                var_resid = pd.Series(all_resid).var()
+                total_var = var_form + var_resid
+                share = var_form / total_var if total_var else float("nan")
+                print(f"        {posn}  Var(form)={var_form:.4f}  Var(residual)={var_resid:.4f}  "
+                      f"form share {share:.1%}  (n={len(all_form)} player-seasons, "
+                      f"{len(all_resid)} weeks)")
 
         print("\n  Note: nothing is wired into the frontend on this step regardless of the")
         print("  above — docs/ROADMAP.md 2.1 says the calibration check must pass BEFORE")

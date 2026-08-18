@@ -1215,6 +1215,84 @@ before 2.2b is attempted. Nothing wired into the frontend; `week_rows`,
 `fit_weekly_residuals`, `WEEKLY_CONDITIONINGS` stay in the repo as tested,
 working infrastructure that a form-factor fit would build on directly.
 
+**2.2a FOLLOW-UP — pre-registration, written before the code exists: the
+player-season form factor.**
+
+*Model*: decompose each weekly ratio as `ratio = form × residual`, where
+`form` is drawn ONCE per player-season (a latent "how good was this player's
+season, overall" multiplier) and `residual` is drawn independently week to
+week (pure within-season noise — this week's matchup, health, game script,
+none of it correlated with next week's). This is the standard random-effects
+shape for exactly this problem: it puts the correlation gate 3 found missing
+back where it empirically lives, between weeks of the SAME player-season,
+without inventing a new source of information the earlier sweep didn't have.
+
+*Construction stays empirical, not parametric — same discipline 2.1's whole
+docstring is built around*: `form` for a player-season is the arithmetic mean
+of that player-season's own weekly ratios; `residual` for a week is that
+week's ratio divided by its own player-season's form. Both are pooled as raw
+empirical values (own sorted lists, same `MIN_CELL_N`-gated fallback shape as
+every other pool in this module) — no assumed shape for either distribution,
+just resampling from what actually happened, the same way `predictive_sample`
+already works for the season fit.
+
+*A player-season needs `MIN_WEEKS_FOR_FORM = 6` played weeks (byes already
+excluded) to enter EITHER pool.* Below that, a player-season's own mean is
+mostly week-to-week noise pretending to be a season-level read — the same
+"a small sample's tail is noise wearing a number's clothes" reasoning
+`MIN_CELL_N` already states for season quantiles, applied here to the mean
+instead of the tail. A player-season admitted with too few weeks would also
+mechanically produce near-zero residuals around its own barely-sampled mean,
+polluting the residual pool with fake precision.
+
+*Conditioning is HELD FIXED at whatever 2.2a's own sweep already accepted*
+(`pos` for RB/TE/WR — `pos_rank`/`pos_rank_opp` never earned their bar there)
+rather than re-swept here. This keeps the follow-up a ONE-hypothesis test —
+does splitting the ratio into two factors fix gate 3 — not a second search
+dressed up as a fix, the same discipline (c) and (e) both followed by holding
+their non-tested parameter fixed at the prior step's answer.
+
+*Season composition is Monte Carlo, not closed-form*: for a player-season
+under test, draw `form` once and one `residual` per actually-played week from
+that player's real schedule (byes skipped, same as the base weekly fit),
+multiply by that week's live-board per-week projection, sum across the season,
+divide by the season's total projection to get a simulated SEASON ratio. Many
+draws (2,000) build the simulated season's own empirical distribution,
+comparable via the SAME `quantile`/`interval`/`covers` machinery 2.1 already
+uses for its season fit.
+
+*Gate, all required*:
+1. **Primary — out-of-sample SEASON coverage.** Expanding window (fit on
+   strictly prior seasons), for each held-out player-season with actual
+   games played that year: simulate 2,000 season draws, build the 80%
+   interval, check whether the REAL season total falls inside it. Aggregate
+   `cov80` by position. Must land in `[0.75, 0.85]` for **RB, WR, AND TE** —
+   this is the test gate 3 exists to be a proxy for, so the follow-up is not
+   allowed to declare victory on the proxy (implied width) without the real
+   thing (out-of-sample coverage) also passing.
+2. **Reported, not gated: the variance split itself.** What fraction of total
+   weekly-ratio variance is between-player-season (form) vs within (residual),
+   by position — informative on its own regardless of what the gate decides,
+   the same way follow-up (a)'s roster-presence measurement stood on its own
+   before the fit touched it.
+3. **Sharpness sanity check, not a hard bar**: CRPS of the simulated season
+   distribution against real season totals, compared to 2.1's own DIRECT
+   season fit's CRPS on the same held-out player-seasons. The point of this
+   step is not to beat 2.1's season fit — it is to prove weekly building
+   blocks can compose UP to something roughly as good, which is the actual
+   prerequisite a lineup simulator needs. Materially worse (CRPS up more than
+   ~20% vs the direct season fit) would mean the decomposition is throwing
+   away real information even where it fixes the width, and is reported as a
+   caveat rather than a silent pass.
+
+*What a pass would NOT prove*: that game-script or matchup-specific weekly
+correlation (this week's Broncos game plan, not this player's season-long
+form) is captured — `residual` is still drawn independently week to week by
+construction. If gate 3's collapse turns out to be driven mostly by THAT kind
+of correlation rather than season-level form, this fix would still leave
+weekly draws too tight, just less so. The out-of-sample coverage gate is what
+would actually reveal that gap rather than assume it away.
+
 **BYE-WEEK STACKING IN THE DRAFT RECOMMENDER (separate, product-facing).**
 Independent of the simulator: nothing in the recommender knows about byes today,
 so it will happily hand you three starting RBs who all sit in week 9. Same
