@@ -6,6 +6,34 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 2.1 follow-up (a) RESULT: rejected, but it resolves 2.1's population question — DONE, USABLE
+- Ran `projection-backtest.yml` #32139178653 against live data.
+- **Measurement**: of market-ranked busts (prior history, no season-Y line),
+  RB has the highest never-rostered share (37%) — the hypothesized direction
+  — but **WR has the LOWEST (24%), below QB and TE**, despite over-widening
+  under `with_busts` just as badly as RB. The hypothesis was only half right
+  before the fit even ran.
+- **Gate fails outright**: `rostered_busts` moves RB/WR's cov80 by a
+  rounding error, in the WRONG direction (RB 0.866 → 0.869, WR 0.882 →
+  0.883). Reason: never-rostered rows are a tiny share of the FITTED
+  population (RB: 11 of 846 evaluated rows, 1.3%) — removing them barely
+  moves a percentile-based interval when the remaining 63-76% of busts are
+  still scored as the identical hard zero. The over-widening was never about
+  WHICH busts get counted; every bust, however it happened, collapses to the
+  same value.
+- **But this resolves more than it rejects.** The original survivors/
+  with_busts tension was that they fail in OPPOSITE directions — QB needed
+  `with_busts`, RB/WR needed `survivors`, TE passed either way. QB is now
+  excluded from 2.2 regardless of which population describes it (prior
+  entry), so the one position that ever needed `with_busts` no longer
+  matters for what ships. Under `survivors` alone, RB (0.812), TE (0.780),
+  and WR (0.797) **all pass** — every position still in scope.
+- **2.1 status upgraded: DONE, USABLE** — ships on `survivors`, for RB/WR/TE;
+  QB excluded. No further population surgery needed. `rostered_busts` stays
+  in the repo as a documented negative result, same treatment as
+  `RANK_TIERS_BY_POS`/`FIT_WINDOWS` before it. 2.2 (weekly-lineup simulator)
+  is unblocked to actually consume these distributions.
+
 ## 2026-08 — Roadmap 2.1 follow-up (a): pre-registered + implemented, not yet run — settling the bust rate via roster presence
 - Original open item: `with_busts` scores every market-ranked player with no
   season-Y stats as an outcome of 0, conflating "rostered all season and

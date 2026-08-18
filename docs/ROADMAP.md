@@ -500,7 +500,7 @@ The largest conceptual change in this document. Do not start it before Phase 1
 lands, because a distribution around a biased mean is a well-quantified wrong
 answer.
 
-### 2.1 Per-player outcome distributions — DONE, not yet usable
+### 2.1 Per-player outcome distributions — DONE, USABLE (RB/WR/TE, `survivors`; QB excluded)
 Replace the point estimate with a distribution. Fit empirically from historical
 residuals by position, projected rank and age — not a parametric guess.
 
@@ -1014,6 +1014,66 @@ fantasy risk worth pricing in anywhere — only that folding them into the fit
 as a hard zero specifically over-widens the left tail more than this gate
 tolerates. A softer treatment (e.g. a non-zero floor for that group) is a
 separate, un-pre-registered idea and out of scope here.
+
+**RESULT — (a) REJECTED, and the reason it failed dissolves the whole
+population question rather than just narrowing it.**
+Backtest `projection-backtest.yml` #32139178653.
+
+*The measurement first, standing on its own*: of market-ranked players who
+produced no season-Y line, the rostered/never-rostered split by position —
+
+| pos | n busts | rostered | never-rostered |
+|---|---|---|---|
+| QB | 14 | 71% | 29% |
+| RB | 38 | 63% | **37%** |
+| TE | 14 | 71% | 29% |
+| WR | 42 | **76%** | 24% |
+
+RB does have the highest never-rostered share, the direction the hypothesis
+predicted. **WR does not — its never-rostered share is the LOWEST of the
+four positions**, even below QB and TE, despite WR over-widening under
+`with_busts` just as badly as RB. The hypothesis is already only half right
+before the fit is touched.
+
+*Gate fails outright*: `rostered_busts` moves RB/WR's `cov80` by a rounding
+error, and in the wrong direction —
+
+| pos | `with_busts` cov80 | `rostered_busts` cov80 |
+|---|---|---|
+| RB | 0.866 | 0.869 (worse) |
+| WR | 0.882 | 0.883 (worse) |
+
+*Why, and it's informative*: the never-rostered rows are a tiny share of the
+FITTED population, not of the bust population. RB's evaluated fit population
+is 846 rows under `with_busts`; excluding never-rostered busts removes only
+11 of them (1.3%). Percentile-based intervals are sensitive to where extreme
+values sit, not how many of them there are — and the 24 REMAINING rostered
+RB busts (63% of 38) are still scored as a literal, undifferentiated actual
+outcome of exactly 0, identical to the ones removed. Splitting the bust
+population by whether the zero was "earned" on a roster changes which rows
+enter the fit; it does not change what value those rows carry. The
+over-widening was never about WHICH busts get counted — it is that EVERY
+bust, however it happened, collapses to the same hard zero.
+
+**Consequence, and the more useful one**: this closes "wrong bust
+population" the same way (c)/(e) closed their hypotheses — cleanly, by a
+pre-registered test that failed for a specific, checkable reason rather than
+by degree. A real fix would have to change the VALUE a bust contributes
+(a non-zero floor, or a separate bust-probability component blended in
+rather than pooled as a literal ratio=0 sample) — a materially different,
+un-pre-registered idea, out of scope here.
+
+**But combined with the QB decision already made, this actually resolves
+2.1's population question rather than leaving it stuck.** The original
+tension was that `survivors` and `with_busts` fail in OPPOSITE directions —
+QB needed `with_busts` to pass, RB/WR needed `survivors` to pass, TE passed
+either way. QB is now excluded from 2.2 regardless of which population's
+number describes it, so the one constituency that ever needed `with_busts`
+no longer matters for what ships. Under `survivors` alone: **RB (0.812), TE
+(0.780), and WR (0.797) all pass** — every position that remains in scope.
+**2.1 ships on `survivors`, for RB/WR/TE.** No further population surgery is
+needed; `rostered_busts` stays in the repo as a documented negative result,
+same treatment as `RANK_TIERS_BY_POS`/`FIT_WINDOWS` before it.
 
 ### 2.2 Weekly-lineup-aware season simulator
 Season totals are the wrong unit: you start ~9 of 15 players each week. Simulate
