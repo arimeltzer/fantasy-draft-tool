@@ -2036,7 +2036,10 @@ def main():
             return [vals[int(round(i * step))] for i in range(MAX_EVAL_SAMPLE)]
 
         dfr = pd.DataFrame(dist_rows)
-        dfr["tier"] = [rank_tier(r) for r in dfr["rank"]]
+        # `pos` selects a position-specific tier layout when one is
+        # registered (roadmap 2.1 follow-up (e), QB only) — every other
+        # position falls through to the shared RANK_TIERS unchanged.
+        dfr["tier"] = [rank_tier(r, p) for r, p in zip(dfr["rank"], dfr["pos"])]
         dfr["agebucket"] = [age_bucket(a if pd.notna(a) else None) for a in dfr["age"]]
         years_sorted = sorted(dfr["year"].unique())
 

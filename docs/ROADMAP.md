@@ -852,6 +852,48 @@ re-run the existing 1% CRPS bar against the `pos`-only baseline QB currently
 ships with — same discipline every other conditioning choice in this file
 already clears, not a new standard invented for QB.
 
+**FOLLOW-UP (e) — pre-registration, written before the code exists.**
+
+*Hypothesis*: QB's `pos_rank` conditioning failed the 1% CRPS-earns-its-place
+bar under the shared `RANK_TIERS` (1-6/7-12/13-24/25-48/49+) not because rank
+carries no QB signal, but because the boundary between ranks 6 and 12
+straddles QB's real cliff — (d) found a ~2.5x width jump between ADP 7-9 and
+ADP 10-12, inside that single shared bucket. A QB-specific split placed at
+that jump should let `pos_rank` earn its place for QB where the shared tiers
+did not.
+
+*Form*: minimal, ONE parameter — a single QB-specific split point, not a
+multi-tier fitted curve. (d) found one defensible jump, not enough data to
+trust a finer shape (its own tier-to-tier detail was noisy at n≈20-40/cell) —
+same "don't fit more than the sample supports" discipline `MIN_CELL_N` and the
+collapsed snake-slot configs (0.2) already follow. `RANK_TIERS_BY_POS =
+{"QB": ((9, "1-9"), (inf, "10+"))}` in `outcome_distribution.py`; every other
+position keeps the existing shared `RANK_TIERS` untouched, and `rank_tier()`
+takes an optional `pos` to select it — default behaviour (no `pos` passed) is
+unchanged, so nothing already fit for RB/WR/TE moves.
+
+*Held fixed*: everything else about the fit — flat pool (`window=None`), both
+populations, the same CRPS-earns-its-place mechanics, the same 1% bar. Only
+QB's tiering changes, so this stays a one-parameter test.
+
+*Gate, both required*:
+1. `pos_rank` must beat `pos` by **more than 1% relative CRPS for QB** — the
+   identical bar RB/WR/TE already cleared and QB failed under the shared
+   tiers.
+2. **If QB earns conditioning, its `cov80` must land in `[0.75, 0.85]` on at
+   least one population** — clearing the CRPS bar is necessary, not
+   sufficient; a conditioning variable can earn its keep on sharpness while
+   still missing the calibration gate outright, and both have to be checked
+   independently, the same as every position in the original 2.1 run.
+
+*What a pass would NOT prove*: that ADP 9/10 is QB's TRUE cliff location — (d)
+already flagged its own tier-by-tier reading as too noisy to locate one
+precisely, only that a cliff exists somewhere in that neighborhood coarse
+enough to matter. A finer or differently-placed split might do even better;
+this tests the one hypothesis (d) actually supports, not a search over split
+points chosen after seeing results — that would be the exact p-hacking move
+this file's discipline exists to rule out.
+
 ### 2.2 Weekly-lineup-aware season simulator
 Season totals are the wrong unit: you start ~9 of 15 players each week. Simulate
 weeks, set lineups, score the lineup. This makes bench depth worth its true

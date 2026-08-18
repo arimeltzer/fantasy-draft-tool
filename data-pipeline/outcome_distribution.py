@@ -54,6 +54,19 @@ MIN_PROJ_FOR_RATIO = 10.0
 # touches, and those are not the same shape.
 RANK_TIERS = ((6, "1-6"), (12, "7-12"), (24, "13-24"), (48, "25-48"), (float("inf"), "49+"))
 
+# Per-position override of the tier boundaries above (roadmap 2.1 follow-up
+# (e)). Only QB has one: (d) found the shared 7-12 bucket straddles a real
+# ~2.5x width jump between ADP 7-9 and ADP 10-12, a plausible reason
+# `pos_rank` never earned its CRPS bar for QB under the shared layout. ONE
+# split point, not a fitted curve — (d)'s own tier-by-tier detail was too
+# noisy at n=20-40/cell to trust a finer shape, the same discipline
+# `MIN_CELL_N` and the collapsed snake-slot configs (roadmap 0.2) already
+# follow. Every other position is absent from this dict and falls through to
+# the shared `RANK_TIERS` unchanged.
+RANK_TIERS_BY_POS = {
+    "QB": ((9, "1-9"), (float("inf"), "10+")),
+}
+
 AGE_BUCKETS = ((24.0, "<=24"), (28.0, "25-28"), (float("inf"), ">=29"))
 
 # The three conditioning models, coarsest first. Order matters: `lookup_ratios`
@@ -62,14 +75,20 @@ AGE_BUCKETS = ((24.0, "<=24"), (28.0, "25-28"), (float("inf"), ">=29"))
 CONDITIONINGS = ("pos", "pos_rank", "pos_rank_age")
 
 
-def rank_tier(rank) -> str:
-    """Projected rank (1 = best at the position) -> tier label."""
+def rank_tier(rank, pos=None) -> str:
+    """Projected rank (1 = best at the position) -> tier label.
+
+    `pos` selects a position-specific layout from RANK_TIERS_BY_POS when one
+    is registered there (currently QB only, roadmap 2.1 follow-up (e));
+    every other position — including `pos=None`, which every pre-(e) caller
+    still passes — falls through to the shared RANK_TIERS unchanged."""
     if rank is None:
         return "unknown"
-    for hi, label in RANK_TIERS:
+    tiers = RANK_TIERS_BY_POS.get(pos, RANK_TIERS)
+    for hi, label in tiers:
         if rank <= hi:
             return label
-    return RANK_TIERS[-1][1]
+    return tiers[-1][1]
 
 
 def age_bucket(age) -> str:

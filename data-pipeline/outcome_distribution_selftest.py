@@ -6,6 +6,7 @@ from outcome_distribution import (
     MIN_CELL_N,
     expected_coverage,
     MIN_PROJ_FOR_RATIO,
+    RANK_TIERS_BY_POS,
     age_bucket,
     covers,
     crps_empirical,
@@ -34,6 +35,23 @@ check("rank 7 falls to the next tier", rank_tier(7) == "7-12")
 check("a very deep rank lands in the last tier", rank_tier(400) == "49+")
 check("a missing rank is its OWN bucket, not silently tier 1",
       rank_tier(None) == "unknown")
+
+# ── rank_tier position override (roadmap 2.1 follow-up (e)) ────────────
+check("no pos argument (every pre-(e) caller) keeps the shared layout",
+      rank_tier(9) == "7-12" and rank_tier(1) == "1-6")
+check("a position with no override in RANK_TIERS_BY_POS keeps the shared layout",
+      rank_tier(9, "RB") == "7-12" and rank_tier(1, "WR") == "1-6")
+check("QB's override splits at rank 9, not the shared boundary at 6",
+      rank_tier(9, "QB") == "1-9" and rank_tier(6, "QB") == "1-9")
+check("QB rank 10 falls into the override's second tier",
+      rank_tier(10, "QB") == "10+")
+check("QB's override still bottoms out gracefully on a very deep rank",
+      rank_tier(400, "QB") == "10+")
+check("a missing rank is unknown regardless of pos",
+      rank_tier(None, "QB") == "unknown")
+check("QB has exactly the one two-tier override this follow-up registered",
+      RANK_TIERS_BY_POS.keys() == {"QB"}
+      and RANK_TIERS_BY_POS["QB"][0] == (9, "1-9"))
 
 check("a 23-year-old is young", age_bucket(23) == "<=24")
 check("age boundary is inclusive", age_bucket(24.0) == "<=24")
