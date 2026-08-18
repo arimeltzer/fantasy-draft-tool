@@ -6,6 +6,36 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 2.1 follow-up (c): rolling window rejected; QB is an evaluation-season effect
+- Tested the non-stationarity hypothesis (b) pointed at: fit only the most
+  recent W seasons instead of pooling all prior ones. Pre-registered with a
+  four-part gate (QB enters the band on survivors; no passing position leaves
+  it; CRPS degrades <1% anywhere; and the by-year QB decline visibly flattens).
+  Conditioning held fixed at the flat pool's choice so W was the only parameter.
+- **Rejected on three of four conditions.** QB enters the band only at W=3, and
+  only by landing exactly on the 0.750 boundary with a non-monotone curve (W=4
+  is worse than both 5 and 3) — noise, not effect. That same W=3 costs RB +2.4%
+  and TE +1.5% CRPS, breaching the 1% tolerance: the shorter window buys
+  coverage by widening intervals, which is precisely what CRPS is in the gate
+  to catch. And the shape prediction fails outright — `rho(cov80, year)` stays
+  at -0.74/-0.75 under every window, and recent seasons get *less* covered
+  (2025: 0.731 → 0.687), the opposite of what non-stationarity predicts.
+- **It also resolves the confound (b) flagged, and corrects (b)'s reading.**
+  Varying W at a fixed evaluation year separates fit size from evaluation year:
+  changing the fit barely moves anything, so QB coverage is driven by the
+  EVALUATION SEASON. The "coverage falls as the fit fattens" pattern (b)
+  reported was `with_busts`-only; the survivors population that actually fails
+  the gate has **no trend at all** (rho = +0.00, bouncing 0.667-0.818 across
+  2019-2025). (b)'s durable claim is the narrower one: the estimator is not the
+  cause.
+- **Consequence: no fit-side fix can rescue QB.** Window, recency decay and
+  more history are the same inert lever. QB seasons genuinely differ in
+  dispersion and one pooled ratio distribution cannot express that; the likely
+  real cause is QB's starter/backup bimodality. Options left are to exclude QB
+  from whatever 2.2 consumes, or to condition on something that predicts
+  dispersion ex ante. Nothing shipped; `in_window()` stays as a documented
+  negative result. Backtest run: `projection-backtest.yml` #32128939543.
+
 ## 2026-08 — Roadmap 2.1 follow-up (b): estimator bias real and fixed, but QB is the model's fault
 - Tested whether QB's cov80=0.730 was small-sample bias in the empirical
   quantile. The bias is analytic, so the prediction was registered in advance:

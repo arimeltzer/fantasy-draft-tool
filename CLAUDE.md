@@ -535,12 +535,20 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   modelling decision, **not** a column to select after seeing the results, and
   it blocks 2.2. See `docs/ROADMAP.md` 2.1.
 - **QB's narrowness was chased down and is the MODEL's fault, not the
-  estimator's** (roadmap 2.1 follow-up b). Switching to `type6` moved it only
-  0.730 → 0.743, and the per-year breakdown reverses the small-sample story:
-  QB coverage gets *worse* as the fit cell fattens (n=110 → 0.866; n=367 →
-  0.731; n=433 → 0.731). Thin fits are not the problem. Points at
-  non-stationarity in the QB ratio distribution; a recency-weighted or
-  rolling-window fit is the untested next hypothesis.
+  estimator's** (roadmap 2.1 follow-up b). Switching to the correct `type6`
+  estimator moved it only 0.730 → 0.743. Thin fits are not the problem.
+- **And it is not a fit-side problem at all** (follow-up c). A rolling-window
+  sweep (W = 5/4/3/2 against the flat pool, conditioning held fixed) moved QB
+  into the band only at W=3, landing exactly on the 0.750 boundary and
+  non-monotonically — noise, not signal — while costing RB +2.4% and TE +1.5%
+  CRPS, breaching the pre-registered 1% tolerance. Varying W at a fixed
+  evaluation year also separates the confound (b) could not: **changing the fit
+  barely moves anything, so QB coverage is driven by the EVALUATION SEASON, not
+  by how the fit is built.** No window, decay, or extra history can fix it. QB
+  seasons genuinely differ in dispersion, and one pooled ratio distribution
+  cannot express that — the likely real cause is QB's starter/backup
+  bimodality, which the other three positions don't share. Don't re-try a
+  recency-weighted fit here; it is the same lever, already measured as inert.
 - Nothing consumes these — the roadmap requires the calibration check to pass
   first. `outcome_distribution_selftest.py` (47 assertions) runs in the
   backtest workflow.

@@ -621,7 +621,8 @@ Small-sample bias predicts the exact opposite — thin fits under-cover, fat fit
 approach nominal. QB does the reverse and settles at 0.731 in the two most
 recent years, its two largest fits. RB/TE/WR show no such trend (TE is flat
 around 0.79; WR sits high throughout). **So QB's narrow tails are the model's
-problem, not the estimator's.**
+problem, not the estimator's** — which is what type6 moving it only 0.730 →
+0.743 already established independently of this series.
 
 *Confound, stated rather than glossed*: in an expanding window the fit size and
 the evaluation year advance together, so this is either non-stationarity in the
@@ -629,6 +630,13 @@ QB ratio distribution (a pooled 8-year sample no longer describing recent QB
 seasons) or year-specific dispersion in 2024-25. Distinguishing those needs its
 own test — but it does not rescue (b), because both explanations are the model,
 not the quantile estimator.
+
+> **Superseded by (c), read this with the table above**: the declining series
+> quoted here is `with_busts` only. Follow-up (c) separated the confound and
+> found the `survivors` population — the one that actually fails the gate — has
+> **no trend at all** (`rho = +0.00`). The "coverage falls as the fit fattens"
+> reading was an artifact of the confound; the durable claim from (b) is the
+> narrower one, that the estimator is not the cause. See (c) below.
 
 Net gate after the fix — same shape as before, everything ~+0.01 wider:
 survivors RB 0.812 / TE 0.780 / WR 0.797 PASS, QB 0.743 FAIL; with_busts QB
@@ -680,6 +688,65 @@ years there is no held-out set left for a second-stage parameter choice, so any
 tuned constant**. Shipping it would need confirmation on seasons not used to
 pick it. Gate 4 exists precisely because a shape prediction is much harder to
 satisfy by chance than a single optimised number.
+
+**RESULT — (c) REJECTED, and it resolves (b)'s confound in the process.**
+Backtest `projection-backtest.yml` #32128939543.
+
+*Gate 1 — does QB enter the band on survivors?* Only at `W=3`, and only just:
+
+| W | QB cov80 (survivors) | CRPS vs flat |
+|---|---|---|
+| flat pool | 0.743 out | — |
+| 5 | 0.743 out | +0.1% |
+| 4 | 0.739 out | +0.3% |
+| **3** | **0.750 IN** | +0.3% |
+| 2 | 0.743 out | +0.6% |
+
+It lands exactly on the 0.750 boundary, and the curve is **non-monotone** (4 is
+worse than both 5 and 3; 2 is worse than 3). That is the signature of noise, not
+of an effect.
+
+*Gate 3 — CRPS.* `W=3`, the only window that moves QB, costs **RB +2.4%** and
+**TE +1.5%**, both breaching the pre-registered 1% tolerance. A shared `W=3`
+therefore fails outright. Exactly the failure mode CRPS was put in this gate to
+catch: the shorter window widens intervals, which buys coverage while making the
+distributions worse.
+
+*Gate 4 — the shape test, and the decisive one.* The decline does **not**
+flatten. On `with_busts` QB, where the decline lives, `rho(cov80, year)` is
+-0.74 flat, and -0.75 / -0.75 / -0.75 / -0.68 at W = 5 / 4 / 3 / 2 — unmoved.
+Worse, the most recent seasons get *less* covered under short windows (2025:
+0.731 flat → 0.687 at W=5 and W=3), the opposite of what non-stationarity
+predicts.
+
+**And the survivors population — the one that actually fails the gate — has no
+trend at all: `rho = +0.00`**, with coverage bouncing 0.667 / 0.806 / 0.703 /
+0.792 / 0.818 / 0.701 / 0.697 across 2019-2025.
+
+*This resolves the confound (b) flagged, and corrects (b)'s reading.* (b) noted
+that fit size and evaluation year advance together in an expanding window and
+that the two could not be separated there. Varying `W` at a fixed evaluation
+year separates them, and the answer is unambiguous: **changing the fit barely
+moves anything, so QB's coverage is driven by the EVALUATION SEASON, not by how
+the fit was built.** The "coverage falls as the fit fattens" pattern (b)
+reported was a `with_busts`-only artifact of that confound; it does not hold in
+`survivors`, and (b)'s conclusion should be read as the narrower, still-correct
+claim that the *estimator* is not the cause.
+
+**Consequence: no fit-side fix can rescue QB.** Window, recency decay, or simply
+more history all change the same thing the sweep just showed to be nearly inert.
+QB seasons genuinely differ in outcome dispersion year to year, and one pooled
+ratio distribution — however fitted — cannot express that. The remaining honest
+options are (i) accept QB as uncalibrated and exclude it from whatever 2.2
+consumes, (ii) condition on something that predicts dispersion *ex ante* rather
+than describing it after the fact — the obvious candidate being the
+starter/backup bimodality that makes QB unlike the other three positions, since
+a QB who loses the job goes to near-zero in a way an RB3 does not, or (iii)
+inflate QB's intervals by a fitted factor, which is fudging the number rather
+than modelling anything and should not be done.
+
+Nothing shipped, nothing wired in. `FIT_WINDOWS` and `in_window()` stay in the
+repo as the documented negative result, same as every other killed idea here.
 
 **Known population caveat, measured rather than hand-waved**: every correlation
 in this file is computed over players who APPEAR in season Y, so a player who
