@@ -6,6 +6,32 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Roadmap 2.2a RESULT: independent weekly draws REJECTED — season variance understated 3-4x
+- Ran `projection-backtest.yml` #32154937836 against live data (2016-2025,
+  63,071 player-weeks). Confirms the pre-registered concern, decisively.
+- **Opponent strength never earned its place at any position** — QB, RB, TE,
+  WR all show `pos_rank_opp` failing the 1% CRPS bar. Same shape as age in
+  2.1 and three of four signals in 1.3: being asked for is not evidence it
+  helps. RB/TE/WR's weekly fit ends up as `pos` alone.
+- **Gate 1+2 (weekly calibration): only WR passes** (cov80 0.807). RB is too
+  wide (0.861), TE too narrow (0.715).
+- **Gate 3 (season coherence) fails for every gated position, hard** —
+  implied season width is only 0.27x-0.31x of 2.1's actual fitted season
+  width (RB 0.28x, TE 0.27x, WR 0.31x). Summing 17 independent weekly draws
+  would understate every roster's true season variance by roughly 3-4x. This
+  is the exact failure the gate was pre-registered to catch, and it means WR
+  passing gates 1+2 doesn't save it — gate 3 fails for WR just as hard.
+- Consistent with the cause: **49.4% of player-weeks (byes already excluded)
+  score exactly 0** — production this bimodal suggests a single pooled
+  weekly distribution is averaging over more than one within-season state.
+- **Nothing from 2.2a is usable as built.** The fix isn't another
+  conditioning sweep — it's a player-season "form factor" (a per-player-
+  season latent multiplier applied across all of that player's weeks), a
+  materially different, hierarchical model. Scoped as its own pre-registered
+  step before 2.2b. Nothing wired in; the weekly fit infrastructure
+  (`fit_weekly_residuals`, `WEEKLY_CONDITIONINGS`, `week_rows`) stays as
+  tested, working code a form-factor fit would build on directly.
+
 ## 2026-08 — Roadmap 2.1 follow-up (a) RESULT: rejected, but it resolves 2.1's population question — DONE, USABLE
 - Ran `projection-backtest.yml` #32139178653 against live data.
 - **Measurement**: of market-ranked busts (prior history, no season-Y line),

@@ -1075,7 +1075,7 @@ no longer matters for what ships. Under `survivors` alone: **RB (0.812), TE
 needed; `rostered_busts` stays in the repo as a documented negative result,
 same treatment as `RANK_TIERS_BY_POS`/`FIT_WINDOWS` before it.
 
-### 2.2 Weekly-lineup-aware season simulator
+### 2.2 Weekly-lineup-aware season simulator — BLOCKED on 2.2a (independent weekly draws rejected)
 Season totals are the wrong unit: you start ~9 of 15 players each week. Simulate
 weeks, set lineups, score the lineup. This makes bench depth worth its true
 option value and stops treating a bench player's points as if they counted.
@@ -1148,6 +1148,72 @@ in 1.3. The sweep is the point.
 script — a QB and his WR1 boom together). Out of scope for this step, documented
 rather than silently assumed independent, and revisited only if the standings
 validation in 2.2b shows too little spread in points-for.
+
+**RESULT — REJECTED on gate 3, decisively, and it invalidates the whole
+independent-weekly-draw construction rather than just missing a threshold.**
+Backtest `projection-backtest.yml` #32154937836, 2016–2025, 63,071 player-weeks.
+
+*Opponent strength never earned its place, at any position* — a clean
+negative result, same shape as age in 2.1 and three of four signals in 1.3:
+
+| pos | accepted | `pos_rank_opp` vs `pos` |
+|---|---|---|
+| QB | `pos_rank` (+1.8%) | -0.2%, does not earn it |
+| RB | `pos` | -0.2%, does not earn it |
+| TE | `pos` | -0.0%, does not earn it |
+| WR | `pos` | -0.1%, does not earn it |
+
+Being asked for was not evidence it would help, and it did not. `pos_rank`
+itself only earned its keep for QB (which is not gated — already excluded
+from distributions) — RB/TE/WR's weekly fit is `pos` alone.
+
+*Gate 1+2 (weekly calibration): only WR clears it.*
+
+| pos | cov80 | verdict |
+|---|---|---|
+| RB | 0.861 | FAIL — too wide |
+| TE | 0.715 | FAIL — too narrow |
+| WR | 0.807 | PASS |
+
+*Gate 3 (season coherence) fails for every gated position, and not by a
+little* — implied season width lands at **0.27x–0.31x** of 2.1's actual
+fitted season width:
+
+| pos | implied season width | 2.1's actual | ratio |
+|---|---|---|---|
+| RB | 0.445 | 1.603 | 0.28x |
+| TE | 0.457 | 1.666 | 0.27x |
+| WR | 0.456 | 1.477 | 0.31x |
+
+Summing 17 independent weekly draws would understate every roster's true
+season variance by roughly **3–4x** — precisely the failure this gate was
+pre-registered to catch before it could quietly reach a simulator. WR passing
+gates 1+2 does not save it: gate 3 fails for WR too, just as hard as RB/TE.
+
+*Why, stated precisely rather than left as "weeks aren't independent"*: a
+player who is having a good season tends to have MULTIPLE good weeks, not one
+good week independently drawn 17 times — health, role, scheme fit and matchup
+quality within a season are correlated with each other, and none of that is
+in the projection the ratio is measured against. Consistent with this: **49.4%
+of player-weeks (byes already excluded) score exactly 0** — real activity
+that's this bimodal (played meaningfully, or produced nothing) is itself a
+signal that a single pooled weekly distribution is averaging over at least two
+different within-season states rather than describing one.
+
+**Consequence: nothing from 2.2a is usable as built.** Per the pre-registered
+"all three required" gate, this fails outright regardless of gates 1+2's mixed
+result — a simulator built on these weekly draws would look calibrated
+week-to-week and be badly wrong about anything that depends on a full season
+(which is the entire point of 2.2). The fix named in the gate's own
+pre-registration is the next step, not a surprise: a player-season **form
+factor** — a per-player-season latent multiplier drawn once and applied to
+every week of that player's season, so weeks stop being conditionally
+independent given only the position/rank/opponent cell. This is a materially
+different model (a hierarchical/mixed-effects structure, not another
+conditioning variable to sweep) and is scoped as its own pre-registered step
+before 2.2b is attempted. Nothing wired into the frontend; `week_rows`,
+`fit_weekly_residuals`, `WEEKLY_CONDITIONINGS` stay in the repo as tested,
+working infrastructure that a form-factor fit would build on directly.
 
 **BYE-WEEK STACKING IN THE DRAFT RECOMMENDER (separate, product-facing).**
 Independent of the simulator: nothing in the recommender knows about byes today,
