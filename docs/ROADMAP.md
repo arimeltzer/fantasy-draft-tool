@@ -508,6 +508,38 @@ residuals by position, projected rank and age — not a parametric guess.
 actual outcome 80% of the time across held-out seasons, it is honest. That is a
 falsifiable check and it must run before anything consumes the distributions.
 
+**Kill gate, made precise before running** (the section above fixes the SHAPE of
+the bar, not numbers — these are the numbers, set in advance):
+
+1. **Calibration.** Held-out empirical coverage of the nominal 80% interval must
+   land in **[0.75, 0.85]** at every position. 50% and 90% intervals are reported
+   alongside as shape checks — a model that hits 80% by being wrong in
+   compensating directions at 50/90 is not actually calibrated.
+2. **Sharpness, because calibration alone is trivially gameable.** A `[0, ∞)`
+   interval covers 100% of outcomes and is worthless; the roadmap's stated bar
+   cannot be the only one. Scored with **CRPS** (continuous ranked probability
+   score — a proper scoring rule that rewards sharpness *conditional on*
+   calibration), computed exactly against the empirical predictive sample.
+3. **Every conditioning variable earns its place independently**, the same
+   discipline 1.3 applied to team context: fit `pos` only, then `pos+rank`, then
+   `pos+rank+age`, and require each added variable to improve held-out CRPS by
+   **more than 1% relative**. A variable that doesn't clear that is dropped —
+   the roadmap NAMING age is not evidence that age helps, exactly as it named
+   `qb_change`/`coach_change`/`pace` in 1.3 and three of the four failed.
+
+Evaluated **per position**. Nothing is wired into the frontend on this step
+regardless of outcome — 2.1 produces a validated distribution or a documented
+negative result, and 2.2 is what would consume it.
+
+**Known population caveat, measured rather than hand-waved**: every correlation
+in this file is computed over players who APPEAR in season Y, so a player who
+was drafted and then never played is excluded rather than counted as a zero.
+That truncates the left tail, which is precisely the tail a downside
+distribution exists to describe. Coverage is therefore reported twice — over the
+usual population, and over one that adds back players the market ranked (they
+have season-Y ADP, so drafters were really considering them) who then produced
+no season-Y stats line, scored as an actual outcome of 0.
+
 ### 2.2 Weekly-lineup-aware season simulator
 Season totals are the wrong unit: you start ~9 of 15 players each week. Simulate
 weeks, set lineups, score the lineup. This makes bench depth worth its true
