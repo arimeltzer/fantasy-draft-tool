@@ -1083,6 +1083,79 @@ option value and stops treating a bench player's points as if they counted.
 **Validation**: simulated final standings must reproduce historical distributions
 of points-for and win totals.
 
+**2.2a WEEKLY OUTCOME DISTRIBUTIONS — pre-registration, written before the code
+exists.** 2.1 validated SEASON-total distributions. A weekly simulator needs
+weekly points, and the decision taken here is to **fit weekly distributions
+directly** rather than draw a season total and allocate it across weeks. The
+alternative (season draw + fitted week shares) would inherit 2.1's calibration
+for free, but the whole point of 2.2 is bench option value, and option value is
+paid out of week-to-week volatility — allocating a season total across weeks
+makes that volatility an artifact of the share model rather than something
+measured. Fitting weekly directly means weekly calibration must be earned on its
+own; 2.1's season gate does not transfer.
+
+*Unit and ratio*: one row per player-week. Ratio = `actual_week_fp /
+(live_board_season_projection / expected_games)`, i.e. the same live-board
+number 2.1 used, put on a per-week basis. Same `MIN_PROJ_FOR_RATIO` guard,
+same deliberate refusal to clip the tail.
+
+*Byes vs inactives — the load-bearing distinction, and why it is not the 2.1
+bust question again*: a **bye is deterministic and known ex ante**. It is not a
+bad outcome that might happen; it is a week the player structurally cannot
+score, visible on the schedule in August. Byes are therefore EXCLUDED from the
+ratio fit and handled structurally in the simulator (no lineup slot, no draw).
+An **inactive/injured week is stochastic** — you rostered him, he was
+unavailable, you ate a zero or burned a bench slot covering it. Those weeks stay
+IN, scored as a real 0. This is the opposite treatment from 2.1's rejected
+`rostered_busts` split, and for a principled reason rather than a convenient
+one: 2.1 was asking which *unknowable* outcomes belong in the fit, this is
+separating *knowable schedule structure* from unknowable availability. Byes are
+derivable today with no new data — `fantasy_schedule` carries one row per
+(season, team, week) and `build_schedule()` only emits weeks a team actually
+plays, so a bye is simply a missing week.
+
+*Conditioning, swept in order*: `pos` → `pos_rank` → `pos_rank_opp`, where the
+opponent term buckets the defense faced using `sos_engine.adjusted_defense_
+ratings()` (already built, already opponent-adjusted, already per position).
+**Opponent strength having been asked for is not evidence that it helps** — it
+faces the identical bar every other conditioning variable in this file has
+faced, >1% relative held-out CRPS, and it is dropped if it does not clear it.
+Age failed that bar in 2.1; three of four named team-context signals failed it
+in 1.3. The sweep is the point.
+
+*Gate, all three required*:
+1. **Weekly calibration**: `cov80` in `[0.75, 0.85]` for RB/WR/TE — the three
+   positions 2.1 ships. cov50/cov90 and PIT reported alongside as shape checks.
+   QB is excluded from distributions entirely (decision recorded above) and
+   enters the simulator as a zero-variance point estimate, so it is not gated
+   here.
+2. **Sharpness**: each conditioning variable must improve held-out CRPS by >1%
+   relative, or it is dropped.
+3. **Season coherence — the check that catches the subtle failure.** Summing 17
+   INDEPENDENT weekly draws produces a season total that concentrates toward the
+   mean by the central limit theorem, so a weekly model that is perfectly
+   calibrated week-by-week can still imply a season distribution far narrower
+   than the one 2.1 validated. The implied season-total 80% width, simulated,
+   must land within **±15%** of 2.1's fitted season width at the same position.
+   If it does not, weekly draws are not conditionally independent given the
+   projection and the model needs a player-season random effect (a "form"
+   factor shared across that player's weeks) before the simulator is
+   trustworthy. Pre-registering this because it is the failure that would
+   otherwise pass every weekly check and quietly understate every roster's
+   variance downstream.
+
+*What 2.2a does NOT settle*: cross-player correlation (same-team stacking, game
+script — a QB and his WR1 boom together). Out of scope for this step, documented
+rather than silently assumed independent, and revisited only if the standings
+validation in 2.2b shows too little spread in points-for.
+
+**BYE-WEEK STACKING IN THE DRAFT RECOMMENDER (separate, product-facing).**
+Independent of the simulator: nothing in the recommender knows about byes today,
+so it will happily hand you three starting RBs who all sit in week 9. Same
+schedule derivation as above. Scoped as a recommender penalty plus a visible
+surface, not a hard gate — a bye clash is a real cost but a small one next to
+player quality, and over-weighting it would be worse than ignoring it.
+
 ### 2.3 Championship probability
 Simulate your roster against opponents' actual rosters to get P(title). This
 becomes the objective every later phase optimizes.

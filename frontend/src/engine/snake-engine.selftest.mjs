@@ -128,6 +128,50 @@ check("a non-10-team league also uses it",
         resolveSlotConfig(withSlot, 10, 5) === DEFAULT_SNAKE_PARAMS.SLOT_DEFAULT);
 }
 
+// ── bye-week collision penalty ────────────────────────────────────────────
+// The player is identical in every case; only the roster around him changes,
+// so any score difference is the bye logic and nothing else.
+{
+  const rb = player("RB", 100, { team: "BUF" });
+  const byeByTeam = { BUF: 9, KC: 9, MIA: 4, NE: 6 };
+  const clean = state({ byeByTeam, rosterByesByPos: { RB: [4, 6] } });
+  const stacked = state({ byeByTeam, rosterByesByPos: { RB: [9] } });
+
+  check("no bye data leaves the score untouched",
+        pickScore(rb, state()).score === pickScore(rb, state({ byeByTeam: {} })).score);
+  check("a bye nobody else shares is free",
+        pickScore(rb, clean).score === pickScore(rb, state()).score);
+  check("stacking a second RB on the same bye is penalised",
+        pickScore(rb, stacked).score < pickScore(rb, clean).score);
+  check("the penalty is explained in the reasons",
+        pickScore(rb, stacked).reasons.some((r) => r.includes("bye wk 9")));
+
+  // The correctness case: enough other bodies to cover means no charge.
+  const covered = state({ byeByTeam, rosterByesByPos: { RB: [9, 4, 6] } });
+  check("a shared bye the rest of the roster covers is free",
+        pickScore(rb, covered).score === pickScore(rb, state()).score);
+
+  // Deeper stacks hurt more, but stay bounded.
+  const deep = state({ byeByTeam, rosterByesByPos: { RB: [9, 9] } });
+  check("a third body on the same bye is worse than the second",
+        pickScore(rb, deep).score < pickScore(rb, stacked).score);
+  check("the penalty is capped so it cannot flip a much better player",
+        pickScore(rb, deep).score >= pickScore(rb, state()).score * (1 - DEFAULT_SNAKE_PARAMS.byeClashMax) - 1e-9);
+
+  // A clearly better player must still win despite a bye clash — this is the
+  // whole reason the cap exists.
+  const better = player("RB", 130, { team: "BUF" });
+  check("a materially better player still outranks a bye-clean lesser one",
+        pickScore(better, stacked).score > pickScore(player("RB", 100, { team: "MIA" }), stacked).score);
+
+  // The penalty must survive the step-6 ADP blend rather than being diluted
+  // by it — that is why it is applied last.
+  const adpRound = { round: 8, adpRankById: { "RB-100": 5 }, byeByTeam };
+  check("the penalty still applies in the ADP-blend rounds",
+        pickScore(rb, state({ ...adpRound, rosterByesByPos: { RB: [9] } })).score
+          < pickScore(rb, state({ ...adpRound, rosterByesByPos: { RB: [4] } })).score);
+}
+
 console.log();
 if (fails.length) {
   console.error(`snake-engine.selftest: ${pass} passed, ${fails.length} FAILED — ${fails.join(", ")}`);

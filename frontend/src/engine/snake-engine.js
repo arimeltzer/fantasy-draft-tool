@@ -10,6 +10,7 @@
      snakePicks() → pick-clock timing
    ===================================================================== */
 import { DEFAULT_PARAMS } from "./engine-core.js";
+import { byeClash } from "./bye-weeks.js";
 
 export {
   DEFAULT_PARAMS, SCORING_PRESETS, DEFAULT_SCORING, defaultScoring, resolveScoring,
@@ -34,6 +35,15 @@ export const DEFAULT_SNAKE_PARAMS = {
   riskGateThreshold: 0.60,  // risk >= this is "high risk"
   adpAbs:     12,    // ADP absolute-floor unit (slot-10 injury-year guard)
   adpAbsCeil: 25,    // floor applies to adp_rank <= this
+
+  // Bye-week collision penalty. Deliberately SMALL: a bye clash is a real
+  // cost (you field an empty starter slot for one week) but a tiny one next
+  // to being wrong about a player for seventeen. These are set so that even a
+  // pathological stack cannot flip a meaningfully better player — the cap is
+  // ~1.5 VBD points on a 120-point back. Not fitted; there is no held-out
+  // evidence behind them, and a bigger number would need some.
+  byeClashStep: 0.04,   // per already-rostered starter sharing the bye
+  byeClashMax:  0.12,   // hard cap on the total penalty
 
   // The config every draft slot now uses — see SLOTS below for why there is
   // only one. Held-out simulation could not distinguish ten tuned configs from
@@ -227,6 +237,26 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
     const momentum = Math.max(-0.04, Math.min(0.08, (player.trend || 0) / 600));
     base *= (1 + youth + momentum);
     if (momentum > 0.02) reasons.push("trending up");
+  }
+
+  // 8. Bye-week collision.
+  // Applied LAST, after the ADP blend in step 6 — that blend recomputes `base`
+  // from a weighted average, so a penalty applied before it would be silently
+  // diluted by (1 - ADP_W) rather than charged in full.
+  // Only bites when the roster genuinely cannot cover the position that week;
+  // see byeClash() for why "already have enough bodies" costs nothing.
+  const bye = s.byeByTeam && player.team ? s.byeByTeam[player.team] : null;
+  if (bye) {
+    const clash = byeClash(
+      bye,
+      (s.rosterByesByPos && s.rosterByesByPos[pos]) || [],
+      (s.roster && s.roster[pos]) || 0,
+      { step: P.byeClashStep, max: P.byeClashMax },
+    );
+    if (clash.mult < 1) {
+      base *= clash.mult;
+      reasons.push(`bye wk ${bye} clash (${clash.sharing + 1} ${pos}s)`);
+    }
   }
 
   // "last of tier" note when there's a big VBD cliff to the next at this position

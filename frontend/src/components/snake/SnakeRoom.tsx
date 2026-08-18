@@ -8,6 +8,7 @@ import { LeagueSettings, ApiLeague } from "@/lib/api";
 import { useDraftStore } from "@/store/draftStore";
 import type { DraftEntry } from "@/store/draftStore";
 import { usePatchLeague } from "@/hooks/useLeague";
+import { useByeWeeks } from "@/hooks/useByeWeeks";
 import { posStyle } from "@/lib/posStyles";
 import { isKeeper, decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
 import BoardControls from "@/components/board/BoardControls";
@@ -76,6 +77,21 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
 
   const needs = useMemo(() => computeNeeds(minePlayers, settings), [minePlayers, settings]);
 
+  // Bye weeks, derived from the schedule (a missing week IS the bye). Undefined
+  // while loading or if the season's schedule isn't loaded — pickScore treats a
+  // missing map as "no bye information" and skips the penalty entirely rather
+  // than guessing, so the recommender degrades to its pre-bye behaviour.
+  const { data: byeByTeam } = useByeWeeks();
+  const rosterByesByPos = useMemo(() => {
+    const out: Record<string, (number | null)[]> = {};
+    if (!byeByTeam) return out;
+    for (const p of minePlayers) {
+      if (!p.pos) continue;
+      (out[p.pos] ||= []).push(p.team ? byeByTeam[p.team] ?? null : null);
+    }
+    return out;
+  }, [minePlayers, byeByTeam]);
+
   // Live draft state consumed by the ported pickScore() recommender.
   const live = useMemo<SnakeLiveState>(() => {
     const avail = board.filter((p) => !draftedIds.has(p.id as number));
@@ -114,8 +130,10 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
       adpRankById: rankByAdp(board),
       cliffById,
       poolSize: avail.length,
+      byeByTeam,
+      rosterByesByPos,
     };
-  }, [board, draftedIds, minePlayers, needs, settings]);
+  }, [board, draftedIds, minePlayers, needs, settings, byeByTeam, rosterByesByPos]);
 
   /** Committed keepers store their owner's name inside the pick's `slot`
    *  marker, which lives in the DB rather than league settings — so a rename

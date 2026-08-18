@@ -16,6 +16,8 @@ export interface SnakeParams extends EngineParams {
   riskGateThreshold: number;
   adpAbs: number;
   adpAbsCeil: number;
+  byeClashStep: number;
+  byeClashMax: number;
   SLOT_DEFAULT: SlotConfig;
   SLOTS: Record<number, SlotConfig>;
 }
@@ -34,6 +36,10 @@ export interface SnakeLiveState {
   adpRankById: Record<number, number>;
   cliffById?: Record<number, number>;
   poolSize: number;
+  /** Team -> bye week, derived from the schedule (a missing week IS the bye). */
+  byeByTeam?: Record<string, number | null>;
+  /** Byes of the players already on MY roster, grouped by position. */
+  rosterByesByPos?: Record<string, (number | null)[]>;
 }
 
 export interface PickScoreResult {
