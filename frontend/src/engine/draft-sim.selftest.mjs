@@ -148,6 +148,88 @@ for (const teams of [8, 10, 12]) {
   check("the standard error is reported", Number.isFinite(cmp.seDiff));
 }
 
+// ── survival wiring (roadmap 3.1) ─────────────────────────────────────────
+{
+  // A board built to exercise the mechanism rather than to look realistic.
+  // `makeBoard` makes vbd monotone in adp, which is the one shape where
+  // survival can NEVER change a pick — the best available is also the most
+  // certain to be gone, so the lookahead only confirms the plain-value order.
+  //
+  // Here the two best backs are a point apart in value and opposite in
+  // urgency: RB1 is a player the room is 60 picks late on (certain to last to
+  // our next pick, so taking him now wastes it) and RB2 goes immediately.
+  // Everyone else is far enough back that no positional multiplier can lift
+  // them over the backs — the WR premium tops out at x1.35, and 200 x 1.35 is
+  // still below 300.
+  const board = [
+    { id: 1, pos: "RB", vbd: 300, adp: 60 },   // best, and will still be here
+    { id: 2, pos: "RB", vbd: 299, adp: 2 },    // a point worse, gone immediately
+    ...Array.from({ length: 120 }, (_, i) => ({
+      id: i + 3,
+      pos: ["WR", "QB", "TE", "RB"][i % 4],
+      vbd: +(200 - i * 1.4).toFixed(1),
+      adp: i + 3,
+    })),
+  ].map((p) => ({
+    name: `P${p.id}`, team: "XX", age: 26, risk: 0.1, trend: 0,
+    valuePoints: p.vbd + 20, ...p,
+  }));
+  const roster = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 8 };
+  // Slot 1, so our agent is on the clock first and both backs are genuinely
+  // available to it. At slot 5 the ADP bots take RB2 before our turn and the
+  // comparison silently becomes a different question.
+  const run = (agent) => simulateDraft({
+    board, teams: 10, rounds: 15, roster, seed: 7,
+    agents: { 0: { slot: 1, ...agent } },
+  }).rosters[0].map((p) => p.id).join(",");
+
+  const first = (agent) => Number(run(agent).split(",")[0]);
+  check("plain value takes the best back", first({}) === 1);
+  check("survival takes the back who will not last instead",
+        first({ survival: true }) === 2,
+        `took ${first({ survival: true })}`);
+
+  // Same agent, same seed, twice — the mechanism must be deterministic or a
+  // paired comparison measures noise instead of the change.
+  check("the survival agent is deterministic",
+        run({ survival: true }) === run({ survival: true }));
+
+  // Sigma must actually reach the maths — roadmap 3.1 SWEEPS it, so a sweep
+  // over a parameter that never arrives would report a flat curve and call it
+  // insensitivity. Needs its own board: on the one above, RB1's cost dominates
+  // the one-point value gap at every cv, so nothing turns over no matter what
+  // sigma does. Here the gap is 150 and the flip point sits at 1.3 x 150 = 195,
+  // which RB1's cost straddles as the room goes from orderly to chaotic.
+  {
+    const sigBoard = [
+      { id: 1, pos: "RB", vbd: 300, adp: 60 },
+      { id: 2, pos: "RB", vbd: 150, adp: 2 },
+      ...Array.from({ length: 60 }, (_, i) => ({
+        id: i + 3, pos: ["WR", "QB", "TE"][i % 3], vbd: +(100 - i).toFixed(1), adp: i + 3,
+      })),
+    ].map((p) => ({
+      name: `S${p.id}`, team: "XX", age: 26, risk: 0.1, trend: 0,
+      valuePoints: p.vbd + 20, ...p,
+    }));
+    const firstAt = (cv) => simulateDraft({
+      board: sigBoard, teams: 10, rounds: 15, roster, seed: 7,
+      agents: { 0: { slot: 1, survival: true, sigma: { cv } } },
+    }).rosters[0][0].id;
+
+    check("an orderly room makes the survivor too expensive to take now",
+          firstAt(0.05) === 2, `took ${firstAt(0.05)}`);
+    check("a chaotic room makes him worth taking anyway",
+          firstAt(3.0) === 1, `took ${firstAt(3.0)}`);
+  }
+
+  // Bot faithfulness is the circularity control — it has to be live too.
+  const atTemp = (t) => simulateDraft({
+    board, teams: 10, rounds: 15, roster, seed: 7, temperature: t,
+    agents: { 4: { slot: 5, survival: true } },
+  }).rosters[3].map((p) => p.id).join(",");
+  check("bot temperature changes opponent behaviour", atTemp(1) !== atTemp(20));
+}
+
 console.log();
 if (fails.length) {
   console.error(`draft-sim.selftest: ${pass} passed, ${fails.length} FAILED — ${fails.join(", ")}`);

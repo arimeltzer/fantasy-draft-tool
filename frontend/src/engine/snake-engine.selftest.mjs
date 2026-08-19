@@ -172,6 +172,62 @@ check("a non-10-team league also uses it",
           < pickScore(rb, state({ ...adpRound, rosterByesByPos: { RB: [4] } })).score);
 }
 
+// ── survival lookahead (roadmap 3.1) ──────────────────────────────────────
+{
+  const rb = player("RB", 100);
+
+  // Absent survival data the engine must be byte-identical to before — this is
+  // an opt-in mechanism, and every existing caller passes nothing.
+  check("no survival data leaves the score untouched",
+        pickScore(rb, state({ survivalCostById: undefined })).score
+          === pickScore(rb, state()).score);
+
+  const withCost = (cost, p = 0.9) =>
+    state({ survivalCostById: { "RB-100": { cost, p } } });
+
+  check("a survival cost is subtracted from the score",
+        pickScore(rb, withCost(12)).score < pickScore(rb, state()).score - 1e-9);
+  check("the subtraction is exactly the cost",
+        Math.abs((pickScore(rb, state()).score - pickScore(rb, withCost(12)).score) - 12) < 1e-9);
+  check("a bigger cost hurts more",
+        pickScore(rb, withCost(30)).score < pickScore(rb, withCost(12)).score);
+  check("zero cost is a no-op",
+        pickScore(rb, withCost(0)).score === pickScore(rb, state()).score);
+
+  // The point of the whole mechanism: between two equally valuable players,
+  // the one who will still be there next time is the worse pick NOW.
+  const stays = state({ survivalCostById: { "RB-100": { cost: 25, p: 0.95 } } });
+  const gone  = state({ survivalCostById: { "RB-100": { cost: 0.4, p: 0.05 } } });
+  check("a player who won't last outranks an equal one who would have survived",
+        pickScore(rb, gone).score > pickScore(rb, stays).score);
+
+  // Surfaced to the user only when it is actually urgent.
+  check("an unlikely-to-last player is flagged",
+        pickScore(rb, withCost(0.4, 0.05)).reasons.some((r) => r.startsWith("won't last")));
+  check("a player who will comfortably last is not flagged",
+        !pickScore(rb, withCost(25, 0.95)).reasons.some((r) => r.startsWith("won't last")));
+
+  // Same discipline as the bye clash: it must land AFTER the step-6 ADP blend,
+  // or the blend's weighted average silently dilutes it by (1 - ADP_W).
+  const adpRound = { round: 8, adpRankById: { "RB-100": 5 } };
+  const blended = pickScore(rb, state({ ...adpRound })).score
+    - pickScore(rb, state({ ...adpRound, survivalCostById: { "RB-100": { cost: 12, p: 0.9 } } })).score;
+  check("the cost survives the ADP blend undiluted", Math.abs(blended - 12) < 1e-9);
+
+  // Ordering against the bye clash: worth is settled (and discounted) first,
+  // then the opportunity cost is charged against it — so the subtraction is
+  // NOT scaled by the bye multiplier.
+  const byeByTeam = { MIA: 9 };
+  const rbMia = player("RB", 100, { team: "MIA" });
+  const byeState = (extra) => state({
+    byeByTeam, rosterByesByPos: { RB: [9, 9] }, roster: { ...ROSTER, RB: 2 }, ...extra,
+  });
+  const gap = pickScore(rbMia, byeState({})).score
+    - pickScore(rbMia, byeState({ survivalCostById: { "RB-100": { cost: 12, p: 0.9 } } })).score;
+  check("survival is charged after the bye discount, not scaled by it",
+        Math.abs(gap - 12) < 1e-9);
+}
+
 console.log();
 if (fails.length) {
   console.error(`snake-engine.selftest: ${pass} passed, ${fails.length} FAILED — ${fails.join(", ")}`);

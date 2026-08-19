@@ -259,6 +259,27 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
     }
   }
 
+  // 9. Survival lookahead (roadmap 3.1).
+  // Applied LAST, and after the bye clash, because it is a value-space
+  // SUBTRACTION rather than a discount on the player's worth: what he is worth
+  // to you is settled first (steps 1-8), then the cost of spending this pick on
+  // him rather than someone who will not last is charged against it.
+  //
+  // cost is ~0 for a player who will be gone by your next pick — taking him now
+  // costs that pick nothing, because he was never going to be there — and large
+  // for one who would have survived, which is exactly the "who will not last"
+  // signal, priced. See survival.js; the caller supplies this because it is a
+  // property of the whole remaining pool, not of one candidate.
+  //
+  // NO WEIGHT. 1.0 is what the two-ply objective says the term is worth, not a
+  // constant anybody fitted — and the restructure forbids fitting constants
+  // under the interim objective.
+  const surv = s.survivalCostById && s.survivalCostById[player.id];
+  if (surv) {
+    base -= surv.cost || 0;
+    if (surv.p < 0.35) reasons.push(`won't last (${Math.round(surv.p * 100)}%)`);
+  }
+
   // "last of tier" note when there's a big VBD cliff to the next at this position
   if ((s.cliffById && s.cliffById[player.id] || 0) > 18) reasons.push("last of tier");
 

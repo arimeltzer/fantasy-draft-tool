@@ -33,6 +33,7 @@
  */
 import { pickScore, maxUseful, DEFAULT_SNAKE_PARAMS } from "./snake-engine.js";
 import { rankByAdp } from "./engine-core.js";
+import { survivalCosts, nextPickNumber } from "./survival.js";
 
 /** Deterministic RNG so a comparison can be replayed exactly. */
 export function mulberry32(seed) {
@@ -104,7 +105,7 @@ export function botPick(avail, ranks, counts, roster, rng, temperature = 4) {
  */
 export function simulateDraft({
   board, teams = 10, rounds = 15, roster, agents = {},
-  seed = 1, P = DEFAULT_SNAKE_PARAMS,
+  seed = 1, P = DEFAULT_SNAKE_PARAMS, temperature = 4,
 }) {
   const rng = mulberry32(seed);
   const ranks = rankByAdp(board);
@@ -139,6 +140,21 @@ export function simulateDraft({
         cliffById: cfg.cliffById || {},
         poolSize: avail.length,
       };
+
+      // Survival lookahead (roadmap 3.1), opt-in per agent so the paired
+      // comparison can run identical leagues with this as the ONLY difference.
+      // `ranks` is ADP order, which is the expected-draft-position scale
+      // pSurvive wants; `vbd` is the injected objective for now.
+      if (cfg.survival) {
+        const costs = survivalCosts({
+          candidates: avail,
+          nextPick: nextPickNumber(myRound, teams, cfg.slot, rounds),
+          adpOf: (p) => ranks[p.id] ?? (avail.length + 1),
+          valueOf: (p) => p.vbd,
+          sigma: cfg.sigma || {},
+        });
+        live.survivalCostById = Object.fromEntries(costs);
+      }
       let best = -Infinity;
       for (const p of avail) {
         const { score, blocked } = pickScore(p, live, cfg.params || P);
@@ -151,7 +167,7 @@ export function simulateDraft({
         choice = avail.slice().sort((a, b) => b.vbd - a.vbd)[0];
       }
     } else {
-      choice = botPick(avail, ranks, counts[team], roster, rng);
+      choice = botPick(avail, ranks, counts[team], roster, rng, temperature);
     }
 
     if (!choice) break;
@@ -202,17 +218,18 @@ export function bestLineupPoints(rosterPlayers, pointsById, roster) {
 export function pairedCompare({
   board, pointsById, roster, teams = 10, rounds = 15,
   slot, configA, configB, seeds = [1, 2, 3, 4, 5],
+  temperature = 4, agentA = {}, agentB = {},
 }) {
   const rows = [];
   for (const seed of seeds) {
     const team = slot - 1;
     const a = simulateDraft({
-      board, teams, rounds, roster, seed,
-      agents: { [team]: { slot, params: configA } },
+      board, teams, rounds, roster, seed, temperature,
+      agents: { [team]: { slot, params: configA, ...agentA } },
     });
     const b = simulateDraft({
-      board, teams, rounds, roster, seed,
-      agents: { [team]: { slot, params: configB } },
+      board, teams, rounds, roster, seed, temperature,
+      agents: { [team]: { slot, params: configB, ...agentB } },
     });
     const aPts = bestLineupPoints(a.rosters[team], pointsById, roster);
     const bPts = bestLineupPoints(b.rosters[team], pointsById, roster);

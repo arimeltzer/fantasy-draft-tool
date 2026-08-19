@@ -1,0 +1,95 @@
+name: Survival lookahead test (roadmap 3.1)
+
+# Manual. Simulates whole snake drafts against the SHIPPED pickScore to ask
+# whether the two-ply survival lookahead earns its place, against the gate
+# pre-registered in docs/ROADMAP.md 3.1 before any of the code was written.
+#
+# Two sweeps, and both are part of the answer rather than tuning:
+#
+#   sigma (cv)  — there is no ADP dispersion anywhere in this project, so this
+#                 cannot be fitted. The question the pre-registration asks is
+#                 whether the VERDICT is sensitive to it. Insensitive means the
+#                 number was not doing work; sensitive means this needs real
+#                 draft-position data before it ships.
+#
+#   temperature — the circularity control. pSurvive is derived from ADP and the
+#                 opponent bots draft BY ADP, so the agent has privileged
+#                 knowledge of the room. If the edge decays as the room stops
+#                 following ADP, the headline number is largely self-fulfilling.
+#
+# Needs FANTASYPROS_API_KEY — the bots draft by that season's real ADP, and
+# pSurvive is measured against that same real ADP. Without it the whole test
+# would be the model grading its own homework.
+
+on:
+  workflow_dispatch:
+    inputs:
+      first:
+        description: "First season to export"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season to export"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated drafts per slot per season"
+        required: false
+        default: "12"
+        type: string
+      cvs:
+        description: "Sigma sweep (coefficient of variation of draft position)"
+        required: false
+        default: "0.15,0.25,0.35,0.50,0.75"
+        type: string
+      temps:
+        description: "Bot ADP-faithfulness sweep (higher = looser room)"
+        required: false
+        default: "1,2,4,8,16"
+        type: string
+
+jobs:
+  survival-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      # This decides whether a new mechanism enters the engine. Everything it
+      # depends on gets verified before it is allowed to produce a number.
+      - name: Survival engine selftest
+        run: node frontend/src/engine/survival.selftest.mjs
+
+      - name: Simulator selftest
+        run: node frontend/src/engine/draft-sim.selftest.mjs
+
+      - name: Snake engine selftest
+        run: node frontend/src/engine/snake-engine.selftest.mjs
+
+      - name: Export historical draft boards
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Survival lookahead vs shipped engine
+        run: |
+          node frontend/src/engine/survival-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --seeds ${{ inputs.seeds }} \
+            --cvs ${{ inputs.cvs }} \
+            --temps ${{ inputs.temps }} | tee data-pipeline/results/survival_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: survival-test
+          path: data-pipeline/results/
