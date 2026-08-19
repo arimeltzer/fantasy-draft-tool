@@ -1805,7 +1805,7 @@ real code path. `npm run build` passed the whole time, which is exactly the
 level removed: build passing proved the TYPES were internally consistent,
 not that the feature was reachable.
 
-### 3.3 Auction: budget-path optimization *(highest-value auction feature)* — DONE, shipped as a surface (phase kill gate NOT run: no auction simulator)
+### 3.3 Auction: budget-path optimization *(highest-value auction feature)* — DONE, shipped as PRIMARY (kill gate run via 3.5, CLEAN cleared)
 The tool prices players independently. The real skill is allocation: given
 remaining budget, remaining holes and expected prices, what roster is reachable?
 That is a knapsack/DP problem over the roster, evaluated on P(title).
@@ -1872,7 +1872,9 @@ this ships as a SURFACE (a number shown next to the existing bid suggestion),
 not as a silent override of `suggestBid` — a mechanism nobody has measured
 should not quietly change what the tool tells you to bid.
 
-**RESULT — shipped as a surface, with the phase gate explicitly NOT run.**
+**RESULT — shipped as a surface at the time; the phase gate has since run
+(3.5) and cleared, and the ceiling is now the PRIMARY suggested bid in
+`AuctionRoom.tsx`, not just a surface alongside `suggestBid()`. See 3.5.**
 `budget-path.js`: `reachableRoster()` (exact DP), `bidCeiling()` (binary
 search over the DP, exact because the predicate is monotone in price), and
 `remainingStartingSlots()`. 28 selftests.
@@ -1929,7 +1931,7 @@ would be circular in exactly the way 3.1's ADP-bot harness was, so the
 honest version compares allocation-aware against independent-pricing agents
 under identical bot behavior rather than measuring either against a strawman.
 
-### 3.4 Auction: bid ceilings from opponent budgets — DONE, shipped (phase kill gate NOT run: no auction simulator)
+### 3.4 Auction: bid ceilings from opponent budgets — DONE, shipped as PRIMARY (kill gate run via 3.5, CLEAN cleared)
 A price is set by the *second* bidder. If only two teams can afford $50, that is
 the cap. `oppBudgets` is already tracked but only reduced to `richFrac` for
 nomination timing.
@@ -2131,9 +2133,12 @@ that `remainingStartingSlots()` got in 3.3.
 
 *Standing caveat, unchanged and important.* The arithmetic ceiling is still
 computed and returned alongside as `arithmetic`. It is the guarantee; the
-gated number is the estimate. The Phase 3 head-to-head kill gate remains
-NOT run for 3.3, 3.4 or 3.4a — no auction simulator exists, and the demand
-caps in particular are judgement that no measurement has scored.
+gated number is the estimate. **Update: the Phase 3 head-to-head kill gate
+HAS since run (3.5, auction-sim.mjs) and CLEAN cleared it** — the demand
+caps' judgement is no longer un-scored, though the gate measured 3.3+3.4+3.4a
+together (the treatment bid always composes all three), not 3.4a in
+isolation, so the specific marginal contribution of the demand caps alone
+is still unmeasured. See 3.5 for the numbers.
 
 ### 3.5 The auction simulator — the harness 3.3/3.4/3.4a have been waiting on
 
