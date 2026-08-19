@@ -61,7 +61,9 @@
  */
 import { maxUseful } from "./snake-engine.js";
 import { rankByAdp } from "./engine-core.js";
-import { dollarValues, marketPrice, maxBid, suggestBid } from "./auction-engine.js";
+import {
+  dollarValues, marketPrice, maxBid, suggestBid, DEFAULT_AUCTION_PARAMS,
+} from "./auction-engine.js";
 import {
   DP_POSITIONS, FLEX_ELIGIBLE, remainingStartingSlots, bidCeiling,
 } from "./budget-path.js";
@@ -140,6 +142,12 @@ export function simulateAuction({
   board, teams = 10, roster, budget = 200, minBid = 1,
   agentTeam = 0, agentMode = "control", superflex = false,
   botNoise = 0.15, seed = 1,
+  // Bid-SHAPING params only (qbMarketCap, ratioScale*, …) for the control
+  // arm's suggestBid() call — a sensitivity knob for diagnosing the control
+  // arm itself, never for the shared market/dollar-value numbers both arms
+  // see (those stay canonical, computed once below with the defaults, so a
+  // caller cannot quietly change what "the market" means mid-comparison).
+  controlParams = DEFAULT_AUCTION_PARAMS,
 }) {
   const rng = mulberry32(seed);
   const totalSlots = totalRosterSize(roster);
@@ -187,6 +195,7 @@ export function simulateAuction({
           const sug = suggestBid(
             { ...player, dollarValue: dv },
             { budget: t.budget, openSpots: Math.max(1, openSpots), remainingDvSum, market },
+            controlParams,
           );
           return { team: i, bid: Math.min(sug.bid, maxBid(t.budget, openSpots, minBid)) };
         }
@@ -253,29 +262,50 @@ export function simulateAuction({
  * Same board, same seed, same bots — every bot draw is identical until the
  * agent's own choice diverges, exactly `pairedCompare`'s discipline in
  * draft-sim.mjs, carried over rather than reinvented.
+ *
+ * Also reports UNFILLED STARTING SLOTS per arm (`remainingStartingSlots`
+ * run on the FINAL roster) — added after a diagnostic surfaced that a large
+ * fraction of `suggestBid()`'s losses trace to leaving a one-starter
+ * position (QB) completely empty when the market has no ADP for the
+ * position's elite tier, rather than to a smooth value-allocation edge. A
+ * raw points gap conflates "filled a stronger roster" with "the other arm
+ * botched a legality-adjacent outcome"; this number tells them apart.
  */
 export function pairedCompareAuction({
   board, pointsById, roster, teams = 10, budget = 200, minBid = 1,
   agentTeam = 0, superflex = false, botNoise = 0.15, seeds = [1, 2, 3, 4, 5],
-  modeA = "control", modeB = "treatment",
+  modeA = "control", modeB = "treatment", controlParams = DEFAULT_AUCTION_PARAMS,
 }) {
   const rows = [];
   for (const seed of seeds) {
     const a = simulateAuction({
       board, teams, roster, budget, minBid, agentTeam, superflex, botNoise, seed,
-      agentMode: modeA,
+      agentMode: modeA, controlParams,
     });
     const b = simulateAuction({
       board, teams, roster, budget, minBid, agentTeam, superflex, botNoise, seed,
-      agentMode: modeB,
+      agentMode: modeB, controlParams,
     });
     const aPts = bestLineupPoints(a.rosters[agentTeam], pointsById, roster);
     const bPts = bestLineupPoints(b.rosters[agentTeam], pointsById, roster);
-    rows.push({ seed, control: aPts, treatment: bPts, diff: +(bPts - aPts).toFixed(1) });
+    const aUnfilled = remainingStartingSlots(roster, a.rosters[agentTeam]).slots.length;
+    const bUnfilled = remainingStartingSlots(roster, b.rosters[agentTeam]).slots.length;
+    rows.push({
+      seed, control: aPts, treatment: bPts, diff: +(bPts - aPts).toFixed(1),
+      controlUnfilled: aUnfilled, treatmentUnfilled: bUnfilled,
+    });
   }
   const diffs = rows.map((r) => r.diff);
   const mean = diffs.reduce((s, d) => s + d, 0) / diffs.length;
   const sd = Math.sqrt(diffs.reduce((s, d) => s + (d - mean) ** 2, 0) / Math.max(1, diffs.length - 1));
+
+  // Split the comparison by whether control finished with every starting
+  // slot filled. "Clean" rows isolate the value-allocation question 3.3 was
+  // actually built to answer; "catastrophe" rows are the empty-slot failure
+  // mode, a different (and separately actionable) finding.
+  const clean = rows.filter((r) => r.controlUnfilled === 0).map((r) => r.diff);
+  const cleanMean = clean.length ? clean.reduce((s, d) => s + d, 0) / clean.length : null;
+
   return {
     rows,
     meanDiff: +mean.toFixed(2),
@@ -283,5 +313,9 @@ export function pairedCompareAuction({
     seDiff: +(sd / Math.sqrt(diffs.length)).toFixed(2),
     treatmentWins: diffs.filter((d) => d > 0).length,
     n: diffs.length,
+    controlEmptySlotRate: +(rows.filter((r) => r.controlUnfilled > 0).length / rows.length).toFixed(2),
+    treatmentEmptySlotRate: +(rows.filter((r) => r.treatmentUnfilled > 0).length / rows.length).toFixed(2),
+    cleanMeanDiff: cleanMean == null ? null : +cleanMean.toFixed(2),
+    cleanN: clean.length,
   };
 }

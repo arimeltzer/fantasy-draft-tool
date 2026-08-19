@@ -2221,11 +2221,52 @@ a bench spot is worthless. The bug was visible immediately: the treatment
 arm's simulated roster came in at 9/15 slots filled against control's 15/15
 on a debug board. Fixed to match the shipped semantics; rosters normalized.
 `auction-sim-test.mjs` + `.github/workflows/auction-sim-test.yml` run the
-actual gate (treatment vs. control, swept bot-pricing noise, 2017–2025) —
-**not yet triggered**; needs `FANTASYPROS_API_KEY` in CI. Runtime estimate
-from local timing (~200ms/treatment-draft on a 300-player board): full sweep
-(9 seasons × 10 slots × 3 noise levels × 10 seeds) ≈ 9 minutes of simulation,
-comfortably inside the 45-minute job timeout.
+actual gate (treatment vs. control, swept bot-pricing noise, 2017–2025).
+
+**FIRST RUN (workflow run 32285769569, 2017-2025, real ADP): treatment beat
+control at every noise level, RAW — but the raw number overclaims, and the
+gate was rebuilt before that number gets used for anything.** The raw effect
+was enormous by this document's standards — +783 to +966 pts/draft averaged
+over 900 auctions per noise level, mean/SE in the 90s-160s — an order of
+magnitude past any other measured effect in this file. That size was the
+tell. A local diagnostic (real 2023 skill-position data, synthetic market
+coverage to control the mechanism) found the concrete driver: `suggestBid()`
+carries a real, previously undocumented weakness — its `qbMarketCap` throttle
+caps a QB bid at ~90% of MARKET price, and when the market has no ADP for
+that season's elite QBs (`marketPrice()` floors an uncovered player at
+`minBid`), control can end the draft having **never rostered a starting
+QB at all**. Historical ADP coverage genuinely runs this thin — the same
+export logged 36-62% of the board uncovered across 2017-2025 — so this
+is not an edge case. One reproduced instance: 62% synthetic coverage, one
+seed, control finished 0/1 QB at 1555.9 pts vs. treatment's 2/1 QB at
+1800.9 — a ~245pt swing on ONE team from a single unfilled starting slot,
+the kind of gap that dominates an average once it recurs across seasons
+and slots. That is a correctness-adjacent bug in the CONTROL arm, not
+evidence that 3.3/3.4/3.4a's allocation logic is smarter — a raw points
+gap cannot tell the two apart, and reporting it as "ship the DP as
+default" off that number alone would be exactly the kind of unmeasured
+overclaim this document exists to prevent.
+
+**The harness was corrected, not the finding suppressed.** `pairedCompareAuction`
+now also runs `remainingStartingSlots` on each arm's FINAL roster and reports
+`controlEmptySlotRate` / `treatmentEmptySlotRate` plus a `cleanMeanDiff` —
+the mean restricted to drafts where control filled every starting slot,
+which isolates the allocation-logic question 3.3 was actually built to
+answer. `simulateAuction` also gained a `controlParams` seam (bid-shaping
+params only, e.g. `qbMarketCap`, threaded to control's own `suggestBid()`
+call — the shared market/dollar-value numbers both arms see stay canonical
+and un-overridable) so this exact mechanism can be swept directly in a
+follow-up rather than only inferred from the empty-slot rate. 3 new
+selftest assertions (49 total) pin the diagnostic itself: a passive bidder
+must always show `treatmentEmptySlotRate === 1` (positive control on the
+metric), and identical arms must report identical empty-slot rates and a
+zero clean mean.
+
+**Re-run pending** with the corrected harness — `auction_sim_test.txt` will
+report RAW and CLEAN separately per the updated script, and the actual
+verdict (ship treatment as default / fix `suggestBid`'s QB throttle instead
+/ neither) depends on what the CLEAN number says once control's empty-slot
+failure is factored out, not on the raw number above.
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything

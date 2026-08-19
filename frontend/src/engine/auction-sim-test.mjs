@@ -18,6 +18,19 @@
  * a room that prices itself perfectly makes any optimizer look artificially
  * good, so the noise level the edge survives at is the actual finding.
  *
+ * ALSO REPORTED: control's EMPTY-STARTING-SLOT RATE. A first run of this
+ * gate (2017-2025, real ADP) came back with an enormous raw gap (roughly
+ * +800-1200 pts/draft) and a local diagnostic traced a real chunk of it to
+ * `suggestBid()` leaving a one-starter position (QB) COMPLETELY EMPTY when
+ * the market has no ADP for that season's elite tier — real historical
+ * seasons ranged 36-62% ADP-uncovered in the export log, so this is not an
+ * edge case. That is a correctness-adjacent failure of the control arm, not
+ * evidence of smarter capital allocation, and a raw points gap cannot tell
+ * the two apart. So every comparison here is reported BOTH raw and on the
+ * "clean" subset (control finished with every starting slot filled) — the
+ * clean number is the honest read on whether 3.3/3.4/3.4a's allocation
+ * logic itself beats independent pricing, isolated from that failure mode.
+ *
  *   node frontend/src/engine/auction-sim-test.mjs --data results/draft_seasons.json
  */
 import { readFileSync } from "node:fs";
@@ -56,10 +69,14 @@ function boardFor(season) {
 console.log(`slots 1-${TEAMS}, ${SEEDS} seeds/slot, $${BUDGET} budget, `
   + `noise levels ${NOISE_LEVELS.join("/")}\n`);
 
-// bucket[noise] = all per-draft diffs (treatment - control) across every
-// season and slot at that noise level.
+// bucket[noise]        = all per-draft diffs (treatment - control), raw.
+// cleanBucket[noise]   = the same, restricted to rows where control finished
+//                        with every starting slot filled.
+// emptySlotRuns[noise] = every row's controlUnfilled flag, for the rate.
 const bucket = {};
-for (const n of NOISE_LEVELS) bucket[n] = [];
+const cleanBucket = {};
+const emptySlotRuns = {};
+for (const n of NOISE_LEVELS) { bucket[n] = []; cleanBucket[n] = []; emptySlotRuns[n] = []; }
 
 for (const season of Object.keys(raw).map(Number).sort()) {
   const board = boardFor(season);
@@ -74,12 +91,16 @@ for (const season of Object.keys(raw).map(Number).sort()) {
       });
       perSlot.push({ slot, ...r });
       bucket[botNoise].push(...r.rows.map((row) => row.diff));
+      cleanBucket[botNoise].push(...r.rows.filter((row) => row.controlUnfilled === 0).map((row) => row.diff));
+      emptySlotRuns[botNoise].push(...r.rows.map((row) => row.controlUnfilled > 0));
     }
     const mean = perSlot.reduce((s, r) => s + r.meanDiff, 0) / Math.max(1, perSlot.length);
     const wins = perSlot.filter((r) => r.meanDiff > 0).length;
+    const emptyRate = perSlot.reduce((s, r) => s + r.controlEmptySlotRate, 0) / Math.max(1, perSlot.length);
     console.log(`${season}  noise ${botNoise}  treatment vs control: `
       + `${mean >= 0 ? "+" : ""}${mean.toFixed(1)} pts, `
-      + `treatment better at ${wins}/${perSlot.length} slots`);
+      + `treatment better at ${wins}/${perSlot.length} slots, `
+      + `control empty-starter rate ${(emptyRate * 100).toFixed(0)}%`);
   }
 }
 
@@ -99,23 +120,47 @@ function summarize(label, diffs) {
   return { mean, se, t };
 }
 
-console.log("\n=== BY NOISE LEVEL ===");
+console.log("\n=== RAW, BY NOISE LEVEL ===");
 const results = {};
 for (const n of NOISE_LEVELS) results[n] = summarize(`noise = ${n}`, bucket[n]);
 
+console.log("\n=== CLEAN (control finished with every starting slot filled) ===");
+const cleanResults = {};
+for (const n of NOISE_LEVELS) {
+  const rate = emptySlotRuns[n].filter(Boolean).length / Math.max(1, emptySlotRuns[n].length);
+  console.log(`\ncontrol empty-starter rate at noise ${n}: ${(rate * 100).toFixed(1)}% `
+    + `(${cleanBucket[n].length}/${emptySlotRuns[n].length} drafts clean)`);
+  cleanResults[n] = summarize(`noise = ${n} (clean subset)`, cleanBucket[n]);
+}
+
 console.log("\n=== VERDICT ===");
-const allBeat = NOISE_LEVELS.every((n) => results[n] && results[n].t > 2 && results[n].mean > 0);
-const anyLose = NOISE_LEVELS.some((n) => results[n] && results[n].mean < 0 && results[n].t < -2);
-if (allBeat) {
-  console.log("Allocation-aware bidding (3.3+3.4+3.4a) BEATS independent pricing");
-  console.log("at every swept noise level. Ship it as the default bidding mode.");
-} else if (anyLose) {
-  console.log("Allocation-aware bidding LOSES to independent pricing at at least one");
-  console.log("noise level. Do not promote it to the default without narrowing when");
-  console.log("it helps.");
+const allBeatRaw = NOISE_LEVELS.every((n) => results[n] && results[n].t > 2 && results[n].mean > 0);
+const allBeatClean = NOISE_LEVELS.every((n) => cleanResults[n] && cleanResults[n].t > 2 && cleanResults[n].mean > 0);
+const anyLoseClean = NOISE_LEVELS.some((n) => cleanResults[n] && cleanResults[n].mean < 0 && cleanResults[n].t < -2);
+
+if (allBeatRaw) {
+  console.log("RAW: allocation-aware bidding (3.3+3.4+3.4a) beats independent pricing");
+  console.log("at every swept noise level. But see CLEAN below before treating that as");
+  console.log("evidence the allocation logic itself is better — some of the raw gap may");
+  console.log("be control leaving a starting slot empty, a different failure mode.");
+}
+if (allBeatClean) {
+  console.log("\nCLEAN: allocation-aware bidding STILL beats independent pricing once");
+  console.log("empty-starting-slot drafts are excluded. That is the honest evidence the");
+  console.log("DP's own value-allocation logic helps, not just that it avoids a control");
+  console.log("bug. Ship it as the default bidding mode.");
+} else if (anyLoseClean) {
+  console.log("\nCLEAN: on drafts where control fielded a full lineup, allocation-aware");
+  console.log("bidding does NOT clearly beat independent pricing (and loses outright at");
+  console.log("at least one noise level). The raw win above is substantially explained by");
+  console.log("control leaving starting slots empty under thin ADP coverage — a real,");
+  console.log("previously undocumented weakness of suggestBid() worth fixing directly");
+  console.log("(e.g. a value-floor bid for a one-starter position regardless of market),");
+  console.log("not evidence to promote the DP allocation logic to the default bidder.");
 } else {
-  console.log("Allocation-aware bidding is not clearly distinguishable from");
-  console.log("independent pricing across the swept noise levels. It does not clear");
-  console.log("the bar to replace suggestBid() as the default, however elegant the");
-  console.log("DP is on its own terms.");
+  console.log("\nCLEAN: allocation-aware bidding is not clearly distinguishable from");
+  console.log("independent pricing once empty-starting-slot drafts are excluded. The raw");
+  console.log("win above looks driven by control's empty-slot failure mode rather than by");
+  console.log("smarter capital allocation. Fix that failure mode directly rather than");
+  console.log("promoting the DP allocation logic to the default off this number.");
 }

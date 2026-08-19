@@ -130,6 +130,10 @@ check("botWTPMultiplier is not opponentDemand's shape",
         same.meanDiff === 0 && same.rows.every((r) => r.diff === 0),
         JSON.stringify(same.rows.map((r) => r.diff)));
   check("...and therefore zero spread", same.sdDiff === 0);
+  check("identical arms: identical empty-slot rates too",
+        same.controlEmptySlotRate === same.treatmentEmptySlotRate);
+  check("identical arms: the clean-split mean is 0 when there is a clean row",
+        same.cleanN === 0 || same.cleanMeanDiff === 0);
 
   const sameT = pairedCompareAuction({
     board, pointsById, roster: ROSTER, teams: 10, agentTeam: 4,
@@ -152,6 +156,14 @@ check("botWTPMultiplier is not opponentDemand's shape",
         cmp.meanDiff < 0, `meanDiff ${cmp.meanDiff} (treatment=passive)`);
   check("...at every seed, not just on average",
         cmp.rows.every((r) => r.diff <= 0), JSON.stringify(cmp.rows.map((r) => r.diff)));
+
+  // Empty-starting-slot diagnostic: a passive bidder buys nothing, so it
+  // must ALWAYS report unfilled starters — the diagnostic's own positive
+  // control.
+  check("a passive bidder always shows unfilled starting slots",
+        cmp.treatmentEmptySlotRate === 1
+        && cmp.rows.every((r) => r.treatmentUnfilled > 0),
+        JSON.stringify(cmp.rows.map((r) => r.treatmentUnfilled)));
 
   // Sanity on bestLineupPoints itself: a passive bidder ends the draft with
   // an empty roster, which must score 0, not NaN or a crash.
