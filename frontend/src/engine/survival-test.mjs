@@ -82,10 +82,35 @@ function boardFor(season) {
 
 const boards = new Map(seasons.map((s) => [s, boardFor(s)]));
 
-/** Pool every (season, slot) paired diff into one mean/SE and a per-slot sign count. */
+const meanOf = (xs) => xs.reduce((s, d) => s + d, 0) / Math.max(1, xs.length);
+const seOf = (xs) => {
+  if (xs.length < 2) return Infinity;
+  const m = meanOf(xs);
+  const sd = Math.sqrt(xs.reduce((s, d) => s + (d - m) ** 2, 0) / (xs.length - 1));
+  return sd / Math.sqrt(xs.length);
+};
+
+/**
+ * Run one arm and report the effect three ways, because the naive one is wrong.
+ *
+ * THE NAIVE SE IS OPTIMISTIC AND KNOWING THAT IS THE POINT. Pooling every
+ * paired draft treats 10,800 rows as independent observations. They are not:
+ * seeds inside one (season, slot) share a board and a draft position, and every
+ * slot inside one season shares the board outright. Clustered data pooled flat
+ * understates the standard error, which inflates mean/SE — the one number the
+ * gate reads. So the arm also reports the effect CLUSTERED by slot and by
+ * season, treating each cluster's own mean as a single observation.
+ *
+ * Season is the most conservative of the three and the most honest: there are
+ * only 9 of them, and a result driven by one or two good seasons would show up
+ * here as a large spread and a small ratio while the pooled number still looked
+ * decisive.
+ */
 function runArm({ cv, temperature }) {
   const all = [];
   const slotMeans = [];
+  const bySeason = new Map(seasons.map((s) => [s, []]));
+
   for (let slot = 1; slot <= TEAMS; slot++) {
     const perSlot = [];
     for (const season of seasons) {
@@ -96,18 +121,26 @@ function runArm({ cv, temperature }) {
         agentA: { survival: true, sigma: { cv } },   // survival ON
         agentB: {},                                   // shipped engine
       });
-      for (const row of r.rows) perSlot.push(row.diff);
+      for (const row of r.rows) { perSlot.push(row.diff); bySeason.get(season).push(row.diff); }
     }
     all.push(...perSlot);
-    slotMeans.push(perSlot.reduce((s, d) => s + d, 0) / Math.max(1, perSlot.length));
+    slotMeans.push(meanOf(perSlot));
   }
-  const n = all.length;
-  const mean = all.reduce((s, d) => s + d, 0) / Math.max(1, n);
-  const sd = Math.sqrt(all.reduce((s, d) => s + (d - mean) ** 2, 0) / Math.max(1, n - 1));
-  const se = sd / Math.sqrt(Math.max(1, n));
+
+  const seasonMeans = seasons.map((s) => meanOf(bySeason.get(s)));
+  const mean = meanOf(all);
+  // se === 0 means every cluster agreed exactly. That is infinite precision,
+  // not absent signal, and reporting it as a ratio of 0 would read as the
+  // opposite of what happened (and would drag the conservative minimum down).
+  const ratioOf = (se) => (se > 0 ? mean / se : (mean === 0 ? 0 : Infinity));
+  const sePooled = seOf(all);
   return {
-    n, mean, se, ratio: se > 0 ? mean / se : 0,
+    n: all.length, mean,
+    se: sePooled, ratio: ratioOf(sePooled),
+    ratioSlot: ratioOf(seOf(slotMeans)),
+    ratioSeason: ratioOf(seOf(seasonMeans)),
     slotsPositive: slotMeans.filter((m) => m > 0).length, slotMeans,
+    seasonsPositive: seasonMeans.filter((m) => m > 0).length, seasonMeans,
   };
 }
 
@@ -181,5 +214,21 @@ console.log(`  1. pooled mean/SE >= 2         : ${f(base.ratio)}  ${base.ratio >
 console.log(`  2. positive at majority of slots: ${base.slotsPositive}/${TEAMS}  `
   + `${base.slotsPositive > TEAMS / 2 ? "PASS" : "FAIL"}`);
 console.log(`  -> ${pass ? "GATE CLEARS" : "GATE DOES NOT CLEAR"} at cv ${BASE_CV}`);
+
+console.log(`\n  --- ROBUSTNESS: the pooled SE above is OPTIMISTIC ---`);
+console.log(`  It treats every paired draft as independent. Seeds inside one`);
+console.log(`  (season, slot) share a board and a draft position, so the pooled`);
+console.log(`  SE is understated and inflates the very ratio the gate reads.`);
+console.log(`  Clustered, each cluster mean counted once:`);
+console.log(`    mean effect            ${f(base.mean)} pts`);
+console.log(`    mean/SE, pooled        ${f(base.ratio)}   (optimistic — reported for the gate)`);
+console.log(`    mean/SE, by slot       ${f(base.ratioSlot)}   (${base.slotsPositive}/${TEAMS} slots positive)`);
+console.log(`    mean/SE, by season     ${f(base.ratioSeason)}   (${base.seasonsPositive}/${seasons.length} seasons positive)`);
+const conservative = Math.min(base.ratioSlot, base.ratioSeason);
+console.log(`  -> most conservative clustering gives ${f(conservative)}, which `
+  + `${conservative >= 2 ? "STILL clears" : "does NOT clear"} the bar of 2`);
+
 console.log(`\n  per-slot means at cv ${BASE_CV}:`);
 console.log(`    ${base.slotMeans.map((m, i) => `s${i + 1} ${f(m, 1)}`).join("  ")}`);
+console.log(`  per-season means at cv ${BASE_CV}:`);
+console.log(`    ${base.seasonMeans.map((m, i) => `${seasons[i]} ${f(m, 1)}`).join("  ")}`);
