@@ -254,6 +254,16 @@ export interface LeagueSettings {
   pickOwners?: Record<string, string>;
   /** Rounds in the draft. Defaults to one per roster spot. */
   rounds?: number;
+  /** Real auction $ values pasted from a FantasyPros cheat sheet (or any
+   *  source), keyed by player id — a PER-LEAGUE override of the shared
+   *  `fantasy_players.aav` column, since values genuinely differ by who
+   *  copied the sheet and when (injury news, a league's own consensus, a
+   *  mid-draft refresh). `marketPrice()` prefers this over the board's own
+   *  `aav`. See `AavPasteImport.tsx` / `/api/integrations/fantasypros/
+   *  aav-paste-candidates`. */
+  aavOverrides?: Record<number, number>;
+  /** When the override above was last pasted in, for the "as of" badge. */
+  aavImportedAt?: string;
 }
 
 function getToken(): string | null {
@@ -357,6 +367,17 @@ export const api = {
     match_season?: number;
     my_team?: string;
   }) => req<KeeperCandidatesResult>("/api/integrations/yahoo/paste-candidates", {
+    method: "POST", body: JSON.stringify(data),
+  }),
+
+  /** Match report for a pasted FantasyPros auction-values sheet — no write,
+   *  no admin gate. The caller merges `candidates` into their OWN league's
+   *  `settings.aavOverrides` via `patchLeague`. */
+  aavPasteCandidates: (data: { text: string; season?: number }) => req<{
+    season: number; parsed: number; skipped_lines: number;
+    candidates: { id: number; name: string; pos: string; team: string; aav: number }[];
+    matched: number; unmatched: number; unmatched_names: string[];
+  }>("/api/integrations/fantasypros/aav-paste-candidates", {
     method: "POST", body: JSON.stringify(data),
   }),
 

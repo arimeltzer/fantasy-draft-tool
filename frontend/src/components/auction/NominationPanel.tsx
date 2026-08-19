@@ -110,28 +110,32 @@ export default function NominationPanel({ factor, phase, nominations, valueTarge
           const overMax = bid > myMax;
           const byRoom = binding === "opponents";
           return (
-            <div key={p.id} className="flex items-center gap-2 text-xs">
-              <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-              <span className="truncate flex-1">{p.name}</span>
-              <span className="font-mono text-gray-400" title="Expected sale price based on market rankings">mkt ${market}</span>
-              <span
-                className="font-mono text-gray-400 cursor-help"
-                title={`suggestBid()'s own independent-pricing number, shown for comparison — ${modelPass ? "it would pass on this player." : `it would bid $${modelBid}.`} The primary bid to its right beat this method head-to-head (roadmap 3.5).`}
-              >
-                model {modelPass ? "pass" : `$${modelBid}`}
-              </span>
-              <span
-                className={`font-mono cursor-help ${overMax ? "text-rose-500" : pass ? "text-gray-400" : byRoom ? "text-violet-700" : "text-sky-700"}`}
-                title={overMax
-                  ? "Suggested bid is above the max you can afford while filling your roster"
-                  : pass
-                  ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
-                  : byRoom
-                  ? `Capped by the room's money: no opponent can bid more than $${bid - 1}, so you never have to pay above $${bid} no matter what he's worth. This is what the room CAN pay, not what it wants to — a hard upper bound that tightens as budgets drain.`
-                  : "Allocation ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him — reserves a realistic price for every remaining starter, not $1."}
-              >
-                {pass ? "pass" : `bid $${bid}${byRoom ? "*" : ""}`}
-              </span>
+            <div key={p.id} className="text-xs">
+              <div className="flex items-center gap-2">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${st.dot}`} />
+                <span className="truncate flex-1">{p.name}</span>
+                <span
+                  className={`font-mono shrink-0 cursor-help ${overMax ? "text-rose-500" : pass ? "text-gray-400" : byRoom ? "text-violet-700" : "text-sky-700"}`}
+                  title={overMax
+                    ? "Suggested bid is above the max you can afford while filling your roster"
+                    : pass
+                    ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
+                    : byRoom
+                    ? `Capped by the room's money: no opponent can bid more than $${bid - 1}, so you never have to pay above $${bid} no matter what he's worth. This is what the room CAN pay, not what it wants to — a hard upper bound that tightens as budgets drain.`
+                    : "Allocation ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him — reserves a realistic price for every remaining starter, not $1."}
+                >
+                  {pass ? "pass" : `bid $${bid}${byRoom ? "*" : ""}`}
+                </span>
+              </div>
+              <div className="pl-3.5 text-2xs text-gray-400 font-mono">
+                <span title="Expected sale price based on market rankings">mkt ${market}</span>
+                <span
+                  className="ml-1.5 cursor-help"
+                  title={`suggestBid()'s own independent-pricing number, shown for comparison — ${modelPass ? "it would pass on this player." : `it would bid $${modelBid}.`} The bid above beat this method head-to-head (roadmap 3.5).`}
+                >
+                  · model {modelPass ? "pass" : `$${modelBid}`}
+                </span>
+              </div>
             </div>
           );
         })}

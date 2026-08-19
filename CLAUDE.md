@@ -193,12 +193,26 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   fantasypros_aav_paste.py`): the website's auction-values cheat sheet, copied
   as text — same fix as the Yahoo paste importer, for the same reason (no API
   access). Parses through the shared `matching.py` index/matcher ESPN/Yahoo
-  import already use. `POST /api/admin/fantasypros/aav-paste` (admin-gated,
-  `dry_run` default — `fantasy_players.aav` is season-wide shared data, not a
-  per-league setting) writes it. `data-pipeline/apply_aav_paste.py` is the
-  thin client (reads the sheet from a file; a curl one-liner can't survive the
-  `$` and apostrophes in it). No frontend UI — matches how `reload-sos` and
-  `admin/refresh` are already operated, directly rather than through a UI.
+  import already use. Two write paths, because "AAV" means two different
+  things:
+  - **Per-league** (`AavPasteImport.tsx`, the "Values" button in
+    `AuctionRoom`): `POST /api/integrations/fantasypros/aav-paste-candidates`
+    (any signed-in user, no admin gate, no write) returns a match report; the
+    frontend merges it into `settings.aavOverrides` via the existing
+    `PATCH /api/leagues/{id}`. This is the one a user actually wants —
+    values genuinely differ by who copied the sheet and when (injury news, a
+    later cut mid-draft), and it doesn't require an admin account. First
+    version of this feature shipped admin-only and global; a user went
+    looking for it in the app and couldn't find it, which is what prompted
+    rebuilding it this way. `marketPrice()` prefers `aavOverrides` over the
+    board's own `p.aav`.
+  - **Global baseline** (`POST /api/admin/fantasypros/aav-paste`,
+    admin-gated, `dry_run` default): writes the shared season-wide
+    `fantasy_players.aav` column directly — the fallback every league without
+    its own override reads. `data-pipeline/apply_aav_paste.py` is the thin
+    client for this one (reads the sheet from a file; a curl one-liner can't
+    survive the `$` and apostrophes in it). Still no frontend UI for this
+    path, matching how `reload-sos`/`admin/refresh` are operated.
 - **Scheduled data refresh** (`.github/workflows/refresh-data.yml`): runs the
   full pipeline (ingest → FantasyPros enrichment → load_to_db) on a recurring
   cadence — weekly (Mondays) most of the year, daily every day in August and

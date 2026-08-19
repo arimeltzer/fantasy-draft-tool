@@ -2347,14 +2347,40 @@ correctly shows zero targets, not four contradictory ones.
 **Also added: the same suggestion on the MAIN BOARD**, not just the fixed
 4-row panel — the moment it actually matters in a live draft is when someone
 nominates a player and you search his name, which is a different place from
-"your targets." Gated on an active search narrowing the visible list to
-`<= 8` rows (`BOARD_CEILING_MAX_ROWS`) before computing anything — the same
-DP-cost discipline, applied to a new call site rather than relaxed for it.
-`ceilingFor()` was extracted out of `valueTargets` into a shared callback so
-the panel and the board lookup cannot drift about what "the suggested bid"
-means. Two new reachability tests (61/61 vitest): the badge appears when a
-search narrows to one player, and does NOT appear (and does not run the DP)
-when the search is broad enough to match dozens of rows.
+"your targets." First version was gated on an active search narrowing the
+visible list to `<= 8` rows before computing anything, guarding the DP cost
+`bidCeiling`'s own header warns about. `ceilingFor()` was extracted out of
+`valueTargets` into a shared callback so the panel and the board lookup
+cannot drift about what "the suggested bid" means.
+
+**UNGATED after a user asked for it as a real column, and a real benchmark
+said the gate was overcautious.** The warning in `bidCeiling`'s header was
+written before anything measured the actual cost. It came in far cheaper
+than that caution implied: the full DP over a 300-player undrafted
+QB/RB/WR/TE pool — the entire board a live draft would ever show —
+completes in **under 90ms total (~0.3ms/player)**, and `ceilingByPlayer` is
+memoized on draft-state (`availDollar`), not on search/filter, so that cost
+is paid once per PICK, not once per keystroke or render. Cheap enough to
+show for every row unconditionally, which is what "the draft board... should
+also display the allocation ceiling for each player" actually asked for.
+Shipped as a proper `$Max` column (sm+ screens) next to `$Live`, with the
+same `bid $X` / `pass` / room-bound `*` semantics as the panel; mobile keeps
+a compact inline badge in the name's subtext line, since the dedicated
+column has nowhere to go at that width. Tests updated to match: the old
+"does NOT show when the search is broad" reachability check inverted into
+"populates for the WHOLE board, not gated on search" (61/61 vitest still).
+
+**Two more polish items from the same round of feedback:**
+- **A "target" that said "pass" was contradicting its own panel heading**
+  (see the FOLLOW-UP FIX above) — while fixing the display, the secondary
+  `suggestBid()` comparison ("model $X") was also crowding the player name
+  off the row on narrow panels; moved to its own indented line under the
+  primary bid rather than sharing the name's line.
+- **A clear (×) button in the board search box** (`BoardControls.tsx`,
+  shared by both rooms) — appears only when the query is non-empty, clears
+  just the text and leaves the position filter untouched, matching what was
+  asked for exactly rather than a broader "reset all filters" that would
+  have discarded a deliberately chosen position filter too.
 
 **FOLLOW-UP: real current-season FantasyPros AAV data refines the mechanism,
 and the refined version is a MORE fundamental problem with `suggestBid()`
@@ -2407,6 +2433,34 @@ hand-quote for curl. No frontend UI: matches this repo's existing precedent
 for admin data operations (`/api/admin/reload-sos`, `/api/admin/refresh`)
 being operated directly rather than through a UI surface that doesn't exist
 yet for any admin function.
+
+**REDESIGNED after the user actually tried to use it and couldn't find it.**
+Admin-only + global was the wrong shape for what this is. A user went
+looking for the paste box in the app and it wasn't there — the "no frontend
+UI, matches admin-tooling precedent" call above was reasonable by analogy to
+`reload-sos`, but wrong for THIS feature: the user's own framing was "the
+cheat sheet differs by league [so] it should be available to any user" and
+"updatable to reflect changing conditions," which is a per-league override,
+not a shared admin-gated baseline. `fantasy_players.aav` genuinely IS
+shared season-wide data (many leagues read it), so the admin route stays for
+refreshing that baseline — but a value one user pastes for their own draft
+has no business overwriting what every OTHER league on the season sees, and
+requiring an admin account to use it at all was the direct cause of the
+confusion. Added a second, non-admin path instead of replacing the first:
+`POST /api/integrations/fantasypros/aav-paste-candidates` (any signed-in
+user, `get_current_user` only, no write) returns a match report; the
+frontend merges it into `settings.aavOverrides` via the existing
+`PATCH /api/leagues/{id}` — the same "candidates now, caller decides what to
+do with them" shape `yahoo_paste_candidates` already uses, reused rather
+than inventing a new pattern. `marketPrice()` in `AuctionRoom.tsx` prefers
+`settings.aavOverrides?.[id]` over the board's own `p.aav`. `_match_aav_rows`
+factors the actual parse-and-match loop out of both endpoints so the
+admin and per-league routes cannot drift about how a name resolves to a
+player id. `AavPasteImport.tsx` is the UI: a "Values" button in
+`AuctionRoom`'s header (badge shows the active override count), a paste
+box, a preview-then-apply flow, and a clear button — "updatable to reflect
+changing conditions" means removing a stale paste has to be as easy as
+adding one.
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything

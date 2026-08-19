@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
-import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock, RotateCcw, Radio, HelpCircle } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock, RotateCcw, Radio, HelpCircle, DollarSign } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   auctionValues, applyInflation, maxBid,
@@ -35,6 +35,7 @@ import InjuryBadge from "@/components/shared/InjuryBadge";
 import Tip from "@/components/shared/Tip";
 import ProjTip from "@/components/shared/ProjTip";
 import SettingsDrawer from "./SettingsDrawer";
+import AavPasteImport from "./AavPasteImport";
 
 interface Props {
   league: ApiLeague;
@@ -56,6 +57,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   const [showKeepers, setShowKeepers] = useState(false);
   const [showLog, setShowLog] = useState(false);
   const [showLive, setShowLive] = useState(false);
+  const [showAav, setShowAav] = useState(false);
 
   const rosterSize = useMemo(() => {
     // Every term needs a fallback: a league that doesn't roster a kicker
@@ -133,10 +135,14 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   const marketById = useMemo(() => {
     const m: Record<number, number> = {};
     for (const p of board) {
-      m[p.id as number] = marketPrice(adpRankById[p.id as number], al, undefined, p.pos, p.aav, calibration);
+      // A per-league pasted AAV (roadmap 3.5 follow-up) wins over the shared
+      // `fantasy_players.aav` column — someone in THIS room copied THIS
+      // sheet, which is more current than whatever the shared baseline holds.
+      const aav = settings.aavOverrides?.[p.id as number] ?? p.aav;
+      m[p.id as number] = marketPrice(adpRankById[p.id as number], al, undefined, p.pos, aav, calibration);
     }
     return m;
-  }, [board, adpRankById, al, calibration]);
+  }, [board, adpRankById, al, calibration, settings.aavOverrides]);
 
   // Every priced pick in the room — my buys, opponents' buys, and keepers —
   // drives inflation (money spent is money out of the pool, whoever spent it).
@@ -314,25 +320,27 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
       .slice(0, 4);
   }, [availDollar, marketById, myBudgetLeft, myOpenSpots, remainingDvSum, ceilingFor]);
 
-  // On-demand suggested bid for the MAIN BOARD row — the actual moment this
-  // matters: someone nominates a player, you search his name, and the board
-  // narrows to him. That is exactly where "pass" belongs (a real decision
-  // about the player on the block right now), not in the "your targets"
-  // panel above (fixed there — see valueTargets). Gated on an active search
-  // narrowing the list to a handful of rows, same discipline `bidCeiling`'s
-  // own header demands: never mapped over the whole board.
-  const BOARD_CEILING_MAX_ROWS = 8;
-  const boardCeilings = useMemo(() => {
+  // Allocation ceiling for every undrafted QB/RB/WR/TE row on the MAIN BOARD,
+  // not just the fixed 4-row "your targets" panel — the actual moment it
+  // matters is whatever player is on screen when someone nominates them,
+  // which could be any row. `bidCeiling`'s own header warns against mapping
+  // it over the whole board, written when nothing had actually measured the
+  // cost; a real benchmark (300-player undrafted pool, full DP) comes in
+  // under 90ms total (~0.3ms/player), so computing it for the whole pool
+  // ONCE per draft-state change is cheap enough to do unconditionally.
+  // Keyed on `availDollar`/`ceilingFor` (draft state), deliberately NOT on
+  // `filtered`/`query`/`posFilter` — typing in the search box must not
+  // retrigger 300 DP evaluations; it only changes which rows are visible,
+  // not what any of them are worth.
+  const ceilingByPlayer = useMemo(() => {
     const m = new Map<number, ReturnType<typeof ceilingFor>>();
-    if (!query.trim() || filtered.length === 0 || filtered.length > BOARD_CEILING_MAX_ROWS) return m;
-    for (const p of filtered) {
+    for (const p of availDollar) {
       if (!["QB", "RB", "WR", "TE"].includes(p.pos)) continue;
-      if (draftedIds.has(p.id as number)) continue;
       const market = marketById[p.id as number] ?? 1;
       m.set(p.id as number, ceilingFor(p, market));
     }
     return m;
-  }, [query, filtered, draftedIds, marketById, ceilingFor]);
+  }, [availDollar, marketById, ceilingFor]);
 
   const pprLabel = settings.ppr === 1 ? "PPR" : settings.ppr === 0.5 ? "Half-PPR" : "Std";
 
@@ -364,10 +372,22 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
             >
               <Radio className="w-3.5 h-3.5" /> Live
             </button>
-            <button onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); }} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300">
+            <button
+              onClick={() => { setShowAav((v) => !v); setShowSettings(false); setShowKeepers(false); }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300"
+              title="Paste real auction values from FantasyPros for this league"
+            >
+              <DollarSign className="w-3.5 h-3.5" /> Values
+              {Object.keys(settings.aavOverrides ?? {}).length > 0 && (
+                <span className="ml-0.5 text-2xs font-mono text-emerald-600">
+                  {Object.keys(settings.aavOverrides ?? {}).length}
+                </span>
+              )}
+            </button>
+            <button onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); setShowAav(false); }} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300">
               <Lock className="w-3.5 h-3.5" /> Keepers
             </button>
-            <button onClick={() => { setShowSettings((v) => !v); setShowKeepers(false); }} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300">
+            <button onClick={() => { setShowSettings((v) => !v); setShowKeepers(false); setShowAav(false); }} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300">
               <Settings className="w-3.5 h-3.5" /> League
             </button>
           </div>
@@ -380,6 +400,14 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           settings={settings}
           onPicks={() => void hydrate(leagueId)}
           onClose={() => setShowLive(false)}
+        />
+      )}
+
+      {showAav && (
+        <AavPasteImport
+          settings={settings}
+          onSave={(patch) => patchLeague.mutate({ settings: { ...settings, ...patch } })}
+          onClose={() => setShowAav(false)}
         />
       )}
 
@@ -439,7 +467,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           />
 
           <div className="rounded-lg border border-gray-200 overflow-hidden">
-            <div className="grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_160px] gap-2 px-3 py-2 bg-white/80 text-xs uppercase tracking-wider text-gray-500 font-mono">
+            <div className="grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_64px_160px] gap-2 px-3 py-2 bg-white/80 text-xs uppercase tracking-wider text-gray-500 font-mono">
               <span>Pos</span>
               <span className="flex items-center gap-1">
                 Player
@@ -462,6 +490,9 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
               <span className="text-right">
                 <Tip tip="Live value: par price repriced for how the room is actually spending. If teams have overpaid so far, remaining players are worth more (inflation), and vice versa. Red means it's above the max you can bid.">$Live</Tip>
               </span>
+              <span className="text-right hidden sm:block">
+                <Tip tip="The most you should actually pay (roadmap 3.3-3.5) — accounting for what's left to fill on your own roster AND what the room can afford. Often well below $Live, including for players worth targeting: $Live is what he's worth in the abstract, $Max is what paying for him costs YOU given everything else you still need. QB/RB/WR/TE only — K/DST aren't in scope for this ceiling.">$Max</Tip>
+              </span>
               <span className="text-right">
                 <Tip tip="Type the final winning price, then hit Mine if you won the player or pick the opponent who did.">Bid / buy</Tip>
               </span>
@@ -481,7 +512,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                 return (
                   <div
                     key={p.id}
-                    className={`grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_160px] gap-2 px-3 py-2 items-center text-sm ${sold ? "opacity-40" : "hover:bg-gray-100"}`}
+                    className={`grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_64px_160px] gap-2 px-3 py-2 items-center text-sm ${sold ? "opacity-40" : "hover:bg-gray-100"}`}
                   >
                     <span className="flex items-center gap-1 text-xs font-mono">
                       <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
@@ -516,19 +547,21 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                           </span>
                         )}
                         {(() => {
-                          const c = boardCeilings.get(p.id as number);
+                          // Mobile only — sm+ gets the dedicated $Max column
+                          // below, driven by the same ceilingByPlayer map.
+                          const c = ceilingByPlayer.get(p.id as number);
                           if (!c) return null;
                           const byRoom = c.binding === "opponents";
                           return (
                             <span
-                              className={`ml-1 font-semibold cursor-help ${c.pass ? "text-gray-400" : byRoom ? "text-violet-700" : "text-sky-700"}`}
+                              className={`ml-1 font-semibold cursor-help sm:hidden ${c.pass ? "text-gray-400" : byRoom ? "text-violet-700" : "text-sky-700"}`}
                               title={c.pass
-                                ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him if he's on the block."
+                                ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
                                 : byRoom
-                                ? `Capped by the room's money: no opponent can bid more than $${c.bid - 1}, so you never have to pay above $${c.bid}. This is the same allocation+room-aware suggestion as the "your targets" panel, computed here because you searched for him.`
-                                : `The most you can pay and still end up with a roster at least as good as if you skipped him — accounting for what's left to fill. Same suggestion as the "your targets" panel, computed here because you searched for him.`}
+                                ? `Capped by the room's money: no opponent can bid more than $${c.bid - 1}, so you never have to pay above $${c.bid}.`
+                                : "The most you can pay and still end up with a roster at least as good as if you skipped him — accounting for what's left to fill."}
                             >
-                              {c.pass ? "· pass" : `· bid $${c.bid}${byRoom ? "*" : ""}`}
+                              {c.pass ? "· pass" : `· max $${c.bid}${byRoom ? "*" : ""}`}
                             </span>
                           );
                         })()}
@@ -547,6 +580,28 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                     >
                       ${live}
                     </span>
+
+                    {(() => {
+                      // sm+ only — the allocation+room-aware ceiling (roadmap
+                      // 3.3-3.5), for EVERY row, not just the fixed 4-row
+                      // panel. Absent for K/DST (bidCeiling never covers
+                      // them) and for a sold player (nothing left to decide).
+                      const c = !sold ? ceilingByPlayer.get(p.id as number) : undefined;
+                      if (!c) return <span className="hidden sm:block" />;
+                      const byRoom = c.binding === "opponents";
+                      return (
+                        <span
+                          className={`text-right font-mono text-sm tabular-nums hidden sm:block cursor-help ${c.pass ? "text-gray-400" : byRoom ? "text-violet-700" : "text-sky-700"}`}
+                          title={c.pass
+                            ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
+                            : byRoom
+                            ? `Capped by the room's money: no opponent can bid more than $${c.bid - 1}, so you never have to pay above $${c.bid} no matter what he's worth. This is what the room CAN pay, not what it wants to — a hard upper bound that tightens as budgets drain.`
+                            : "Allocation ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him — reserves a realistic price for every remaining starter, not $1."}
+                        >
+                          {c.pass ? "pass" : `$${c.bid}${byRoom ? "*" : ""}`}
+                        </span>
+                      );
+                    })()}
 
                     <div className="flex items-center justify-end gap-1">
                       {sold ? (

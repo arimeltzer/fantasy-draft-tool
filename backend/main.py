@@ -758,6 +758,71 @@ async def yahoo_paste_candidates(
     }
 
 
+def _match_aav_rows(report, rows) -> tuple[list[dict], list[str]]:
+    """Shared by both AAV-paste endpoints: parsed rows -> (matched, unmatched
+    names). Kept as one function so the admin (global) and per-league
+    (candidates) routes cannot drift about how a name resolves to a player id.
+    """
+    index = build_index([{"id": r.id, "name": r.name, "pos": r.pos, "team": r.team} for r in rows])
+    norm_players = aav_paste.to_norm_players(report)
+    matched, unmatched = [], []
+    for np, avr in zip(norm_players, report.rows):
+        pid = match_player(index, np)
+        if pid is None:
+            unmatched.append(avr.name)
+            continue
+        matched.append({"id": pid, "name": avr.name, "pos": avr.pos, "team": avr.team, "aav": avr.aav})
+    return matched, unmatched
+
+
+class AavPasteCandidatesRequest(BaseModel):
+    text: str = ""             # copied FantasyPros auction values cheat sheet
+    season: int = 2026
+
+
+@app.post("/api/integrations/fantasypros/aav-paste-candidates")
+async def fantasypros_aav_paste_candidates(
+    data: AavPasteCandidatesRequest,
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(db_dep),
+) -> dict:
+    """Match report ONLY — no write, no admin gate. `fantasy_players.aav` is
+    shared season-wide data (see the admin route below); auction values
+    genuinely differ by WHO copied the sheet and WHEN (injury news, a
+    league's own consensus, a source other than FantasyPros), and a value
+    someone pastes should land in their own league, not overwrite the shared
+    baseline for every league on the season. So this returns matched
+    {id, name, pos, team, aav} rows for the CALLER to merge into their own
+    `league.settings.aavOverrides` via the existing `PATCH /api/leagues/{id}`
+    — same shape as `yahoo_paste_candidates`, which hands its result to the
+    caller rather than writing anything itself.
+    """
+    if not data.text.strip():
+        raise HTTPException(status_code=400,
+                            detail="Paste the FantasyPros auction values cheat sheet.")
+    report = aav_paste.parse_aav_sheet(data.text)
+    if not report.rows:
+        raise HTTPException(status_code=422,
+                            detail="Could not parse any rows from the pasted text.")
+
+    rows = (await db.execute(
+        select(Player.id, Player.name, Player.pos, Player.team).where(Player.season == data.season)
+    )).all()
+    if not rows:
+        raise HTTPException(status_code=409, detail=f"No players loaded for season {data.season}.")
+    matched, unmatched = _match_aav_rows(report, rows)
+
+    return {
+        "season": data.season,
+        "parsed": len(report.rows),
+        "skipped_lines": len(report.skipped),
+        "candidates": matched,
+        "matched": len(matched),
+        "unmatched": len(unmatched),
+        "unmatched_names": unmatched[:40],
+    }
+
+
 class AavPasteRequest(BaseModel):
     text: str = ""             # copied FantasyPros auction values cheat sheet
     season: int = 2026
@@ -776,12 +841,13 @@ async def fantasypros_aav_paste(
     shape of fix as the Yahoo paste importer.
 
     Writes `fantasy_players.aav` for `season`, which `marketPrice()` already
-    prefers over its modeled log curve whenever present — this replaces that
-    modeled guess with a real market number for the roughly half of the board
-    ADP alone doesn't cover (roadmap 3.5). Admin-gated and defaults to
-    `dry_run=true`: this is shared pricing data every league on the season
-    reads, not a per-league setting, so nothing writes without an explicit
-    second call.
+    prefers over its modeled log curve whenever present — this REPLACES the
+    modeled fallback everyone gets by default. For a value that should only
+    apply to ONE league (a league-specific consensus, an update mid-draft),
+    use `/api/integrations/fantasypros/aav-paste-candidates` instead and
+    merge into that league's `settings.aavOverrides` — this route is for
+    refreshing the season-wide baseline every league falls back to, which is
+    why it stays admin-gated and defaults to `dry_run=true`.
     """
     if not data.text.strip():
         raise HTTPException(status_code=400,

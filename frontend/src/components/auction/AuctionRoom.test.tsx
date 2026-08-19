@@ -172,7 +172,11 @@ describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
     // NONE rather than four contradictory rows.
     renderInApp(room());
     expect(screen.queryByText("No value targets.")).toBeTruthy();
-    expect(screen.queryAllByText("pass").length).toBe(0);
+    // Scoped to the nomination panel — the main BOARD legitimately shows
+    // "pass" per row now too (the $Max column, added below), and that is
+    // NOT the contradiction this test guards against.
+    const panel = screen.getByText(/nomination strategy/i).closest("div")!.parentElement!;
+    expect(within(panel).queryAllByText("pass").length).toBe(0);
   });
 
   it("shows the allocation-aware ceiling as the PRIMARY suggested bid", () => {
@@ -198,7 +202,7 @@ describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
     // suggestBid() out of existence. Its number stays on screen, labeled, so
     // the two methods disagreeing is still visible rather than hidden.
     renderInApp(deepRoom());
-    expect(screen.getAllByText(/^model (\$\d+|pass)$/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^· model (\$\d+|pass)$/).length).toBeGreaterThan(0);
   });
 
   it("caps the ceiling by the room's money when opponents are broke (3.4)", () => {
@@ -239,25 +243,37 @@ describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
     expect(screen.queryAllByText(/NaN/).length).toBe(0);
   });
 
-  it("shows the same suggested bid on the MAIN BOARD when a search narrows to that player", () => {
-    // This is the actual moment the number matters in a live draft: someone
+  it("shows the allocation ceiling on the MAIN BOARD, on a compact mobile badge", () => {
+    // The actual moment the number matters in a live draft: someone
     // nominates a player, you search his name, and the board narrows to him
-    // — which is a different place from the fixed-size "your targets" panel
-    // above, and is where a user asked for the pass/bid signal to live.
-    // Gated on an active search so `bidCeiling`'s DP is never run over the
-    // whole board — reachability check, same discipline as the panel tests.
+    // — a different place from the fixed-size "your targets" panel above.
+    // On mobile the sm+ dedicated $Max column (checked below) is hidden for
+    // space, so the same value is folded into the name's subtext line.
     renderInApp(deepRoom());
     fireEvent.change(screen.getByPlaceholderText(/search player or team/i),
                      { target: { value: "P7" } });          // "P7" alone: not a substring of P17/P27/P37
     const r = row("P7");
-    expect(within(r).getByText(/^· (bid \$\d+\*?|pass)$/)).toBeTruthy();
+    expect(within(r).getByText(/^· (max \$\d+\*?|pass)$/)).toBeTruthy();
   });
 
-  it("does NOT show the board suggestion when the search is too broad", () => {
-    // The DP-cost guard: bidCeiling must not run over dozens of visible rows.
-    renderInApp(deepRoom());
-    fireEvent.change(screen.getByPlaceholderText(/search player or team/i),
-                     { target: { value: "P" } });           // matches ~40 rows
-    expect(screen.queryAllByText(/^· (bid \$|pass)/).length).toBe(0);
+  it("populates the $Max column for the WHOLE board, not gated on search", () => {
+    // A DP over the whole undrafted skill-position pool sounds expensive —
+    // `bidCeiling`'s own header warns against mapping it over the whole
+    // board — but that warning predated any actual measurement. A real
+    // benchmark (300 undrafted QB/RB/WR/TE, full DP each) comes in under
+    // 90ms total, and it only recomputes on draft-state changes (a pick),
+    // never on search/filter keystrokes — cheap enough to show for every
+    // row unconditionally, which is what a user asked for after finding the
+    // ceiling missing from the one place they actually look things up.
+    renderInApp(deepRoom());   // no search filter: the whole 40-player board
+    const r = row("P7");
+    // Identified by title, since bare "$X"/"pass" text collides with $Par
+    // and $Live's own bare "$X" text in the same row. jsdom renders both the
+    // sm+ dedicated column AND the mobile inline badge regardless of
+    // viewport (CSS media queries don't apply), so at least one — not
+    // necessarily exactly one — is expected here.
+    expect(within(r).getAllByTitle(
+      /allocation ceiling|capped by the room's money|doesn't improve your best reachable roster|the most you can pay/i,
+    ).length).toBeGreaterThan(0);
   });
 });

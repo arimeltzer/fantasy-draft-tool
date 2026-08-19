@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 
 const POSITIONS = ["ALL", "QB", "RB", "WR", "TE", "K", "DST"] as const;
 
@@ -24,8 +24,18 @@ export default function BoardControls({
           value={query}
           onChange={(e) => onQuery(e.target.value)}
           placeholder="Search player or team"
-          className="w-full pl-8 pr-3 py-1.5 rounded bg-gray-50 border border-gray-200 text-sm focus:outline-none focus:border-gray-400"
+          className="w-full pl-8 pr-7 py-1.5 rounded bg-gray-50 border border-gray-200 text-sm focus:outline-none focus:border-gray-400"
         />
+        {query && (
+          <button
+            onClick={() => onQuery("")}
+            title="Clear search"
+            aria-label="Clear search"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-200"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
       </div>
       <div className="flex items-center gap-1 text-xs">
         {POSITIONS.map((pos) => (
