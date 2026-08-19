@@ -48,6 +48,7 @@ data-pipeline/      offline data prep -> JSON -> Postgres
   ingest_nflverse.py  pull players/schedule/logs from nflverse
   projections.py      ECR/ADP + projections enrichment (nflverse free OR FantasyPros API)
   fantasypros.py      FantasyPros public API client (x-api-key): rankings + projections
+  apply_aav_paste.py  push a pasted FantasyPros auction-values sheet to the live backend
   load_to_db.py       load JSON into Postgres (also bakes SOS multipliers)
   sos_backtest.py / sos_engine.py   empirical SOS tuning (validated vs JS)
   projection_model.py   Python port of engine-core.js projectPoints (parity-tested)
@@ -182,10 +183,22 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.
 - **FantasyPros API** (`data-pipeline/fantasypros.py`): fresh, scoring-aware ECR/
-  ADP/AAV into the player rows (replaces the limited free nflverse snapshot).
-  `fetch_aav()` pulls consensus auction average value (type=auction) which
-  `auction-engine.js marketPrice()` uses directly when present, instead of the
-  modeled logarithmic curve.
+  ADP into the player rows (replaces the limited free nflverse snapshot).
+  `fetch_aav()` is a confirmed, documented **no-op** — the public v2 API has
+  no auction-shaped endpoint at all (see its own docstring); this note used to
+  say otherwise and was wrong. Real AAV comes in via the paste importer below
+  instead, into the same `aav` column `auction-engine.js marketPrice()` already
+  prefers over the modeled logarithmic curve when present.
+- **FantasyPros auction values, pasted** (`backend/integrations/
+  fantasypros_aav_paste.py`): the website's auction-values cheat sheet, copied
+  as text — same fix as the Yahoo paste importer, for the same reason (no API
+  access). Parses through the shared `matching.py` index/matcher ESPN/Yahoo
+  import already use. `POST /api/admin/fantasypros/aav-paste` (admin-gated,
+  `dry_run` default — `fantasy_players.aav` is season-wide shared data, not a
+  per-league setting) writes it. `data-pipeline/apply_aav_paste.py` is the
+  thin client (reads the sheet from a file; a curl one-liner can't survive the
+  `$` and apostrophes in it). No frontend UI — matches how `reload-sos` and
+  `admin/refresh` are already operated, directly rather than through a UI.
 - **Scheduled data refresh** (`.github/workflows/refresh-data.yml`): runs the
   full pipeline (ingest → FantasyPros enrichment → load_to_db) on a recurring
   cadence — weekly (Mondays) most of the year, daily every day in August and
@@ -430,9 +443,11 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
 ## Auction calibration (shipped, on by default, inert without history)
 
 - FantasyPros has **no auction endpoint** (`fetch_aav` is an explicit no-op), so
-  `marketPrice()` is a generic log curve identical for every league. Real rooms
-  aren't generic: a league that spends 46% on RB against a curve assuming 37%
-  makes every back underpriced for you.
+  `marketPrice()` is a generic log curve identical for every league — unless
+  real AAV has been pasted in (see the paste importer above), in which case
+  `marketPrice()` uses that directly. Real rooms aren't generic: a league that
+  spends 46% on RB against a curve assuming 37% makes every back underpriced
+  for you.
 - `engine/auction-calibration.js` learns **positional spend shares** from prior
   draft prices already cached in `settings.keeperImport.candidates` (read today
   only for keeper costs). Not per-player prices — last year's price for a given

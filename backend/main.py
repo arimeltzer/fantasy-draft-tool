@@ -10,7 +10,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import bcrypt as _bcrypt
 from jose import JWTError, jwt
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import db_dep, create_all_tables
@@ -19,6 +19,7 @@ from models import (
     Schedule, SosMult, User,
 )
 from integrations import espn as espn_provider, yahoo as yahoo_provider, yahoo_paste
+from integrations import fantasypros_aav_paste as aav_paste
 from integrations.base import NormPlayer, opponent_team_ids
 from integrations.matching import build_index, match_player, keeper_candidates
 
@@ -755,6 +756,82 @@ async def yahoo_paste_candidates(
         "unmatched": len(cands) - matched,
         "paste": report,
     }
+
+
+class AavPasteRequest(BaseModel):
+    text: str = ""             # copied FantasyPros auction values cheat sheet
+    season: int = 2026
+    dry_run: bool = True
+
+
+@app.post("/api/admin/fantasypros/aav-paste")
+async def fantasypros_aav_paste(
+    data: AavPasteRequest,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(db_dep),
+) -> dict:
+    """Real auction dollar values with NO API access — `fetch_aav()` in the
+    pipeline is a documented no-op (the public FantasyPros API has no auction
+    endpoint), but the website's cheat sheet can be copied out as text, same
+    shape of fix as the Yahoo paste importer.
+
+    Writes `fantasy_players.aav` for `season`, which `marketPrice()` already
+    prefers over its modeled log curve whenever present — this replaces that
+    modeled guess with a real market number for the roughly half of the board
+    ADP alone doesn't cover (roadmap 3.5). Admin-gated and defaults to
+    `dry_run=true`: this is shared pricing data every league on the season
+    reads, not a per-league setting, so nothing writes without an explicit
+    second call.
+    """
+    if not data.text.strip():
+        raise HTTPException(status_code=400,
+                            detail="Paste the FantasyPros auction values cheat sheet.")
+    report = aav_paste.parse_aav_sheet(data.text)
+    if not report.rows:
+        raise HTTPException(status_code=422,
+                            detail="Could not parse any rows from the pasted text.")
+
+    rows = (await db.execute(
+        select(Player.id, Player.name, Player.pos, Player.team, Player.aav)
+        .where(Player.season == data.season)
+    )).all()
+    if not rows:
+        raise HTTPException(status_code=409, detail=f"No players loaded for season {data.season}.")
+    index = build_index([{"id": r.id, "name": r.name, "pos": r.pos, "team": r.team} for r in rows])
+    current_aav = {r.id: r.aav for r in rows}
+
+    norm_players = aav_paste.to_norm_players(report)
+    updates, unmatched = [], []
+    for np, avr in zip(norm_players, report.rows):
+        pid = match_player(index, np)
+        if pid is None:
+            unmatched.append(avr.name)
+            continue
+        updates.append({"id": pid, "name": avr.name, "old": current_aav.get(pid), "new": avr.aav})
+
+    result = {
+        "season": data.season,
+        "parsed": len(report.rows),
+        "skipped_lines": len(report.skipped),
+        "matched": len(updates),
+        "unmatched": len(unmatched),
+        # Capped so a long tail of deep-bench misses doesn't blow up the
+        # response; the count above is what actually matters for the badge.
+        "unmatched_names": unmatched[:40],
+        "sample": updates[:10],
+        "dry_run": data.dry_run,
+        "written": False,
+    }
+    if data.dry_run:
+        return result
+
+    for u in updates:
+        await db.execute(update(Player).where(Player.id == u["id"]).values(aav=u["new"]))
+    await db.commit()
+    result["written"] = True
+    log.info("aav-paste: updated %d players for season %s (%d unmatched)",
+              len(updates), data.season, len(unmatched))
+    return result
 
 
 @app.post("/api/integrations/espn/probe-activity")

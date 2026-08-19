@@ -1284,6 +1284,40 @@ was ours. Read against the published OpenAPI spec rather than guessed:
 - Repaired the stale projection backtest harness for the current nflreadpy API
   (projection-param tuning remains data-limited — no archived projections).
 
+## 2026-08 — Phase 3 mechanisms, the auction simulator kill gate, real AAV import
+- **Phase 3 shipped**: 3.1 pick-survival margin (snake, simplified to
+  adp-vs-next-pick after the full probabilistic model was measured and set
+  aside), 3.2 positional-run detection, 3.3 budget-path DP (allocation-aware
+  bid ceilings), 3.4 room price ceilings, 3.4a opponent positional demand.
+  Full pre-registrations, RESULTs, and corrections in `docs/ROADMAP.md`.
+- **3.5 — the auction simulator**, the harness 3.3/3.4/3.4a had shipped
+  without ever measuring: `frontend/src/engine/auction-sim.mjs` (second-price
+  auction, allocation-aware treatment arm vs shipped `suggestBid()` control,
+  bots on their own need rule with swept pricing noise), 49-assertion
+  selftest verified against 3 deliberate mutations. First gate run showed an
+  implausibly large raw win; that size was the tell, not the result — traced
+  to (then RULED OUT via a corrected re-run) a control empty-starting-slot
+  failure, and finally to a real, more fundamental mechanism: `suggestBid()`'s
+  `fairShare` is bounded by the app's OWN `dollarValue`, decoupled from the
+  market by design, so a bargain signal only ever gates the bid DOWN, never
+  meaningfully up past what our own model thinks a player is worth — even
+  when real market data (AAV) says he's worth much more. CLEAN (empty-slot
+  drafts excluded) still clears the pre-registered bar at every noise level.
+  Full writeup, numbers, and the recommended (not yet applied) next step —
+  wiring the allocation ceiling as `AuctionRoom`'s primary suggestion — in
+  `docs/ROADMAP.md` 3.5.
+- **Real FantasyPros auction values, with no API access**: `fetch_aav()` was
+  already a confirmed no-op (no auction endpoint in the public API), but the
+  website's cheat sheet can be copied out as text. `fantasypros_aav_paste.py`
+  parses it (fixture-tested on a real 318-row sheet, zero skips) through the
+  same `matching.py` matcher ESPN/Yahoo import already share.
+  `POST /api/admin/fantasypros/aav-paste` (admin-gated, dry-run default)
+  writes `fantasy_players.aav`, which `marketPrice()` already prefers over
+  its modeled curve. `data-pipeline/apply_aav_paste.py` is the thin client
+  (reads the sheet from a file — a curl one-liner can't survive the `$` and
+  apostrophes in player names/prices). No frontend UI, matching this repo's
+  existing admin-tooling precedent (`reload-sos`, `admin/refresh`).
+
 ## 2026-06 — Frontend redesign (clean light theme, shaded rows)
 - Replaced the inverted-slate-palette hack with an intentional light design
   system (semantic tokens in `tailwind.config.ts`, base/components in

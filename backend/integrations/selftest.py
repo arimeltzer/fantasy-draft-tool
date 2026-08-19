@@ -15,6 +15,7 @@ import json
 from .base import NormLeague, NormPlayer, NormTeam, opponent_team_ids
 from .matching import build_index, match_player, keeper_candidates
 from . import espn, live, yahoo, yahoo_paste
+from . import fantasypros_aav_paste as aav_paste
 
 
 def test_matching():
@@ -680,6 +681,7 @@ def main():
     test_yahoo_leagues(); print("✓ yahoo leagues list")
     test_waiver_weekly_fetch(); print("✓ waiver weekly fetch")
     test_yahoo_paste(); print("✓ yahoo paste import")
+    test_fantasypros_aav_paste(); print("✓ fantasypros aav paste import")
     print("\nALL INTEGRATION SELFTESTS PASS")
 
 
@@ -847,6 +849,64 @@ def test_yahoo_paste():
     lg2, _ = yahoo_paste.build_league(draft, rosters)
     assert opponent_team_ids(lg2.teams)[0] == rep["team_names"]
     assert lg2.settings["draftSlot"] == 1
+
+def test_fantasypros_aav_paste():
+    """Real FantasyPros auction-values cheat-sheet rows (copied straight off
+    the page, not synthesized) — fixture-tested the same way yahoo_paste's
+    real 10-team export is, because a format assumption that only holds on a
+    hand-built example is the failure mode this whole file exists to catch."""
+    text = "\n".join([
+        "1.\tJahmyr Gibbs (DET - RB)\t302\t$63",
+        "2.\tPuka Nacua (LAR - WR)DTD\t223\t$61",              # injury tag glued on
+        "62.\tAlec Pierce (IND - WR)PUP\t139\t$16",            # different tag
+        "156.\tHouston Texans (HOU - DST)\t120\t$2",           # DST: franchise name
+        "182.\tBrandon Aubrey (DAL - K)\t153\t$1",
+        "196.\tJordan Love (GB - QB)\t257\t$0",                # $0 is a real value, not missing
+        "270.\tAustin Ekeler ( - RB)\t27\t$0",                 # free agent: blank team
+        "288.\tTravis Hunter (JAC - WR,CB)\t70\t$0",           # dual-listed: first pos wins
+        "",                                                    # blank lines are skipped
+        "not a player row at all",                             # malformed -> skipped, not fatal
+    ])
+    report = aav_paste.parse_aav_sheet(text)
+    assert len(report.rows) == 8, len(report.rows)
+    assert report.skipped == ["not a player row at all"], report.skipped
+
+    by_name = {r.name: r for r in report.rows}
+    assert by_name["Jahmyr Gibbs"].pos == "RB" and by_name["Jahmyr Gibbs"].team == "DET"
+    assert by_name["Jahmyr Gibbs"].aav == 63.0
+    # the injury/practice tag must not leak into the parsed name or price
+    assert by_name["Puka Nacua"].aav == 61.0
+    assert by_name["Alec Pierce"].aav == 16.0
+    # DST: FantasyPros gives the team directly, no name-based lookup needed
+    assert by_name["Houston Texans"].pos == "DST" and by_name["Houston Texans"].team == "HOU"
+    # $0 is a real, meaningful floor value, not a parse failure
+    assert by_name["Jordan Love"].aav == 0.0
+    # a free agent has an explicit-but-empty team, not a missing field
+    assert by_name["Austin Ekeler"].team == ""
+    # dual-position players are filed under the FIRST position listed
+    assert by_name["Travis Hunter"].pos == "WR"
+
+    # ── feeds the SAME matcher ESPN/Yahoo import already uses ──────────
+    pool = [
+        {"id": 1, "name": "Jahmyr Gibbs", "pos": "RB", "team": "DET"},
+        {"id": 2, "name": "Puka Nacua", "pos": "WR", "team": "LAR"},
+        {"id": 3, "name": "Houston Texans", "pos": "DST", "team": "HOU"},
+        {"id": 4, "name": "Austin Ekeler", "pos": "RB", "team": "LAC"},  # team drifted
+        # Alec Pierce, Brandon Aubrey, Jordan Love, Travis Hunter absent —
+        # exercises the unmatched path.
+    ]
+    index = build_index(pool)
+    norm_players = aav_paste.to_norm_players(report)
+    assert len(norm_players) == 8
+    matched = [(np, match_player(index, np)) for np in norm_players]
+    ids = {np.name: pid for np, pid in matched}
+    assert ids["Jahmyr Gibbs"] == 1
+    assert ids["Puka Nacua"] == 2
+    assert ids["Houston Texans"] == 3          # DST matches on team, not name
+    assert ids["Austin Ekeler"] == 4           # name+pos unique even with a blank/stale team
+    assert ids["Alec Pierce"] is None          # not in the pool -> unmatched, not guessed
+    assert ids["Jordan Love"] is None
+
 
 if __name__ == "__main__":
     main()

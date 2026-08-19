@@ -2313,6 +2313,58 @@ second season's data or a live-inflation-aware follow-up before being
 trusted at face value for magnitude, even though DIRECTION is robust across
 every season and noise level tested, raw and clean alike).
 
+**FOLLOW-UP: real current-season FantasyPros AAV data refines the mechanism,
+and the refined version is a MORE fundamental problem with `suggestBid()`
+than ADP coverage.** The user supplied a real FantasyPros auction-values
+cheat sheet (a website page, not an API response — confirmed against
+`fetch_aav()`'s own docstring, which documents the public v2 API as having no
+auction-shaped endpoint at all; see the new `fantasypros_aav_paste.py`
+importer below). It prices 258 skill-position players, 167 of them with a
+real nonzero $ — 65% coverage, meaningfully better than a typical historical
+season's ADP coverage (36-62% uncovered per the gate's own export log). The
+natural next question: does feeding this INTO the market (`marketPrice()`
+already prefers `aav` when present) close control's chronic underspending?
+
+**It does not — spend went DOWN, not up** (a quick diagnostic script, real
+player pool + real AAV, FantasyPros' own projected-points column standing in
+for `vbd` since true VBD needs the full `valueBoard` replacement-level
+pipeline this ad hoc check didn't run — stated so the exact numbers below are
+read as illustrative, not a re-measurement of the validated gate): control's
+spend went from $30/$200 (no AAV, modeled curve) to **$24/$200 with full real
+AAV**, while treatment's went from $29 to **$153**. Inspecting one player
+directly explains why: Jahmyr Gibbs, RANK 1 OVERALL, real AAV $63 — and
+`suggestBid()` offered **$2**. Not because the market was thin (`aav` was
+right there, `marketPrice()` used it, `market = 63`); because `fairShare`
+scales with the app's OWN `dollarValue` (`$20` for Gibbs under the proxy
+vbd), and `ratioScale` only ever adjusts that by `[0.5, 1.4]`× — a `dv` that
+undershoots what the market says a player is worth caps the bid near that
+undershoot almost regardless of how much higher `market` runs. That is
+BY DESIGN (`auction-engine.js`'s own header: "our own estimate of what he is
+WORTH must stay independent of [the market/calibration] ... the gap between
+the two is the entire bargain signal") — but a bargain signal that only ever
+gates the bid DOWN, never meaningfully up past `dv`, is a real, structural,
+coverage-independent reason `suggestBid()` leaves elite, market-priced value
+on the table, distinct from and more fundamental than the ADP-coverage
+mechanism above. Treatment's ceiling is not anchored to `dollarValue` the
+same way, which is the more precise reason it captures that value.
+
+**Shipped from this follow-up: a real AAV data path, independent of whether
+3.3/3.4/3.4a's own default-bidding recommendation above is acted on.**
+`backend/integrations/fantasypros_aav_paste.py` parses the cheat-sheet text
+(fixture-tested on real pasted rows in `integrations/selftest.py`, all 318
+rows of the actual sheet parse cleanly with zero skips) into `NormPlayer`s
+fed through the SAME `matching.py` index/matcher ESPN and Yahoo import
+already use — no second name-matching path. `POST
+/api/admin/fantasypros/aav-paste` (admin-gated, `dry_run` default true since
+`fantasy_players.aav` is shared season-wide data, not a per-league setting)
+writes the matched values. `data-pipeline/apply_aav_paste.py` is the thin
+client — reads the pasted sheet from a file rather than a shell argument,
+since a 300-line sheet full of `$` and apostrophes is genuinely painful to
+hand-quote for curl. No frontend UI: matches this repo's existing precedent
+for admin data operations (`/api/admin/reload-sos`, `/api/admin/refresh`)
+being operated directly rather than through a UI surface that doesn't exist
+yet for any admin function.
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.
