@@ -10,6 +10,7 @@ import { LeagueSettings, ApiLeague } from "@/lib/api";
 import {
   calibrateAuction, picksFromKeeperImport, noCalibration, describeCalibration,
 } from "@/engine/auction-calibration.js";
+import { bidCeiling, remainingStartingSlots } from "@/engine/budget-path.js";
 import { useDraftStore } from "@/store/draftStore";
 import { usePatchLeague } from "@/hooks/useLeague";
 import { posStyle } from "@/lib/posStyles";
@@ -54,8 +55,16 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   const [showLive, setShowLive] = useState(false);
 
   const rosterSize = useMemo(() => {
+    // Every term needs a fallback: a league that doesn't roster a kicker
+    // simply has no K key, and one `undefined` in this sum makes rosterSize
+    // NaN — which then silently poisons dollarValues (leagueAvail -> NaN),
+    // every suggested bid, and maxBid, rendering "bid $NaN" in the panel.
+    // Only SF was defensive before, so the bug fired on any roster missing
+    // K or DST.
     const r = settings.roster;
-    return r.QB + r.RB + r.WR + r.TE + r.FLEX + r.K + r.DST + r.BENCH + (settings.superflex ? (r.SF ?? 0) : 0);
+    return (r.QB ?? 0) + (r.RB ?? 0) + (r.WR ?? 0) + (r.TE ?? 0) + (r.FLEX ?? 0)
+      + (r.K ?? 0) + (r.DST ?? 0) + (r.BENCH ?? 0)
+      + (settings.superflex ? (r.SF ?? 0) : 0);
   }, [settings]);
 
   const al = useMemo(
@@ -197,8 +206,24 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
       .slice(0, 5);
   }, [availDollar, oppBudgets, marketById, fractionDone]);
 
+  // Budget path (roadmap 3.3): which starting slots are still open, and how
+  // much of the budget is spoken for by bench/K/DST at minimum bid.
+  const { slots: openStartSlots, reserveSpots } = useMemo(
+    () => remainingStartingSlots(settings.roster as unknown as Record<string, number>, minePlayers),
+    [settings.roster, minePlayers],
+  );
+  // Budget the DP may actually allocate: cash on hand minus $1 held back for
+  // every slot the DP does not optimize (see budget-path.js's stated
+  // approximations). Never negative.
+  const dpBudget = Math.max(0, myBudgetLeft - reserveSpots);
+  const priceOfPlayer = useCallback(
+    (p: BoardPlayer) => marketById[p.id as number] ?? 1,
+    [marketById],
+  );
+  const valueOfPlayer = useCallback((p: BoardPlayer) => p.vbd ?? 0, []);
+
   const valueTargets = useMemo(() => {
-    return availDollar
+    const targets = availDollar
       .filter((p) => ["QB", "RB", "WR", "TE"].includes(p.pos))
       .map((p) => {
         const market = marketById[p.id as number] ?? 1;
@@ -207,7 +232,28 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
       })
       .sort((a, b) => b.surplus - a.surplus)
       .slice(0, 4);
-  }, [availDollar, marketById, myBudgetLeft, myOpenSpots, remainingDvSum]);
+
+    // The allocation-aware ceiling, computed ONLY for the handful shown —
+    // bidCeiling runs a DP per evaluation and must not be mapped over the
+    // whole board. Shown ALONGSIDE the existing suggestion rather than
+    // replacing it: nothing has measured this against head-to-head title
+    // share (no auction simulator exists), so it informs rather than
+    // overrides. See ROADMAP 3.3.
+    return targets.map((t) => ({
+      ...t,
+      ceiling: openStartSlots.length
+        ? bidCeiling({
+            player: t.p,
+            slots: openStartSlots,
+            budget: dpBudget,
+            pool: availDollar,
+            valueOf: valueOfPlayer,
+            priceOf: priceOfPlayer,
+          })
+        : null,
+    }));
+  }, [availDollar, marketById, myBudgetLeft, myOpenSpots, remainingDvSum,
+      openStartSlots, dpBudget, valueOfPlayer, priceOfPlayer]);
 
   const pprLabel = settings.ppr === 1 ? "PPR" : settings.ppr === 0.5 ? "Half-PPR" : "Std";
 

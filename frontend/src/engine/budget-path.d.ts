@@ -1,0 +1,47 @@
+import type { BoardPlayer } from "./engine-core.js";
+
+export declare const FLEX_ELIGIBLE: readonly ["RB", "WR", "TE"];
+export declare const DP_POSITIONS: readonly ["QB", "RB", "WR", "TE"];
+export declare const TOP_K_PER_POS: number;
+
+export interface ReachableRoster<T = BoardPlayer> {
+  feasible: boolean;
+  /** Total value of the best still-fillable roster. */
+  value: number;
+  /** The players making it up — one per slot when feasible. */
+  picks: T[];
+  /** Dollars actually allocated; leftover under budget is legitimate. */
+  spend: number;
+}
+
+export declare function flexDistributions(
+  n: number,
+): { RB: number; WR: number; TE: number }[];
+
+/** Which starting slots are still open, plus how many bench/K/DST spots
+ *  still need a minimum bid reserved. */
+export declare function remainingStartingSlots(
+  roster?: Record<string, number>,
+  myPlayers?: { pos?: string }[],
+): { slots: string[]; reserveSpots: number };
+
+export declare function reachableRoster<T = BoardPlayer>(args: {
+  slots: string[];
+  budget: number;
+  pool: T[];
+  valueOf: (p: T) => number;
+  priceOf: (p: T) => number;
+}): ReachableRoster<T>;
+
+/** Most you can pay for `player` and be no worse off than skipping him.
+ *  Runs a DP per probe — call for the player on the block and the few
+ *  shown, never mapped across a full board. */
+export declare function bidCeiling<T = BoardPlayer>(args: {
+  player: T;
+  slots: string[];
+  budget: number;
+  pool: T[];
+  valueOf: (p: T) => number;
+  priceOf: (p: T) => number;
+  minBid?: number;
+}): number;

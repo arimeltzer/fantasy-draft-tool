@@ -18,6 +18,9 @@ interface TargetItem {
   pass: boolean;
   dollarValue: number;
   surplus: number;
+  /** roadmap 3.3 — allocation-aware ceiling; null when there is no open
+   *  starting slot to evaluate against. */
+  ceiling?: number | null;
 }
 
 interface Props {
@@ -93,7 +96,7 @@ export default function NominationPanel({ factor, phase, nominations, valueTarge
           <Target className="w-3 h-3" />
           <Tip tip="Players whose model value most exceeds their expected price — the best bargains left. The bid is the most the model would pay; 'pass' means they'll likely go for more than they're worth.">your targets — suggested bid</Tip>
         </div>
-        {valueTargets.map(({ p, bid, market, pass }) => {
+        {valueTargets.map(({ p, bid, market, pass, ceiling }) => {
           const st = posStyle(p.pos);
           const overMax = bid > myMax;
           return (
@@ -101,6 +104,14 @@ export default function NominationPanel({ factor, phase, nominations, valueTarge
               <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
               <span className="truncate flex-1">{p.name}</span>
               <span className="font-mono text-gray-400" title="Expected sale price based on market rankings">mkt ${market}</span>
+              {ceiling != null && (
+                <span
+                  className="font-mono text-sky-700 cursor-help"
+                  title={`Allocation ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him — accounting for what's left to fill and what those slots will cost. Unlike the max-bid figure, this reserves a realistic price for every remaining starter, not $1.${ceiling === 0 ? " $0 means he doesn't improve your best reachable roster at any price." : ""}`}
+                >
+                  max ${ceiling}
+                </span>
+              )}
               <span
                 className={`font-mono cursor-help ${overMax ? "text-rose-500" : pass ? "text-gray-400" : "text-amber-700"}`}
                 title={overMax

@@ -1805,10 +1805,129 @@ real code path. `npm run build` passed the whole time, which is exactly the
 level removed: build passing proved the TYPES were internally consistent,
 not that the feature was reachable.
 
-### 3.3 Auction: budget-path optimization *(highest-value auction feature)*
+### 3.3 Auction: budget-path optimization *(highest-value auction feature)* — DONE, shipped as a surface (phase kill gate NOT run: no auction simulator)
 The tool prices players independently. The real skill is allocation: given
 remaining budget, remaining holes and expected prices, what roster is reachable?
 That is a knapsack/DP problem over the roster, evaluated on P(title).
+
+**PRE-REGISTRATION, written before the code exists.**
+
+*The gap this closes, stated concretely.* `maxBid()` today is
+`budget − (openSpots − 1) × $1`: it reserves ONE DOLLAR for every remaining
+slot. That is the most pessimistic possible reserve and it is why the tool
+"prices players independently" — with a $1 reserve, almost any bid looks
+affordable, so affordability never actually constrains anything. The real
+question is not "can I still fill the roster with $1 scrubs" but "what is the
+best roster still reachable after this purchase".
+
+*The quantity*: `reachableRoster({ slots, budget, pool, valueOf })` — the
+DP-optimal total value of the best roster still fillable, given remaining
+slots, remaining budget, and each available player's EXPECTED PRICE. Exact
+DP over (slot index × dollars spent), not a greedy approximation, because
+greedy is wrong here in a way that matters: spending down to the last dollar
+on the best available player at each slot in turn is exactly the failure this
+step exists to prevent.
+
+*The decision surface*: `bidCeiling(player, ...)` — the highest price at
+which buying this player leaves you **no worse off than skipping him**:
+the largest `p` where `valueOf(player) + reachable(slots−1, budget−p)`
+is still `>= reachable(slots, budget)`. That is the opportunity-cost-correct
+ceiling, and it is the number that answers "the real skill is allocation"
+directly rather than via a separate planning view.
+
+*The objective is injected, per the restructure's standing commitment*:
+everything takes `valueOf(player) → number`. Today callers pass VBD. Nothing
+in the DP knows or cares what value means.
+
+*Two approximations, stated up front rather than discovered later*:
+  1. **Bench slots are treated as $1 filler and excluded from the DP.** Real
+     auction benches largely ARE minimum-bid filler, and including them
+     would multiply the state space to model a decision nobody agonizes
+     over. Starters are where allocation is decided.
+  2. **Candidate pruning is top-K per position** (K stated in code). The DP
+     is exact over what it is given; it is not given every deep-bench body,
+     because the 300th-ranked WR cannot enter an optimal starting lineup and
+     paying to consider him would be pure cost.
+
+*Gate — and an honest statement of what CANNOT be gated here.* The phase kill
+gate is head-to-head title share, and **there is no auction simulator in this
+repo** (`draft-sim.mjs` is snake-only; nothing else simulates bidding). So the
+phase gate is not runnable for 3.3 today, and this step does not pretend
+otherwise. What IS gated, and is the load-bearing test:
+  1. **DP optimality verified against brute force.** On small cases where
+     exhaustive enumeration is tractable, the DP's answer must equal the true
+     optimum EXACTLY, over randomized pools — same treatment `survival.js`'s
+     prefix-sum shortcut got against its own O(n²) definition, and for the
+     same reason: an optimizer that is subtly not optimal is worse than none,
+     because every downstream number inherits the error silently.
+  2. **`bidCeiling` monotonicity and bounds**: never exceeds `maxBid`'s hard
+     cash limit, never negative, and rises with the player's own value.
+
+*What shipping without the phase gate does and does not claim.* It claims the
+allocation arithmetic is correct and strictly more informative than a $1
+reserve. It does NOT claim a measured title-share edge over the current
+independent-pricing behavior — that needs an auction simulator, which is
+scoped as its own follow-up below rather than hand-waved as done. Until then
+this ships as a SURFACE (a number shown next to the existing bid suggestion),
+not as a silent override of `suggestBid` — a mechanism nobody has measured
+should not quietly change what the tool tells you to bid.
+
+**RESULT — shipped as a surface, with the phase gate explicitly NOT run.**
+`budget-path.js`: `reachableRoster()` (exact DP), `bidCeiling()` (binary
+search over the DP, exact because the predicate is monotone in price), and
+`remainingStartingSlots()`. 28 selftests.
+
+*The load-bearing test held, and was itself verified by mutation.* The DP
+matches exhaustive brute force on 240 randomized cases spanning six slot
+shapes including one- and two-FLEX. Rather than trust a clean first pass,
+three deliberate mutations were injected: iterating the count dimension
+ascending (which would let one player fill two slots) — **caught**, 51
+mismatches; restricting FLEX to RB only — **caught**, 21 mismatches; and
+flipping a tie-break comparison — **not caught, correctly**, because that
+mutation is genuinely semantics-preserving (it changes which of two
+equal-value picks is reconstructed, not the optimum). The suite also guards
+itself: it asserts the randomized cases actually produced infeasible and
+budget-limited instances, since a suite where the budget never bound would
+pass trivially.
+
+*The gap it closes is large.* On a realistic 300-player board with a $200
+budget and a full starting lineup open, `maxBid`'s $1-reserve says a player
+is affordable up to **$186**; the allocation ceiling says **$34**. Mid-draft
+with two starters owned and $60 left, the ceiling correctly tightens to
+~$19–20. Cost is ~44ms for the four ceilings the panel shows, which is why
+`bidCeiling` is documented as per-player and must not be mapped across a
+full board.
+
+*Wired into the product, and proven wired.* Shown in `NominationPanel` as
+`max $N` beside the existing `bid $N`, never replacing it. `AuctionRoom.test.tsx`
+asserts the number reaches the DOM — that assertion exists specifically
+because 3.1's margin was fully engine-tested, simulator-wired, and still
+DEAD in the product for an entire step while every test and the build passed.
+The fixture board (4 players, 7 open slots) legitimately yields `$0` for
+every ceiling, so the render test checks reachability and the arithmetic is
+checked exhaustively in the engine selftest — the split is deliberate, not a
+weakened assertion.
+
+**A real pre-existing bug found and fixed en route.** `AuctionRoom`'s
+`rosterSize` summed `r.K` and `r.DST` with no fallback (only `SF` was
+defensive). Any league whose roster config omits a kicker or defense — common
+— made `rosterSize` `NaN`, which flowed into `dollarValues`' `leagueAvail`
+and surfaced as a literal **`bid $NaN`** in the nomination panel. It
+reproduces on the pre-change commit, so it is not something 3.3 introduced;
+it was found only because 3.3 put a second number next to it and the fixture
+happened to have no K/DST. Fixed with `?? 0` on every term, plus a
+regression test asserting no suggested bid renders as NaN. Worth noting as a
+category: this is the same failure shape as the roadmap's own `npm run build`
+lesson — nothing was broken loudly, a real league would just have seen
+nonsense where a bid should be.
+
+*Still open, and deliberately not claimed as done*: the Phase 3 kill gate
+(head-to-head title share) has NOT been run for 3.3, because no auction
+simulator exists. Building one is its own step — and its own hazard: bots
+bidding at `marketPrice` while the agent derives ceilings from `marketPrice`
+would be circular in exactly the way 3.1's ADP-bot harness was, so the
+honest version compares allocation-aware against independent-pricing agents
+under identical bot behavior rather than measuring either against a strawman.
 
 ### 3.4 Auction: bid ceilings from opponent budgets
 A price is set by the *second* bidder. If only two teams can afford $50, that is

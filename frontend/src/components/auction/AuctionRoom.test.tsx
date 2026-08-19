@@ -134,3 +134,51 @@ describe("AuctionRoom player board", () => {
       expect(within(row("Josh Allen")).getByRole("spinbutton")).toBeTruthy());
   });
 });
+
+/**
+ * Roadmap 3.3. This exists because of what 3.1 got wrong: its survival margin
+ * was fully unit-tested in the engine and wired into the simulator, and was
+ * still DEAD in the product for a whole step — `npm run build` passed the
+ * entire time, because build proves the types agree, not that the feature is
+ * reachable. So the allocation ceiling gets an assertion that it actually
+ * reaches the DOM.
+ */
+describe("AuctionRoom budget path (roadmap 3.3)", () => {
+  it("shows an allocation ceiling on the value targets", () => {
+    // Reachability, not magnitude. This fixture BOARD has 4 players against 7
+    // open starting slots, so no roster is fillable and every ceiling is
+    // legitimately $0 — the interesting arithmetic is covered exhaustively in
+    // budget-path.selftest.mjs against brute force. What can ONLY be checked
+    // here is that the number leaves the engine and reaches the DOM at all,
+    // which is exactly what 3.1 failed to do while every other test passed.
+    renderInApp(room());
+    expect(screen.getAllByText(/^max \$\d+$/).length).toBeGreaterThan(0);
+  });
+
+  it("explains the ceiling as allocation-aware, not a cash limit", () => {
+    renderInApp(room());
+    const first = screen.getAllByText(/^max \$\d+$/)[0];
+    expect(first.getAttribute("title")).toMatch(/reserves a realistic price/i);
+  });
+
+  it("keeps the existing bid suggestion alongside it rather than replacing it", () => {
+    // Pre-registered: nothing has measured this against title share, so it
+    // informs rather than overrides. If the bid suggestion ever disappears,
+    // that decision was silently reversed.
+    renderInApp(room());
+    expect(screen.getAllByText(/^(bid \$\d+|pass)$/).length).toBeGreaterThan(0);
+  });
+
+  it("computes a real rosterSize when the league rosters no K or DST", () => {
+    // Regression. rosterSize summed r.K and r.DST with no fallback, so a
+    // roster config omitting either (common — plenty of leagues skip the
+    // kicker) made it NaN. That NaN reached leagueAvail inside dollarValues
+    // and came out the other end as a literal "bid $NaN" in this panel. The
+    // fixture roster has no K/DST, so this asserts the suggestion is a real
+    // number rather than trusting that it looks fine.
+    renderInApp(room());
+    for (const el of screen.getAllByText(/^bid \$/)) {
+      expect(el.textContent).not.toMatch(/NaN/);
+    }
+  });
+});
