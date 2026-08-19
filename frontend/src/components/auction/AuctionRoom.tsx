@@ -248,8 +248,57 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   );
   const valueOfPlayer = useCallback((p: BoardPlayer) => p.vbd ?? 0, []);
 
+  // The allocation-aware ceiling composed with the room ceiling — same shape
+  // used both for the value-targets panel and (below) the on-demand board
+  // lookup. Pulled out so the two call sites cannot drift about what "the
+  // suggested bid" means.
+  const ceilingFor = useCallback((p: BoardPlayer, market: number) => {
+    const allocationCeiling = openStartSlots.length
+      ? bidCeiling({
+          player: p, slots: openStartSlots, budget: dpBudget,
+          pool: availDollar, valueOf: valueOfPlayer, priceOf: priceOfPlayer,
+        })
+      : null;
+    // roadmap 3.4 — and the room's ability to pay. Position-aware (3.4a):
+    // only opponents who still need THIS position count, so a rich team
+    // stacked at running back stops holding up every back's ceiling.
+    const room = priceCeilingFor(p.pos, {
+      budgets: oppBudgets, openSpots: oppOpenSpots, counts: oppCounts,
+      leagueRoster: settings.roster as unknown as Record<string, number>,
+      superflex: !!settings.superflex, minBid: 1,
+    });
+    const { bid: ceiling, binding } = bindingCeiling({
+      allocationCeiling: allocationCeiling ?? undefined,
+      // priceCeilingFor already folded demand in, so hand bindingCeiling a
+      // single synthetic capacity rather than the raw per-opponent list —
+      // otherwise it would re-derive the ungated ceiling and the demand
+      // gating would be silently discarded.
+      capacities: [Math.max(0, room.ceiling - 1)],
+      minBid: 1,
+    });
+    // "pass" means "don't bother bidding" — that is only true when your own
+    // allocation says he doesn't improve your reachable roster at any price
+    // (ceiling === 0, or allocation-bound and under market). A room-bound
+    // ceiling under market is the OPPOSITE of a pass signal: it means
+    // nobody in the room can outbid you there.
+    const pass = ceiling <= 0 || (binding === "allocation" && ceiling < market);
+    return { allocationCeiling, bid: ceiling, binding, room, pass };
+  }, [openStartSlots, dpBudget, availDollar, valueOfPlayer, priceOfPlayer,
+      oppBudgets, oppOpenSpots, oppCounts, settings.roster, settings.superflex]);
+
   const valueTargets = useMemo(() => {
-    const targets = availDollar
+    // Widen the candidate pool past the final count of 4: a "target" is a
+    // player worth actually bidding on, and that can only be known AFTER
+    // the ceiling is computed — surplus (our dollarValue vs. market) alone
+    // says "the market undervalues him," not "he helps YOUR roster right
+    // now." A player can rank #1 on surplus and still be a legitimate pass
+    // (you're already full at his position), so filtering on surplus alone
+    // used to let pass-labeled players sit in a panel titled "your targets"
+    // — a real contradiction a user caught: a "target" that says "pass" reads
+    // as the app arguing with itself. bidCeiling runs a DP per evaluation, so
+    // this pool is capped small (not the whole board) rather than filtering
+    // after mapping the DP over everything.
+    const candidates = availDollar
       .filter((p) => ["QB", "RB", "WR", "TE"].includes(p.pos))
       .map((p) => {
         const market = marketById[p.id as number] ?? 1;
@@ -257,65 +306,33 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
         return { p, market, modelBid: sug.bid, modelPass: sug.pass, dollarValue: sug.dollarValue, surplus: (p.dollarValue ?? 1) - market };
       })
       .sort((a, b) => b.surplus - a.surplus)
-      .slice(0, 4);
+      .slice(0, 10);
 
-    // The allocation-aware ceiling, computed ONLY for the handful shown —
-    // bidCeiling runs a DP per evaluation and must not be mapped over the
-    // whole board. This is now the PRIMARY suggested bid (roadmap 3.5's
-    // auction-sim gate cleared it — CLEAN beat suggestBid()'s independent
-    // pricing at every swept noise level, and tracing why explains why: an
-    // independent bid is capped by the app's OWN dollarValue via
-    // suggestBid's fairShare math, decoupled from the market by design, so
-    // a bargain signal only ever pulls the bid DOWN, never meaningfully up
-    // past what our own model thinks a player is worth — even when real
-    // market data says he's worth much more. This ceiling isn't anchored to
-    // dollarValue the same way. suggestBid()'s own number is kept alongside
-    // as `modelBid`, not hidden — the two methods can disagree, and that
-    // disagreement is itself informative. See ROADMAP 3.3-3.5.
-    return targets.map((t) => {
-      const allocationCeiling = openStartSlots.length
-        ? bidCeiling({
-            player: t.p,
-            slots: openStartSlots,
-            budget: dpBudget,
-            pool: availDollar,
-            valueOf: valueOfPlayer,
-            priceOf: priceOfPlayer,
-          })
-        : null;
-      // roadmap 3.4 — and the room's ability to pay. Position-aware (3.4a):
-      // only opponents who still need THIS position count, so a rich team
-      // stacked at running back stops holding up every back's ceiling.
-      const room = priceCeilingFor(t.p.pos, {
-        budgets: oppBudgets,
-        openSpots: oppOpenSpots,
-        counts: oppCounts,
-        leagueRoster: settings.roster as unknown as Record<string, number>,
-        superflex: !!settings.superflex,
-        minBid: 1,
-      });
-      // Whichever constraint binds is the actionable number; naming WHICH is
-      // the useful part.
-      const { bid: ceiling, binding } = bindingCeiling({
-        allocationCeiling: allocationCeiling ?? undefined,
-        // priceCeilingFor already folded demand in, so hand bindingCeiling a
-        // single synthetic capacity rather than the raw per-opponent list —
-        // otherwise it would re-derive the ungated ceiling and the demand
-        // gating would be silently discarded.
-        capacities: [Math.max(0, room.ceiling - 1)],
-        minBid: 1,
-      });
-      // "pass" for the PRIMARY number means "don't bother bidding" — that is
-      // only true when your own allocation says he doesn't improve your
-      // reachable roster at any price (ceiling === 0 or allocation-bound and
-      // under market). A room-bound ceiling under market is the OPPOSITE of
-      // a pass signal: it means nobody in the room can outbid you there.
-      const pass = ceiling <= 0 || (binding === "allocation" && ceiling < t.market);
-      return { ...t, allocationCeiling, bid: ceiling, binding, room, pass };
-    });
-  }, [availDollar, marketById, myBudgetLeft, myOpenSpots, remainingDvSum,
-      openStartSlots, dpBudget, valueOfPlayer, priceOfPlayer,
-      oppBudgets, oppOpenSpots, oppCounts, settings.roster, settings.superflex]);
+    return candidates
+      .map((t) => ({ ...t, ...ceilingFor(t.p, t.market) }))
+      .filter((t) => !t.pass)
+      .slice(0, 4);
+  }, [availDollar, marketById, myBudgetLeft, myOpenSpots, remainingDvSum, ceilingFor]);
+
+  // On-demand suggested bid for the MAIN BOARD row — the actual moment this
+  // matters: someone nominates a player, you search his name, and the board
+  // narrows to him. That is exactly where "pass" belongs (a real decision
+  // about the player on the block right now), not in the "your targets"
+  // panel above (fixed there — see valueTargets). Gated on an active search
+  // narrowing the list to a handful of rows, same discipline `bidCeiling`'s
+  // own header demands: never mapped over the whole board.
+  const BOARD_CEILING_MAX_ROWS = 8;
+  const boardCeilings = useMemo(() => {
+    const m = new Map<number, ReturnType<typeof ceilingFor>>();
+    if (!query.trim() || filtered.length === 0 || filtered.length > BOARD_CEILING_MAX_ROWS) return m;
+    for (const p of filtered) {
+      if (!["QB", "RB", "WR", "TE"].includes(p.pos)) continue;
+      if (draftedIds.has(p.id as number)) continue;
+      const market = marketById[p.id as number] ?? 1;
+      m.set(p.id as number, ceilingFor(p, market));
+    }
+    return m;
+  }, [query, filtered, draftedIds, marketById, ceilingFor]);
 
   const pprLabel = settings.ppr === 1 ? "PPR" : settings.ppr === 0.5 ? "Half-PPR" : "Std";
 
@@ -498,6 +515,23 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                             mkt {mktDiff > 0 ? "+" : ""}{mktDiff}
                           </span>
                         )}
+                        {(() => {
+                          const c = boardCeilings.get(p.id as number);
+                          if (!c) return null;
+                          const byRoom = c.binding === "opponents";
+                          return (
+                            <span
+                              className={`ml-1 font-semibold cursor-help ${c.pass ? "text-gray-400" : byRoom ? "text-violet-700" : "text-sky-700"}`}
+                              title={c.pass
+                                ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him if he's on the block."
+                                : byRoom
+                                ? `Capped by the room's money: no opponent can bid more than $${c.bid - 1}, so you never have to pay above $${c.bid}. This is the same allocation+room-aware suggestion as the "your targets" panel, computed here because you searched for him.`
+                                : `The most you can pay and still end up with a roster at least as good as if you skipped him — accounting for what's left to fill. Same suggestion as the "your targets" panel, computed here because you searched for him.`}
+                            >
+                              {c.pass ? "· pass" : `· bid $${c.bid}${byRoom ? "*" : ""}`}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
 

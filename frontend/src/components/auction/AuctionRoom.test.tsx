@@ -143,33 +143,52 @@ describe("AuctionRoom player board", () => {
  * reachable. So the allocation ceiling gets an assertion that it actually
  * reaches the DOM.
  */
+// A board deep enough to actually fill QB/RB/RB/WR/WR/TE/FLEX — the small
+// 4-player BOARD fixture has no reachable roster at all (4 players against 7
+// open starting slots), so EVERY candidate ceiling on it is legitimately $0.
+// That is exactly the right fixture for proving the contradiction below is
+// gone (a $0/pass player must not appear in "your targets"), and exactly the
+// wrong one for proving what a real "bid $" looks like — for that, tests need
+// a roster that IS reachable.
+const POS = ["QB", "RB", "WR", "TE"];
+const DEEP_BOARD = Array.from({ length: 40 }, (_, i) => ({
+  id: i + 1, name: `P${i + 1}`, pos: POS[i % 4], team: "XX",
+  vbd: 100 - i, valuePoints: 120 - i, ecr: i + 1, adp: i + 1,
+  age: 26, risk: 0.1, trend: 0,
+})) as unknown as typeof BOARD;
+const deepRoom = () => (
+  <AuctionRoom league={AUCTION_LEAGUE} settings={SETTINGS} board={DEEP_BOARD} leagueId={1} />
+);
+
 describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
+  it('never lists a "target" that says pass — the contradiction this fixed', () => {
+    // A target panel arguing with itself: this exact 4-player fixture used to
+    // let a player rank in "your targets" purely on surplus (our dollarValue
+    // vs. market) while the SAME row's primary suggestion read "pass" —
+    // because surplus says "the market undervalues him" and says nothing
+    // about whether he fits YOUR roster right now. Filtered at the source
+    // instead: a "pass" player is not a target, full stop. With this
+    // fixture nothing clears the allocation bar, so the panel should show
+    // NONE rather than four contradictory rows.
+    renderInApp(room());
+    expect(screen.queryByText("No value targets.")).toBeTruthy();
+    expect(screen.queryAllByText("pass").length).toBe(0);
+  });
+
   it("shows the allocation-aware ceiling as the PRIMARY suggested bid", () => {
-    // Reachability, not magnitude. This fixture BOARD has 4 players against 7
-    // open starting slots, so no roster is fillable and every ceiling is
-    // legitimately $0 (-> "pass") — the interesting arithmetic is covered
+    // Reachability, not magnitude — the interesting arithmetic is covered
     // exhaustively in budget-path.selftest.mjs against brute force. What can
     // ONLY be checked here is that the number leaves the engine and reaches
     // the DOM at all, which is exactly what 3.1 failed to do while every
     // other test passed. Promoted from a secondary "max $" badge to the
     // primary "bid $"/"pass" once the auction-sim gate (roadmap 3.5) cleared
     // it against suggestBid() head-to-head.
-    renderInApp(room());
-    expect(screen.getAllByText(/^(bid \$\d+\*?|pass)$/).length).toBeGreaterThan(0);
+    renderInApp(deepRoom());
+    expect(screen.getAllByText(/^bid \$\d+$/).length).toBeGreaterThan(0);
   });
 
   it("explains the primary bid as allocation-aware, not a cash limit", () => {
-    // Needs a reachable roster to exercise the non-pass, non-room-bound
-    // tooltip text — the small 4-player fixture is always $0/pass (above).
-    const POS = ["QB", "RB", "WR", "TE"];
-    const deep = Array.from({ length: 40 }, (_, i) => ({
-      id: i + 1, name: `P${i + 1}`, pos: POS[i % 4], team: "XX",
-      vbd: 100 - i, valuePoints: 120 - i, ecr: i + 1, adp: i + 1,
-      age: 26, risk: 0.1, trend: 0,
-    })) as unknown as typeof BOARD;
-    renderInApp(
-      <AuctionRoom league={AUCTION_LEAGUE} settings={SETTINGS} board={deep} leagueId={1} />,
-    );
+    renderInApp(deepRoom());
     const first = screen.getAllByText(/^bid \$\d+$/)[0];
     expect(first.getAttribute("title")).toMatch(/reserves a realistic price/i);
   });
@@ -178,24 +197,11 @@ describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
     // 3.5's gate is what promoted the ceiling to primary; it did not measure
     // suggestBid() out of existence. Its number stays on screen, labeled, so
     // the two methods disagreeing is still visible rather than hidden.
-    renderInApp(room());
+    renderInApp(deepRoom());
     expect(screen.getAllByText(/^model (\$\d+|pass)$/).length).toBeGreaterThan(0);
   });
 
   it("caps the ceiling by the room's money when opponents are broke (3.4)", () => {
-    // Needs a board deep enough to actually fill QB/RB/RB/WR/WR/TE/FLEX —
-    // with the 4-player fixture no roster is reachable, 3.3's ceiling is $0
-    // and correctly binds first, so 3.4 could never be observed.
-    const POS = ["QB", "RB", "WR", "TE"];
-    const deep = Array.from({ length: 40 }, (_, i) => ({
-      id: i + 1, name: `P${i + 1}`, pos: POS[i % 4], team: "XX",
-      vbd: 100 - i, valuePoints: 120 - i, ecr: i + 1, adp: i + 1,
-      age: 26, risk: 0.1, trend: 0,
-    })) as unknown as typeof BOARD;
-    const deepRoom = () => (
-      <AuctionRoom league={AUCTION_LEAGUE} settings={SETTINGS} board={deep} leagueId={1} />
-    );
-
     // Rich room: my own allocation is the binding constraint, no asterisk.
     useDraftStore.setState({ leagueId: 1, picks: [], syncing: false });
     const rich = renderInApp(deepRoom());
@@ -231,5 +237,27 @@ describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
     // absent (e.g. every target showing "pass" instead of a $ amount).
     renderInApp(room());
     expect(screen.queryAllByText(/NaN/).length).toBe(0);
+  });
+
+  it("shows the same suggested bid on the MAIN BOARD when a search narrows to that player", () => {
+    // This is the actual moment the number matters in a live draft: someone
+    // nominates a player, you search his name, and the board narrows to him
+    // — which is a different place from the fixed-size "your targets" panel
+    // above, and is where a user asked for the pass/bid signal to live.
+    // Gated on an active search so `bidCeiling`'s DP is never run over the
+    // whole board — reachability check, same discipline as the panel tests.
+    renderInApp(deepRoom());
+    fireEvent.change(screen.getByPlaceholderText(/search player or team/i),
+                     { target: { value: "P7" } });          // "P7" alone: not a substring of P17/P27/P37
+    const r = row("P7");
+    expect(within(r).getByText(/^· (bid \$\d+\*?|pass)$/)).toBeTruthy();
+  });
+
+  it("does NOT show the board suggestion when the search is too broad", () => {
+    // The DP-cost guard: bidCeiling must not run over dozens of visible rows.
+    renderInApp(deepRoom());
+    fireEvent.change(screen.getByPlaceholderText(/search player or team/i),
+                     { target: { value: "P" } });           // matches ~40 rows
+    expect(screen.queryAllByText(/^· (bid \$|pass)/).length).toBe(0);
   });
 });

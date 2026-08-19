@@ -2331,6 +2331,31 @@ allocation ceiling now legitimately renders "pass" instead of a "$" amount,
 which had made the old text-pattern assertion vacuously pass on an empty
 match set. 58/58 vitest, full selftest, and build all green.
 
+**FOLLOW-UP FIX: a "target" that says "pass" is a contradiction, caught by
+the user immediately after shipping.** `valueTargets`' top-4 was selected by
+`surplus` (our `dollarValue` vs. market) alone, computed BEFORE the ceiling
+— so a player could rank #1 on "the market undervalues him" and still
+legitimately be a `pass` from the ceiling ("doesn't help YOUR roster right
+now," e.g. already full at his position). Surplus answers a market question;
+the panel's own heading ("your targets") promises a roster-fit answer. Fixed
+by widening the candidate pool (top 10 by surplus, still capped well short
+of the whole board — `bidCeiling` is a DP and stays off the full board per
+its own header), computing the ceiling for all 10, filtering out every
+`pass`, THEN taking the top 4. A board where nothing clears the bar now
+correctly shows zero targets, not four contradictory ones.
+
+**Also added: the same suggestion on the MAIN BOARD**, not just the fixed
+4-row panel — the moment it actually matters in a live draft is when someone
+nominates a player and you search his name, which is a different place from
+"your targets." Gated on an active search narrowing the visible list to
+`<= 8` rows (`BOARD_CEILING_MAX_ROWS`) before computing anything — the same
+DP-cost discipline, applied to a new call site rather than relaxed for it.
+`ceilingFor()` was extracted out of `valueTargets` into a shared callback so
+the panel and the board lookup cannot drift about what "the suggested bid"
+means. Two new reachability tests (61/61 vitest): the badge appears when a
+search narrows to one player, and does NOT appear (and does not run the DP)
+when the search is broad enough to match dozens of rows.
+
 **FOLLOW-UP: real current-season FantasyPros AAV data refines the mechanism,
 and the refined version is a MORE fundamental problem with `suggestBid()`
 than ADP coverage.** The user supplied a real FantasyPros auction-values
