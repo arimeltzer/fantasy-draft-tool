@@ -11,6 +11,7 @@ import {
   calibrateAuction, picksFromKeeperImport, noCalibration, describeCalibration,
 } from "@/engine/auction-calibration.js";
 import { bidCeiling, remainingStartingSlots } from "@/engine/budget-path.js";
+import { opponentCapacities, bindingCeiling } from "@/engine/opponent-capacity.js";
 import { useDraftStore } from "@/store/draftStore";
 import { usePatchLeague } from "@/hooks/useLeague";
 import { posStyle } from "@/lib/posStyles";
@@ -86,6 +87,17 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
         spent[p.teamId] += p.price ?? 0;
     return spent.map((s) => settings.budget - s);
   }, [picks, opponents, settings.budget]);
+
+  // Roster slots each opponent still has to fill (roadmap 3.4). Budget alone
+  // overstates what a team can bid — every remaining slot needs a dollar held
+  // back — so capacity needs the spot count too, not just the money.
+  const oppOpenSpots = useMemo(() => {
+    const taken = opponents.map(() => 0);
+    for (const p of picks)
+      if (!p.mine && p.teamId != null && p.teamId >= 0 && p.teamId < taken.length)
+        taken[p.teamId] += 1;
+    return taken.map((n) => Math.max(0, rosterSize - n));
+  }, [picks, opponents, rosterSize]);
 
   const withPar = useMemo(() => auctionValues(board, al), [board, al]);
 
@@ -222,6 +234,14 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   );
   const valueOfPlayer = useCallback((p: BoardPlayer) => p.vbd ?? 0, []);
 
+  // What each opponent could actually bid on one player right now (roadmap
+  // 3.4) — money they hold, minus a dollar reserved for every slot they still
+  // have to fill. A full roster contributes nothing at any budget.
+  const oppCapacities = useMemo(
+    () => opponentCapacities(oppBudgets, oppOpenSpots, 1),
+    [oppBudgets, oppOpenSpots],
+  );
+
   const valueTargets = useMemo(() => {
     const targets = availDollar
       .filter((p) => ["QB", "RB", "WR", "TE"].includes(p.pos))
@@ -239,9 +259,8 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     // replacing it: nothing has measured this against head-to-head title
     // share (no auction simulator exists), so it informs rather than
     // overrides. See ROADMAP 3.3.
-    return targets.map((t) => ({
-      ...t,
-      ceiling: openStartSlots.length
+    return targets.map((t) => {
+      const allocationCeiling = openStartSlots.length
         ? bidCeiling({
             player: t.p,
             slots: openStartSlots,
@@ -250,10 +269,18 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
             valueOf: valueOfPlayer,
             priceOf: priceOfPlayer,
           })
-        : null,
-    }));
+        : null;
+      // roadmap 3.4 — and the room's ability to pay. Whichever constraint
+      // binds is the actionable number; naming WHICH is the useful part.
+      const { bid: ceiling, binding } = bindingCeiling({
+        allocationCeiling: allocationCeiling ?? undefined,
+        capacities: oppCapacities,
+        minBid: 1,
+      });
+      return { ...t, allocationCeiling, ceiling, binding };
+    });
   }, [availDollar, marketById, myBudgetLeft, myOpenSpots, remainingDvSum,
-      openStartSlots, dpBudget, valueOfPlayer, priceOfPlayer]);
+      openStartSlots, dpBudget, valueOfPlayer, priceOfPlayer, oppCapacities]);
 
   const pprLabel = settings.ppr === 1 ? "PPR" : settings.ppr === 0.5 ? "Half-PPR" : "Std";
 

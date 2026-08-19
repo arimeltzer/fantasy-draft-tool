@@ -169,6 +169,44 @@ describe("AuctionRoom budget path (roadmap 3.3)", () => {
     expect(screen.getAllByText(/^(bid \$\d+|pass)$/).length).toBeGreaterThan(0);
   });
 
+  it("caps the ceiling by the room's money when opponents are broke (3.4)", () => {
+    // Needs a board deep enough to actually fill QB/RB/RB/WR/WR/TE/FLEX —
+    // with the 4-player fixture no roster is reachable, 3.3's ceiling is $0
+    // and correctly binds first, so 3.4 could never be observed.
+    const POS = ["QB", "RB", "WR", "TE"];
+    const deep = Array.from({ length: 40 }, (_, i) => ({
+      id: i + 1, name: `P${i + 1}`, pos: POS[i % 4], team: "XX",
+      vbd: 100 - i, valuePoints: 120 - i, ecr: i + 1, adp: i + 1,
+      age: 26, risk: 0.1, trend: 0,
+    })) as unknown as typeof BOARD;
+    const deepRoom = () => (
+      <AuctionRoom league={AUCTION_LEAGUE} settings={SETTINGS} board={deep} leagueId={1} />
+    );
+
+    // Rich room: my own allocation is the binding constraint, no asterisk.
+    useDraftStore.setState({ leagueId: 1, picks: [], syncing: false });
+    const rich = renderInApp(deepRoom());
+    const richCeil = screen.getAllByText(/^max \$\d+$/)[0].textContent;
+    rich.unmount();
+
+    // Two opponents have each blown $197 of $200 — nobody can bid.
+    useDraftStore.setState({
+      leagueId: 1, syncing: false,
+      picks: [0, 1].map((t) => ({
+        pickId: t + 1, playerId: 300 + t, overallPick: t + 1,
+        mine: false, teamId: t, price: 197, slot: null,
+      })),
+    });
+    renderInApp(deepRoom());
+    const broke = screen.getAllByText(/^max \$\d+\*$/)[0];
+
+    // The asterisk marks money, not value, as what sets the price.
+    expect(broke.getAttribute("title")).toMatch(/capped by the room's money/i);
+    const brokeAmt = Number(broke.textContent!.replace(/[^\d]/g, ""));
+    const richAmt = Number(richCeil!.replace(/[^\d]/g, ""));
+    expect(brokeAmt).toBeLessThan(richAmt);
+  });
+
   it("computes a real rosterSize when the league rosters no K or DST", () => {
     // Regression. rosterSize summed r.K and r.DST with no fallback, so a
     // roster config omitting either (common — plenty of leagues skip the

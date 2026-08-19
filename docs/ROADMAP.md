@@ -1929,10 +1929,110 @@ would be circular in exactly the way 3.1's ADP-bot harness was, so the
 honest version compares allocation-aware against independent-pricing agents
 under identical bot behavior rather than measuring either against a strawman.
 
-### 3.4 Auction: bid ceilings from opponent budgets
+### 3.4 Auction: bid ceilings from opponent budgets — DONE, shipped (phase kill gate NOT run: no auction simulator)
 A price is set by the *second* bidder. If only two teams can afford $50, that is
 the cap. `oppBudgets` is already tracked but only reduced to `richFrac` for
 nomination timing.
+
+**PRE-REGISTRATION, written before the code exists.**
+
+*The quantity, and why raw budget is the wrong one.* An opponent holding $180
+with fifteen roster spots still to fill cannot bid $180 on anything — they
+must keep a dollar for every remaining slot. Their real capacity is
+`maxBid(budget, openSpots)`, the function `auction-engine.js` already exports
+and already applies to ME. 3.4 is, at its core, applying it to everyone else
+too. Raw `oppBudgets` would systematically overstate what the room can pay,
+worst exactly when it matters most (mid-draft, deep rosters).
+
+*The ceiling*: nobody can be outbid by money that does not exist. If the
+richest opponent's capacity is `C`, then no player sells for more than
+`C + minBid` — I win at one increment above the best anyone else can go. So
+`priceCeiling = max over opponents of maxBid(budget_i, openSpots_i) + minBid`,
+and the expected price for a player becomes `min(market, priceCeiling)`.
+
+*This is a CAPACITY bound, not a willingness prediction, and the distinction
+is the whole honesty of the step.* It says what the room CAN pay, never what
+it WANTS to pay. An opponent with $90 free who needs no running back will not
+bid on your running back, and this will still count their $90. So:
+  - As an **upper bound it is hard** — the arithmetic cannot be beaten, money
+    that isn't there can't be bid.
+  - As a **point estimate it is biased high**, and increasingly so as
+    opponents fill their needs.
+It therefore ships as a CAP on the expected price (`min(market, ceiling)`),
+never as a replacement for market — capping can only ever move a price down
+to something genuinely unpayable, which is the safe direction. The unsafe
+direction (predicting a player will go cheap because nobody *wants* him) is
+not attempted.
+
+*Composition with 3.3, which is the point of doing them adjacently.* 3.3
+answers "what can I afford given my own roster"; 3.4 answers "what will the
+room force me to pay". The actionable number is `min(allocationCeiling,
+contestedCeiling)` — the binding constraint, whichever it is. Reporting
+which one binds is more useful than the number alone, so the surface names
+it.
+
+*Gate.* Same position as 3.3, for the same reason: the Phase 3 kill gate
+needs an auction simulator that does not exist. What is gated:
+  1. **Capacity arithmetic against `maxBid`**, the function that already
+     defines this for my own side — an opponent's capacity must equal what
+     `maxBid` would say for a manager in that seat. Any divergence means two
+     places in the codebase disagree about what a budget can buy.
+  2. **Monotonicity**: the ceiling falls as budgets drain and as opponents
+     fill spots, never rises. Late-draft it must approach `minBid`.
+  3. **A full opponent contributes nothing.** A team with no open spots
+     cannot bid at any budget, and must not prop the ceiling up.
+
+*What a pass does NOT prove*: that any opponent actually wants the player, so
+a bound that is loose early in a draft (everyone rich, everyone needy) is
+expected and is not a defect.
+
+**RESULT — shipped, composed with 3.3.** `opponent-capacity.js`:
+`opponentCapacities()`, `priceCeiling()`, `cappedPrice()`, and
+`bindingCeiling()` (the 3.3 + 3.4 composition). 23 selftests, all three
+pre-registered gates met.
+
+*Gate 1 held by construction, deliberately.* Capacity routes through the
+shipped `maxBid()` rather than reimplementing the reserve arithmetic, and the
+selftest checks agreement across 464 budget × spot combinations. Mutating it
+to use raw budget — the exact overstatement this step exists to prevent —
+diverges on 420 of them.
+
+*Gates 2 and 3 held.* The ceiling falls monotonically as budgets drain AND as
+opponents' remaining spots grow, bottoms out at `minBid` in a broke room, and
+a full roster contributes nothing at any budget. Over a realistic ten-team
+draft arc the ceiling tightens monotonically and ends well under a full
+budget, so the bound is informative late rather than vacuous.
+
+*Mutation-tested, and one mutation exposed a real test gap rather than a code
+bug.* Using raw budget: caught. Letting a full roster bid: caught. Deleting
+the `alloc <= 0` guard in `bindingCeiling`: **NOT caught** — and
+investigation showed why. Since `priceCeiling` floors at `minBid >= 1`,
+`0 <= roomCeiling` always holds and the general branch returns the identical
+result, so the guard is genuinely redundant *for zero*. It is load-bearing
+only for negative input. Rather than delete a guard that documents a real
+contract or leave it untested, a test was added for the case it actually
+defends — defensive code nothing tests is indistinguishable from dead code.
+Re-running the mutation now catches it.
+
+*Composition is the payoff, and the surface names which constraint binds.*
+3.3 answers "what can I afford given what I still have to fill"; 3.4 answers
+"what will the room force me to pay". `NominationPanel` shows the binding
+one, in a different colour with a `*` when it is the room's money rather than
+my roster — the difference between "I can't afford him" and "I don't have to
+pay that much". Verified end-to-end through a mounted room: with opponents
+flush the ceiling reads `max $29` (allocation binding); with two opponents
+each having blown $197 of $200 the same player reads `max $2*` — you never
+pay above $2 for a $29 player when nobody can bid.
+
+*That test needed a deeper board than the shared fixture, and the reason is
+itself worth recording*: with the 4-player fixture no roster is reachable at
+all, so 3.3 correctly returns `$0` and binds first, and 3.4 can never be
+observed. A test using the shared fixture would have passed while proving
+nothing about 3.4.
+
+*Same gate status as 3.3*: the Phase 3 head-to-head kill gate is still NOT
+run, because no auction simulator exists. This ships as a bound and a
+surface, not as a measured edge.
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
