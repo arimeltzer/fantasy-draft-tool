@@ -254,17 +254,24 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
       .map((p) => {
         const market = marketById[p.id as number] ?? 1;
         const sug = suggestBid(p, { budget: myBudgetLeft, openSpots: Math.max(1, myOpenSpots), remainingDvSum, market });
-        return { p, ...sug, surplus: (p.dollarValue ?? 1) - market };
+        return { p, market, modelBid: sug.bid, modelPass: sug.pass, dollarValue: sug.dollarValue, surplus: (p.dollarValue ?? 1) - market };
       })
       .sort((a, b) => b.surplus - a.surplus)
       .slice(0, 4);
 
     // The allocation-aware ceiling, computed ONLY for the handful shown —
     // bidCeiling runs a DP per evaluation and must not be mapped over the
-    // whole board. Shown ALONGSIDE the existing suggestion rather than
-    // replacing it: nothing has measured this against head-to-head title
-    // share (no auction simulator exists), so it informs rather than
-    // overrides. See ROADMAP 3.3.
+    // whole board. This is now the PRIMARY suggested bid (roadmap 3.5's
+    // auction-sim gate cleared it — CLEAN beat suggestBid()'s independent
+    // pricing at every swept noise level, and tracing why explains why: an
+    // independent bid is capped by the app's OWN dollarValue via
+    // suggestBid's fairShare math, decoupled from the market by design, so
+    // a bargain signal only ever pulls the bid DOWN, never meaningfully up
+    // past what our own model thinks a player is worth — even when real
+    // market data says he's worth much more. This ceiling isn't anchored to
+    // dollarValue the same way. suggestBid()'s own number is kept alongside
+    // as `modelBid`, not hidden — the two methods can disagree, and that
+    // disagreement is itself informative. See ROADMAP 3.3-3.5.
     return targets.map((t) => {
       const allocationCeiling = openStartSlots.length
         ? bidCeiling({
@@ -298,7 +305,13 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
         capacities: [Math.max(0, room.ceiling - 1)],
         minBid: 1,
       });
-      return { ...t, allocationCeiling, ceiling, binding, room };
+      // "pass" for the PRIMARY number means "don't bother bidding" — that is
+      // only true when your own allocation says he doesn't improve your
+      // reachable roster at any price (ceiling === 0 or allocation-bound and
+      // under market). A room-bound ceiling under market is the OPPOSITE of
+      // a pass signal: it means nobody in the room can outbid you there.
+      const pass = ceiling <= 0 || (binding === "allocation" && ceiling < t.market);
+      return { ...t, allocationCeiling, bid: ceiling, binding, room, pass };
     });
   }, [availDollar, marketById, myBudgetLeft, myOpenSpots, remainingDvSum,
       openStartSlots, dpBudget, valueOfPlayer, priceOfPlayer,

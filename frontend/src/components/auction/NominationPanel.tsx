@@ -14,17 +14,22 @@ interface NomItem {
 interface TargetItem {
   p: BoardPlayer;
   market: number;
+  /** PRIMARY suggested bid (roadmap 3.3+3.4+3.4a composed) — cleared the
+   *  auction-sim kill gate at every noise level (roadmap 3.5). */
   bid: number;
   pass: boolean;
   dollarValue: number;
   surplus: number;
-  /** roadmap 3.3 — allocation-aware ceiling; null when there is no open
-   *  starting slot to evaluate against. */
+  /** roadmap 3.3 — allocation-aware ceiling alone; null when there is no
+   *  open starting slot to evaluate against. */
   allocationCeiling?: number | null;
-  /** roadmap 3.3 + 3.4 composed — the binding ceiling, whichever constrains. */
-  ceiling?: number | null;
-  /** Which constraint set it: my roster allocation, or the room's money. */
+  /** Which constraint set the primary bid: my roster allocation, or the
+   *  room's money. */
   binding?: "allocation" | "opponents" | "none";
+  /** suggestBid()'s OWN independent-pricing number — shown alongside, not
+   *  hidden, because the two methods disagreeing is itself informative. */
+  modelBid: number;
+  modelPass: boolean;
 }
 
 interface Props {
@@ -98,9 +103,9 @@ export default function NominationPanel({ factor, phase, nominations, valueTarge
       <div className="space-y-1">
         <div className="flex items-center gap-1 text-2xs uppercase tracking-wider text-gray-400 mb-1">
           <Target className="w-3 h-3" />
-          <Tip tip="Players whose model value most exceeds their expected price — the best bargains left. The bid is the most the model would pay; 'pass' means they'll likely go for more than they're worth.">your targets — suggested bid</Tip>
+          <Tip tip="Players whose model value most exceeds their expected price — the best bargains left. The bid is the most you should pay, accounting for what's left to fill on your own roster AND what the room can actually afford (roadmap 3.3-3.5: measured to beat independent pricing head-to-head). 'pass' means he doesn't improve your reachable roster at any price.">your targets — suggested bid</Tip>
         </div>
-        {valueTargets.map(({ p, bid, market, pass, ceiling, binding }) => {
+        {valueTargets.map(({ p, bid, market, pass, binding, modelBid, modelPass }) => {
           const st = posStyle(p.pos);
           const overMax = bid > myMax;
           const byRoom = binding === "opponents";
@@ -109,25 +114,23 @@ export default function NominationPanel({ factor, phase, nominations, valueTarge
               <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
               <span className="truncate flex-1">{p.name}</span>
               <span className="font-mono text-gray-400" title="Expected sale price based on market rankings">mkt ${market}</span>
-              {ceiling != null && (
-                <span
-                  className={`font-mono cursor-help ${byRoom ? "text-violet-700" : "text-sky-700"}`}
-                  title={byRoom
-                    ? `Capped by the room's money: no opponent can bid more than $${ceiling - 1}, so you never have to pay above $${ceiling} no matter what he's worth. This is what the room CAN pay, not what it wants to — it's a hard upper bound, and it gets tighter as budgets drain.`
-                    : `Allocation ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him — accounting for what's left to fill and what those slots will cost. Unlike the max-bid figure, this reserves a realistic price for every remaining starter, not $1.${ceiling === 0 ? " $0 means he doesn't improve your best reachable roster at any price." : ""}`}
-                >
-                  max ${ceiling}{byRoom ? "*" : ""}
-                </span>
-              )}
               <span
-                className={`font-mono cursor-help ${overMax ? "text-rose-500" : pass ? "text-gray-400" : "text-amber-700"}`}
+                className="font-mono text-gray-400 cursor-help"
+                title={`suggestBid()'s own independent-pricing number, shown for comparison — ${modelPass ? "it would pass on this player." : `it would bid $${modelBid}.`} The primary bid to its right beat this method head-to-head (roadmap 3.5).`}
+              >
+                model {modelPass ? "pass" : `$${modelBid}`}
+              </span>
+              <span
+                className={`font-mono cursor-help ${overMax ? "text-rose-500" : pass ? "text-gray-400" : byRoom ? "text-violet-700" : "text-sky-700"}`}
                 title={overMax
                   ? "Suggested bid is above the max you can afford while filling your roster"
                   : pass
-                  ? "The market will likely pay more than this player is worth — let them go"
-                  : "Bid up to this amount; stop when it passes the player's value to you"}
+                  ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
+                  : byRoom
+                  ? `Capped by the room's money: no opponent can bid more than $${bid - 1}, so you never have to pay above $${bid} no matter what he's worth. This is what the room CAN pay, not what it wants to — a hard upper bound that tightens as budgets drain.`
+                  : "Allocation ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him — reserves a realistic price for every remaining starter, not $1."}
               >
-                {pass ? "pass" : `bid $${bid}`}
+                {pass ? "pass" : `bid $${bid}${byRoom ? "*" : ""}`}
               </span>
             </div>
           );

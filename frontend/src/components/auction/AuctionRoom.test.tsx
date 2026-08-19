@@ -143,30 +143,43 @@ describe("AuctionRoom player board", () => {
  * reachable. So the allocation ceiling gets an assertion that it actually
  * reaches the DOM.
  */
-describe("AuctionRoom budget path (roadmap 3.3)", () => {
-  it("shows an allocation ceiling on the value targets", () => {
+describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
+  it("shows the allocation-aware ceiling as the PRIMARY suggested bid", () => {
     // Reachability, not magnitude. This fixture BOARD has 4 players against 7
     // open starting slots, so no roster is fillable and every ceiling is
-    // legitimately $0 — the interesting arithmetic is covered exhaustively in
-    // budget-path.selftest.mjs against brute force. What can ONLY be checked
-    // here is that the number leaves the engine and reaches the DOM at all,
-    // which is exactly what 3.1 failed to do while every other test passed.
+    // legitimately $0 (-> "pass") — the interesting arithmetic is covered
+    // exhaustively in budget-path.selftest.mjs against brute force. What can
+    // ONLY be checked here is that the number leaves the engine and reaches
+    // the DOM at all, which is exactly what 3.1 failed to do while every
+    // other test passed. Promoted from a secondary "max $" badge to the
+    // primary "bid $"/"pass" once the auction-sim gate (roadmap 3.5) cleared
+    // it against suggestBid() head-to-head.
     renderInApp(room());
-    expect(screen.getAllByText(/^max \$\d+$/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^(bid \$\d+\*?|pass)$/).length).toBeGreaterThan(0);
   });
 
-  it("explains the ceiling as allocation-aware, not a cash limit", () => {
-    renderInApp(room());
-    const first = screen.getAllByText(/^max \$\d+$/)[0];
+  it("explains the primary bid as allocation-aware, not a cash limit", () => {
+    // Needs a reachable roster to exercise the non-pass, non-room-bound
+    // tooltip text — the small 4-player fixture is always $0/pass (above).
+    const POS = ["QB", "RB", "WR", "TE"];
+    const deep = Array.from({ length: 40 }, (_, i) => ({
+      id: i + 1, name: `P${i + 1}`, pos: POS[i % 4], team: "XX",
+      vbd: 100 - i, valuePoints: 120 - i, ecr: i + 1, adp: i + 1,
+      age: 26, risk: 0.1, trend: 0,
+    })) as unknown as typeof BOARD;
+    renderInApp(
+      <AuctionRoom league={AUCTION_LEAGUE} settings={SETTINGS} board={deep} leagueId={1} />,
+    );
+    const first = screen.getAllByText(/^bid \$\d+$/)[0];
     expect(first.getAttribute("title")).toMatch(/reserves a realistic price/i);
   });
 
-  it("keeps the existing bid suggestion alongside it rather than replacing it", () => {
-    // Pre-registered: nothing has measured this against title share, so it
-    // informs rather than overrides. If the bid suggestion ever disappears,
-    // that decision was silently reversed.
+  it("keeps suggestBid()'s own number visible for comparison, as SECONDARY", () => {
+    // 3.5's gate is what promoted the ceiling to primary; it did not measure
+    // suggestBid() out of existence. Its number stays on screen, labeled, so
+    // the two methods disagreeing is still visible rather than hidden.
     renderInApp(room());
-    expect(screen.getAllByText(/^(bid \$\d+|pass)$/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^model (\$\d+|pass)$/).length).toBeGreaterThan(0);
   });
 
   it("caps the ceiling by the room's money when opponents are broke (3.4)", () => {
@@ -186,7 +199,7 @@ describe("AuctionRoom budget path (roadmap 3.3)", () => {
     // Rich room: my own allocation is the binding constraint, no asterisk.
     useDraftStore.setState({ leagueId: 1, picks: [], syncing: false });
     const rich = renderInApp(deepRoom());
-    const richCeil = screen.getAllByText(/^max \$\d+$/)[0].textContent;
+    const richBid = screen.getAllByText(/^bid \$\d+$/)[0].textContent;
     rich.unmount();
 
     // Two opponents have each blown $197 of $200 — nobody can bid.
@@ -198,12 +211,12 @@ describe("AuctionRoom budget path (roadmap 3.3)", () => {
       })),
     });
     renderInApp(deepRoom());
-    const broke = screen.getAllByText(/^max \$\d+\*$/)[0];
+    const broke = screen.getAllByText(/^bid \$\d+\*$/)[0];
 
     // The asterisk marks money, not value, as what sets the price.
     expect(broke.getAttribute("title")).toMatch(/capped by the room's money/i);
     const brokeAmt = Number(broke.textContent!.replace(/[^\d]/g, ""));
-    const richAmt = Number(richCeil!.replace(/[^\d]/g, ""));
+    const richAmt = Number(richBid!.replace(/[^\d]/g, ""));
     expect(brokeAmt).toBeLessThan(richAmt);
   });
 
@@ -212,11 +225,11 @@ describe("AuctionRoom budget path (roadmap 3.3)", () => {
     // roster config omitting either (common — plenty of leagues skip the
     // kicker) made it NaN. That NaN reached leagueAvail inside dollarValues
     // and came out the other end as a literal "bid $NaN" in this panel. The
-    // fixture roster has no K/DST, so this asserts the suggestion is a real
-    // number rather than trusting that it looks fine.
+    // fixture roster has no K/DST; NaN can surface in either the primary
+    // (ceiling) or secondary (suggestBid) number, so check the whole panel
+    // rather than one specific text pattern that might legitimately be
+    // absent (e.g. every target showing "pass" instead of a $ amount).
     renderInApp(room());
-    for (const el of screen.getAllByText(/^bid \$/)) {
-      expect(el.textContent).not.toMatch(/NaN/);
-    }
+    expect(screen.queryAllByText(/NaN/).length).toBe(0);
   });
 });

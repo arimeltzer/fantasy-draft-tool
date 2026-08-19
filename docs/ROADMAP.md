@@ -2313,6 +2313,24 @@ second season's data or a live-inflation-aware follow-up before being
 trusted at face value for magnitude, even though DIRECTION is robust across
 every season and noise level tested, raw and clean alike).
 
+**SHIPPED.** The allocation-aware ceiling (3.3+3.4+3.4a composed) is now the
+PRIMARY "bid $" in `AuctionRoom.tsx`'s value-targets panel, for QB/RB/WR/TE —
+K/DST unchanged, staying on `suggestBid()`, matching the DP's own scope
+(`bidCeiling` never covers them; see 3.3's header). `suggestBid()`'s own
+number is NOT hidden — it stays visible as a secondary "model $X" / "model
+pass" badge, since two methods disagreeing is informative, not noise.
+"pass" on the primary number now means what it should for a ceiling: your
+own allocation says he doesn't improve your reachable roster at any price
+(`ceiling <= 0`, or allocation-bound and under market) — a room-bound
+ceiling under market is the OPPOSITE of a pass signal (nobody there can
+outbid you), so it is no longer conflated with one. `AuctionRoom.test.tsx`'s
+roadmap-3.3 suite was rewritten for the swap rather than left describing
+the old default (a stale test masking a real behavior change is worse than
+no test) — the K/DST-NaN regression check was also broadened, since a $0
+allocation ceiling now legitimately renders "pass" instead of a "$" amount,
+which had made the old text-pattern assertion vacuously pass on an empty
+match set. 58/58 vitest, full selftest, and build all green.
+
 **FOLLOW-UP: real current-season FantasyPros AAV data refines the mechanism,
 and the refined version is a MORE fundamental problem with `suggestBid()`
 than ADP coverage.** The user supplied a real FantasyPros auction-values
