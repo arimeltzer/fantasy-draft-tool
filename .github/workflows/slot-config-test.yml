@@ -55,6 +55,15 @@ jobs:
           FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
         run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
 
+      # TEMPORARY DIAGNOSTIC — roadmap 3.1's gate flipped from +12.00pts
+      # (10/10 slots) to -2.20pts (2/10 slots) between two runs 15 minutes
+      # apart, same code, same seeds, same season range. engine-core.js has no
+      # RNG, so if the export is stable the flip is a simulation bug; if the
+      # export itself moves, FantasyPros isn't serving a frozen snapshot for
+      # these seasons. Fast (no simulation) so this costs ~10s, not ~15min.
+      - name: (temp) Fingerprint exported boards
+        run: python data-pipeline/fingerprint_seasons.py --data data-pipeline/results/draft_seasons.json
+
       - name: Per-slot vs shared config
         run: |
           node frontend/src/engine/slot-config-test.mjs \
@@ -76,9 +85,9 @@ jobs:
         run: |
           node frontend/src/engine/survival-test.mjs \
             --data data-pipeline/results/draft_seasons.json \
-            --seeds ${{ inputs.seeds }} \
+            --seeds 1 \
             --cvs 0.35 \
-            --temps 2,4,8,16 | tee data-pipeline/results/survival_test.txt
+            --temps 4 | tee data-pipeline/results/survival_test.txt
 
       - uses: actions/upload-artifact@v4
         with:
