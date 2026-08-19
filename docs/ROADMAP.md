@@ -2262,11 +2262,56 @@ must always show `treatmentEmptySlotRate === 1` (positive control on the
 metric), and identical arms must report identical empty-slot rates and a
 zero clean mean.
 
-**Re-run pending** with the corrected harness — `auction_sim_test.txt` will
-report RAW and CLEAN separately per the updated script, and the actual
-verdict (ship treatment as default / fix `suggestBid`'s QB throttle instead
-/ neither) depends on what the CLEAN number says once control's empty-slot
-failure is factored out, not on the raw number above.
+**RE-RUN RESULT (workflow run 32288720778, corrected harness, same 2017-2025
+real ADP): the empty-slot hypothesis was WRONG, and CLEAN clears the gate.**
+Control's actual empty-starting-slot rate turned out low — 0% most
+seasons, peaking at 8% in 2022 (the thinnest-ADP season measured), not the
+near-total failure the one-seed local diagnostic suggested. More
+importantly, **filtering those drafts out barely moves the number**: CLEAN
+mean/SE is statistically indistinguishable from RAW at every noise level
+(noise 0.05: +966.08 clean vs +965.71 raw; 0.15: +870.95 vs +870.12; 0.30:
++784.60 vs +783.34 — all mean/SE in the 90s-130s, treatment winning
+887-891 of 888-891 clean drafts, effectively 100%). The empty-slot bug is
+real and worth fixing on its own terms, but it is NOT what the raw gate
+number was measuring — ruling it out, rather than confirming it, is the
+actual value the diagnostic delivered.
+
+**The real mechanism, evidenced directly:** the earlier local debug (real
+2023 board, one seed) showed CONTROL spending only $30-46 of a $200
+budget while still fielding a full 15-man roster — not an empty slot, a
+CHEAP one at nearly every slot. `suggestBid()`'s bid-shaping
+(`fairShare = surplus * (dv / remainingDvSum)`, `ratioScale` clamped to
+`[0.5, 1.4]` of a market-relative ratio) is calibrated for a market that
+prices most of the board. Real historical ADP coverage does not: the same
+export logged 36-62% of the board uncovered every season 2017-2025, and
+`marketPrice()` floors an uncovered player at `minBid` for EVERY bidder —
+bots included, since `botWTPMultiplier` also scales off `market`. When
+roughly half the field is anchored near $1 by construction, the room as a
+whole underspends, and the one bidder whose ceiling is NOT market-relative
+(treatment's `bidCeiling`/`bindingCeiling`, bounded by opportunity cost and
+actual budget, never by a ratio to a possibly-absent market price) buys the
+real value nearly uncontested. That is a genuine, mechanistically
+understood edge, not an artifact — but it is specific to auctions where a
+large share of the board lacks a price signal, which is exactly what these
+historical seasons have and plausibly overstates the edge in a live room
+using current-season FantasyPros ADP with materially better coverage than
+a multi-year nflverse-archive backtest can reconstruct.
+
+**Verdict: CLEAN passes the pre-registered bar (mean>0, t>2) at every swept
+noise level — 3.3+3.4+3.4a's allocation logic beats independent pricing,
+and the win is not explained by a control bug.** Recommended next step is
+narrower than "flip the shipped default": wire the allocation-aware ceiling
+as the PRIMARY suggested bid in `AuctionRoom.tsx` (currently shown
+alongside `suggestBid()`'s number, not replacing it — see 3.3/3.4's own
+headers) for QB/RB/WR/TE where the DP applies, with K/DST unchanged. Not
+done in this session — changing what number a live, deployed tool tells its
+user to bid is an outward-facing behavior change to someone's actual
+draft-day tool, worth a confirm rather than a silent flip, especially given
+how large and clean this specific measured edge is (900/900 and near-900/900
+wins is unusually total for any effect in this document and deserves a
+second season's data or a live-inflation-aware follow-up before being
+trusted at face value for magnitude, even though DIRECTION is robust across
+every season and noise level tested, raw and clean alike).
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
