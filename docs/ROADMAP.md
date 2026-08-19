@@ -2135,6 +2135,98 @@ gated number is the estimate. The Phase 3 head-to-head kill gate remains
 NOT run for 3.3, 3.4 or 3.4a — no auction simulator exists, and the demand
 caps in particular are judgement that no measurement has scored.
 
+### 3.5 The auction simulator — the harness 3.3/3.4/3.4a have been waiting on
+
+**PRE-REGISTRATION, written before the code exists.** This harness decides
+whether three shipped-but-unmeasured steps earned their place, so its own
+design decisions are what make those verdicts mean anything — or not.
+
+*What it simulates.* An open (English) auction reduced to its outcome: for
+each nominated player every team forms a willingness-to-pay, the highest WTP
+wins, and the price is **one increment above the second-highest** — which is
+what an ascending auction converges to and is exactly the mechanic 3.4 is
+built on. Budgets and roster slots are enforced throughout; a team that
+cannot legally add a player cannot bid.
+
+*The arms.* Both face identical bots.
+  - **Control**: `suggestBid()` — the shipped independent-pricing behaviour.
+  - **Treatment**: bid up to `min(allocationCeiling, roomCeiling)` — 3.3's
+    opportunity-cost ceiling composed with 3.4/3.4a's room cap.
+Nomination is held FIXED and identical across arms, so the comparison
+isolates bidding. Nomination strategy is therefore explicitly NOT tested
+here; that is scope, stated rather than discovered later.
+
+*THE CIRCULARITY HAZARD, AND WHY IT IS DIFFERENT FROM 3.1's.* In 3.1 the
+agent's `pSurvive` came from ADP and the bots drafted by ADP, so the agent had
+privileged knowledge of the room and beating it proved little. Here the
+structure genuinely differs: **both arms use the same market prices**, so any
+privileged knowledge is shared and cancels — what the comparison isolates is
+allocation strategy alone. The residual hazard is narrower and specific:
+  - 3.4a's demand caps could be validated by construction if the BOTS use the
+    same positional-need model the agent assumes. So the bots get their OWN
+    need rule with a different shape and their own parameters, never
+    `opponentDemand()`.
+  - A perfectly market-priced room makes the auction trivially predictable and
+    would flatter an optimizer. So bot pricing carries noise, and **the noise
+    level is swept** — the same mitigation shape as 3.1's `temperature`,
+    reporting the edge as a function of how disciplined the room is rather
+    than at one convenient setting.
+
+*What is scored, and what that does NOT satisfy.* Best legal starting lineup
+on ACTUAL season points, via `bestLineupPoints()` — the identical measure
+`draft-sim.mjs` already uses, reused deliberately so the auction and snake
+sides are not judged on different yardsticks. **This is not title share.** The
+phase gate as literally written asks for titles, and title share needs 2.3,
+which is CLOSED. Points are the substitute the snake side has used since 0.2;
+using it here is consistency, not a fresh dodge, and the distinction stays on
+the record.
+
+*Paired, with common random numbers*, like `pairedCompare` — same board, same
+seed, same nomination order and bot draws until the arms actually diverge.
+Once one arm buys a different player the rooms genuinely differ; that is
+inherent to sequential drafting and is the same limitation the snake harness
+carries.
+
+*The harness is verified BEFORE it is allowed to produce a number.* Precedent
+is `draft-sim.mjs`, whose workflow runs its selftest first because it decides
+whether 100 tuned parameters stay in the engine. Required of this one:
+  1. **Budget and roster invariants hold** — no team ever overspends, exceeds
+     its roster, or bids on a slot it cannot fill.
+  2. **Second-price mechanics are exact** on hand-computed cases, including
+     the one-bidder case (sells at the minimum) and ties.
+  3. **Identical arms produce EXACTLY zero difference on every seed** — if two
+     copies of the same agent diverge, the pairing is broken and every number
+     the harness reports afterwards is noise. This is `draft-sim.selftest`'s
+     own load-bearing assertion and it transfers directly.
+  4. **A deliberately crippled agent loses** — so the comparison is wired the
+     right way round.
+
+*What a result here will and will not settle.* It can show whether
+allocation-aware bidding beats independent pricing against these bots on
+points. It cannot show it beats human rooms, cannot rank nomination
+strategies, and cannot speak to title share.
+
+**BUILT.** `frontend/src/engine/auction-sim.mjs` implements the design above;
+`auction-sim.selftest.mjs` (46 assertions) clears all four pre-registered
+requirements — confirmed with three deliberate mutations (pay-full-price
+instead of second-price, drop the K/DST singleton cap, and a `Math.random`
+leak in place of the seeded RNG), each one caught by the selftest and
+reverted before commit, the same discipline earlier engine files in this
+phase used. One bug surfaced along the way and is worth recording: the first
+draft mapped "no open starting slots" to an allocation ceiling of **0**,
+which is wrong — `bindingCeiling` (and the shipped `AuctionRoom.tsx`, which
+passes `null` for exactly this case) treats it as **unconstrained**, deferring
+entirely to the room ceiling, because a full starting lineup does not mean
+a bench spot is worthless. The bug was visible immediately: the treatment
+arm's simulated roster came in at 9/15 slots filled against control's 15/15
+on a debug board. Fixed to match the shipped semantics; rosters normalized.
+`auction-sim-test.mjs` + `.github/workflows/auction-sim-test.yml` run the
+actual gate (treatment vs. control, swept bot-pricing noise, 2017–2025) —
+**not yet triggered**; needs `FANTASYPROS_API_KEY` in CI. Runtime estimate
+from local timing (~200ms/treatment-draft on a 300-player board): full sweep
+(9 seasons × 10 slots × 3 noise levels × 10 seeds) ≈ 9 minutes of simulation,
+comfortably inside the 45-minute job timeout.
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.

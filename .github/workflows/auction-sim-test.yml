@@ -1,0 +1,71 @@
+name: Auction simulator test (roadmap 3.5)
+
+# Manual. Simulates whole auctions against the SHIPPED engine to ask whether
+# 3.3 (budget-path DP) + 3.4 (room ceiling) + 3.4a (opponent demand) — all
+# three shipped unmeasured — beat suggestBid()'s independent pricing.
+#
+# Needs FANTASYPROS_API_KEY — the opponent bots draft by that season's real
+# ADP/market. Without it they would price by our own model, and the
+# comparison would be against a strawman sharing our own biases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      first:
+        description: "First season to export"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season to export"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated auctions per slot per season per noise level"
+        required: false
+        default: "10"
+        type: string
+      noise:
+        description: "Bot pricing noise levels to sweep, comma-separated"
+        required: false
+        default: "0.05,0.15,0.30"
+        type: string
+
+jobs:
+  auction-sim-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      # The harness decides whether three shipped-but-unmeasured steps stay
+      # in the engine. It gets verified before it is allowed to produce a
+      # number — see the four requirements in its own header.
+      - name: Simulator selftest
+        run: node frontend/src/engine/auction-sim.selftest.mjs
+
+      - name: Export historical draft boards
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Treatment vs control
+        run: |
+          node frontend/src/engine/auction-sim-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --seeds ${{ inputs.seeds }} \
+            --noise ${{ inputs.noise }} | tee data-pipeline/results/auction_sim_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: auction-sim-test
+          path: data-pipeline/results/
