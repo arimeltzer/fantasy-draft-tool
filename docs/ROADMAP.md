@@ -1075,7 +1075,7 @@ no longer matters for what ships. Under `survivors` alone: **RB (0.812), TE
 needed; `rostered_busts` stays in the repo as a documented negative result,
 same treatment as `RANK_TIERS_BY_POS`/`FIT_WINDOWS` before it.
 
-### 2.2 Weekly-lineup-aware season simulator — BLOCKED on 2.2a (independent weekly draws rejected)
+### 2.2 Weekly-lineup-aware season simulator — CLOSED, no usable weekly distribution (2.2a base AND form-factor follow-up both rejected)
 Season totals are the wrong unit: you start ~9 of 15 players each week. Simulate
 weeks, set lineups, score the lineup. This makes bench depth worth its true
 option value and stops treating a bench player's points as if they counted.
@@ -1292,6 +1292,75 @@ construction. If gate 3's collapse turns out to be driven mostly by THAT kind
 of correlation rather than season-level form, this fix would still leave
 weekly draws too tight, just less so. The out-of-sample coverage gate is what
 would actually reveal that gap rather than assume it away.
+
+**RESULT — REJECTED, decisively, and it answers the open question the gate's
+own pre-registration flagged: the missing correlation is NOT mostly
+season-level form.** Backtest `projection-backtest.yml` #32203391598,
+2016–2025, 63,071 player-weeks (the same population 2.2a's rejected base
+result used).
+
+*Gate 1 (out-of-sample season `cov80` in `[0.75, 0.85]`, all three of RB/WR/TE
+required) fails everywhere it could be measured, and not narrowly*:
+
+| pos | n (held-out player-seasons) | season cov80 | CRPS (form-factor) | CRPS (2.1 season fit) | verdict |
+|---|---|---|---|---|---|
+| RB | 348 | **0.405** | 28.07 | 26.87 | FAIL — sharpness also worse (+4.5%) |
+| WR | 730 | **0.419** | 22.95 | 23.37 | FAIL |
+| TE | — | *no eligible held-out seasons* | — | — | FAIL — untestable at this sample size |
+
+Coverage at 0.405 is not a near-miss the way QB's 2.1 follow-up (e) was
+(0.743 vs a 0.75 floor) — it is roughly **half** the nominal 80%, on both
+positions that could even be measured. TE's form/residual pools hold only 9
+player-seasons total (see below), too few for the expanding-window fit to
+ever produce a held-out player-season with 6+ prior-season peers to fit
+from — TE fails the follow-up gate by being structurally untestable, not by
+missing narrowly.
+
+*Reported (not gated): the variance split explains why.* `form` — the
+single scalar this fix adds — captures a small minority of total weekly-ratio
+variance at every position:
+
+| pos | Var(form) | Var(residual) | form share | n player-seasons |
+|---|---|---|---|---|
+| RB | 0.0638 | 0.6794 | **8.6%** | 63 |
+| WR | 0.0520 | 0.7290 | **6.7%** | 72 |
+| TE | 0.0804 | 0.6053 | **11.7%** | 9 |
+
+A one-number-per-season multiplier that owns under 12% of the variance
+everywhere cannot supply the correlation gate 3 measured missing — gate 3's
+own numbers (implied season width at 0.27x–0.31x of 2.1's fitted width) imply
+the within-season correlation needs to explain roughly **3–4x** more shared
+variance than an 8.6% form share can provide, even before accounting for
+`residual` still being drawn independently week to week by construction.
+
+*This directly answers the "what a pass would NOT prove" clause above*: the
+missing correlation was never mostly a season-level "how good was this
+player's year" effect — if it were, form would own a large majority of the
+variance, not under 12%. The gap is consistent with the game-script/
+matchup-level correlation this step's own pre-registration named as the thing
+`residual`'s independence assumption could not capture, now confirmed rather
+than merely flagged as a risk.
+
+**Consequence: nothing from 2.2a or its follow-up is usable, and no further
+fit-side lever on THIS construction (window, recency weighting, a second
+random effect layered onto the same ratio decomposition) is likely to close
+an 8-to-1 variance gap.** Per the roadmap's own discipline (the same call made
+for QB's season tails in 2.1 follow-up (c)), this is reported as a decisive
+negative result rather than chased with more knobs on a model that has been
+shown, not merely suspected, to be missing the dominant source of
+correlation. `simulate_season_ratios()`, `fit_form_pool()`,
+`fit_residual_pool()` stay in the repo as tested, documented infrastructure —
+the code is correct, the empirical answer it returns is just that this
+decomposition does not fix the problem. **2.2 (both the base weekly fit and
+this follow-up) is CLOSED without a usable weekly outcome distribution.**
+The 2.2b lineup optimizer built ahead of this result (`lineup-optimizer.js`,
+27 selftests, fixture-only) stays as tested-but-unwired infrastructure per
+its own pre-registration note — it consumes whatever weekly distribution is
+handed to it and was never contingent on 2.2a passing to be correct code, only
+to be *usable* code. Revisiting 2.2 needs a materially different construction
+(e.g. an explicit game-script/matchup correlation term, or multi-week blocks
+instead of single-week draws) — not a next-parameter sweep on this one — and
+is not scoped here.
 
 **BYE-WEEK STACKING IN THE DRAFT RECOMMENDER (separate, product-facing).**
 Independent of the simulator: nothing in the recommender knows about byes today,
