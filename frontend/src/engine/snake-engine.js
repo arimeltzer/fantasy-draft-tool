@@ -45,6 +45,14 @@ export const DEFAULT_SNAKE_PARAMS = {
   byeClashStep: 0.04,   // per already-rostered starter sharing the bye
   byeClashMax:  0.12,   // hard cap on the total penalty
 
+  // Survival urgency cap (roadmap 3.1 — SIMPLIFIED). Deliberately SMALL and
+  // deliberately unfitted, same discipline as byeClashStep/Max above: this is
+  // a capped multiplier, not a modeled quantity, so there is no sigma to
+  // sweep and no held-out coefficient to justify a bigger number. 0.15 caps
+  // the boost at +15% for a player expected to be gone before my next pick,
+  // decaying linearly to 0 at a full round of margin.
+  survivalUrgencyMax: 0.15,
+
   // The config every draft slot now uses — see SLOTS below for why there is
   // only one. Held-out simulation could not distinguish ten tuned configs from
   // this single shared one, so this is the whole per-slot strategy.
@@ -259,25 +267,27 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
     }
   }
 
-  // 9. Survival lookahead (roadmap 3.1).
-  // Applied LAST, and after the bye clash, because it is a value-space
-  // SUBTRACTION rather than a discount on the player's worth: what he is worth
-  // to you is settled first (steps 1-8), then the cost of spending this pick on
-  // him rather than someone who will not last is charged against it.
+  // 9. Survival margin (roadmap 3.1 — SIMPLIFIED; see survival.js header).
+  // "Will he last to my next pick" answered as a deterministic pick-count
+  // margin, not a modeled probability: margin = adpRank - nextPick. adpRank
+  // approximates the overall pick where the market expects him gone, so a
+  // LARGE adpRank relative to nextPick means the market has him lasting well
+  // past my next turn (safe, no urgency); a SMALL or negative margin means
+  // the market expects him gone before I pick again (urgent). `teams` is the
+  // natural unit — one full round of cushion is the point past which "wait a
+  // round" stops being a real option in a snake draft, so margin is read as
+  // a fraction of a round, capped at 1.
   //
-  // cost is ~0 for a player who will be gone by your next pick — taking him now
-  // costs that pick nothing, because he was never going to be there — and large
-  // for one who would have survived, which is exactly the "who will not last"
-  // signal, priced. See survival.js; the caller supplies this because it is a
-  // property of the whole remaining pool, not of one candidate.
-  //
-  // NO WEIGHT. 1.0 is what the two-ply objective says the term is worth, not a
-  // constant anybody fitted — and the restructure forbids fitting constants
-  // under the interim objective.
-  const surv = s.survivalCostById && s.survivalCostById[player.id];
-  if (surv) {
-    base -= surv.cost || 0;
-    if (surv.p < 0.35) reasons.push(`won't last (${Math.round(surv.p * 100)}%)`);
+  // A capped-multiplier read, matching how needMult/byeClash already scale
+  // `base` rather than adding a separately-weighted term — keeps this in the
+  // same units as steps 1/8 instead of introducing a new scale to tune.
+  if (s.teams && Number.isFinite(s.nextPick) && adpRank <= s.poolSize) {
+    const marginRounds = (adpRank - s.nextPick) / s.teams;
+    if (marginRounds < 1) {
+      const urgency = 1 + P.survivalUrgencyMax * Math.min(1, Math.max(0, 1 - marginRounds));
+      base *= urgency;
+      if (marginRounds < 0) reasons.push("won't last");
+    }
   }
 
   // "last of tier" note when there's a big VBD cliff to the next at this position

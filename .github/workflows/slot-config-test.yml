@@ -55,39 +55,11 @@ jobs:
           FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
         run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
 
-      # TEMPORARY DIAGNOSTIC — roadmap 3.1's gate flipped from +12.00pts
-      # (10/10 slots) to -2.20pts (2/10 slots) between two runs 15 minutes
-      # apart, same code, same seeds, same season range. engine-core.js has no
-      # RNG, so if the export is stable the flip is a simulation bug; if the
-      # export itself moves, FantasyPros isn't serving a frozen snapshot for
-      # these seasons. Fast (no simulation) so this costs ~10s, not ~15min.
-      - name: (temp) Fingerprint exported boards
-        run: python data-pipeline/fingerprint_seasons.py --data data-pipeline/results/draft_seasons.json
-
       - name: Per-slot vs shared config
         run: |
           node frontend/src/engine/slot-config-test.mjs \
             --data data-pipeline/results/draft_seasons.json \
             --seeds ${{ inputs.seeds }} | tee data-pipeline/results/slot_config_test.txt
-
-      # TEMPORARY — roadmap 3.1's gate, borrowing this workflow's dispatch slot.
-      # workflow_dispatch only accepts workflows whose file is on the DEFAULT
-      # branch, and survival-test.yml is new, so it cannot be triggered from a
-      # feature branch yet. Dispatching THIS workflow with ref=<branch> runs the
-      # branch's copy of this file, which is the only way to reach the gate
-      # before survival-test.yml lands on main. REVERT once it has: the real
-      # workflow is .github/workflows/survival-test.yml and these two steps do
-      # not belong to roadmap 0.2.
-      - name: (temp) Survival engine selftest
-        run: node frontend/src/engine/survival.selftest.mjs
-
-      - name: (temp) Survival lookahead vs shipped engine (roadmap 3.1)
-        run: |
-          node frontend/src/engine/survival-test.mjs \
-            --data data-pipeline/results/draft_seasons.json \
-            --seeds ${{ inputs.seeds }} \
-            --cvs 0.35 \
-            --temps 2,4,8,16 | tee data-pipeline/results/survival_test.txt
 
       - uses: actions/upload-artifact@v4
         with:

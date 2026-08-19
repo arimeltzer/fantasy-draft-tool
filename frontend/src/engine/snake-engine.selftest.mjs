@@ -172,60 +172,92 @@ check("a non-10-team league also uses it",
           < pickScore(rb, state({ ...adpRound, rosterByesByPos: { RB: [4] } })).score);
 }
 
-// ── survival lookahead (roadmap 3.1) ──────────────────────────────────────
+// ── survival margin (roadmap 3.1 — SIMPLIFIED) ────────────────────────────
+// margin_rounds = (adpRank - nextPick) / teams. adpRank approximates the
+// overall pick the market expects him gone at, so a LARGE adpRank relative
+// to nextPick means he'll last (safe); small/negative means he's expected
+// gone before I pick again (urgent). The probabilistic model (survival.js:
+// pSurvive/survivalCosts) is tested but not wired in — see its header for
+// why. All tests here use round: 1 (outside the step-6 ADP-blend window of
+// 6-12) unless the test is specifically about composing with that blend, so
+// the margin's effect can be isolated from it.
 {
   const rb = player("RB", 100);
+  const r1 = { round: 1 };   // outside the 6-12 ADP-blend window
 
-  // Absent survival data the engine must be byte-identical to before — this is
-  // an opt-in mechanism, and every existing caller passes nothing.
-  check("no survival data leaves the score untouched",
-        pickScore(rb, state({ survivalCostById: undefined })).score
-          === pickScore(rb, state()).score);
+  // Absent nextPick, or absent an ADP entry for this player, the engine is
+  // byte-identical to before — opt-in, and every existing caller passes
+  // neither.
+  check("no nextPick leaves the score untouched",
+        pickScore(rb, state({ ...r1, nextPick: undefined })).score
+          === pickScore(rb, state(r1)).score);
+  check("nextPick with no ADP entry for this player leaves the score untouched",
+        pickScore(rb, state({ ...r1, nextPick: 20 })).score
+          === pickScore(rb, state(r1)).score);
 
-  const withCost = (cost, p = 0.9) =>
-    state({ survivalCostById: { "RB-100": { cost, p } } });
+  // adpRank 180, nextPick 20, teams 10 -> margin = (180-20)/10 = 16 rounds:
+  // deep into safe territory, no urgency.
+  const comfortable = state({ ...r1, nextPick: 20, adpRankById: { "RB-100": 180 } });
+  check("a large margin applies no urgency",
+        pickScore(rb, comfortable).score === pickScore(rb, state(r1)).score);
 
-  check("a survival cost is subtracted from the score",
-        pickScore(rb, withCost(12)).score < pickScore(rb, state()).score - 1e-9);
-  check("the subtraction is exactly the cost",
-        Math.abs((pickScore(rb, state()).score - pickScore(rb, withCost(12)).score) - 12) < 1e-9);
-  check("a bigger cost hurts more",
-        pickScore(rb, withCost(30)).score < pickScore(rb, withCost(12)).score);
-  check("zero cost is a no-op",
-        pickScore(rb, withCost(0)).score === pickScore(rb, state()).score);
+  // adpRank 22, nextPick 20 -> margin = 0.2 rounds: inside a round, PARTIAL
+  // urgency, strictly less than the cap. `capped` is derived from the actual
+  // baseline rather than assumed, because needMult already scales it
+  // ("no RB yet" = x1.30) before the margin ever multiplies it.
+  const tight = state({ ...r1, nextPick: 20, adpRankById: { "RB-100": 22 } });
+  const capped = pickScore(rb, state(r1)).score * (1 + DEFAULT_SNAKE_PARAMS.survivalUrgencyMax);
+  check("less than a round of margin raises the score",
+        pickScore(rb, tight).score > pickScore(rb, state(r1)).score);
+  check("partial margin does not hit the cap",
+        pickScore(rb, tight).score < capped - 1e-9);
+
+  // adpRank 5, nextPick 20 -> margin = -1.5: the market's implied slot for
+  // him is well before my next pick — expected gone. Saturates at the cap,
+  // same as margin = 0 exactly (the clamp treats "already gone" and
+  // "gone right at zero margin" identically — this is a capped multiplier,
+  // not an unbounded one).
+  const gone = state({ ...r1, nextPick: 20, adpRankById: { "RB-100": 5 } });
+  check("negative margin saturates at the cap",
+        Math.abs(pickScore(rb, gone).score - capped) < 1e-9);
+  check("negative margin is a bigger boost than partial margin",
+        pickScore(rb, gone).score > pickScore(rb, tight).score);
 
   // The point of the whole mechanism: between two equally valuable players,
-  // the one who will still be there next time is the worse pick NOW.
-  const stays = state({ survivalCostById: { "RB-100": { cost: 25, p: 0.95 } } });
-  const gone  = state({ survivalCostById: { "RB-100": { cost: 0.4, p: 0.05 } } });
+  // the one who will not last outranks the one who comfortably will.
   check("a player who won't last outranks an equal one who would have survived",
-        pickScore(rb, gone).score > pickScore(rb, stays).score);
+        pickScore(rb, gone).score > pickScore(rb, comfortable).score);
 
-  // Surfaced to the user only when it is actually urgent.
-  check("an unlikely-to-last player is flagged",
-        pickScore(rb, withCost(0.4, 0.05)).reasons.some((r) => r.startsWith("won't last")));
-  check("a player who will comfortably last is not flagged",
-        !pickScore(rb, withCost(25, 0.95)).reasons.some((r) => r.startsWith("won't last")));
+  // Surfaced to the user only when actually urgent (margin < 0).
+  check("a player expected gone before my next pick is flagged",
+        pickScore(rb, gone).reasons.includes("won't last"));
+  check("a player with positive margin is not flagged",
+        !pickScore(rb, tight).reasons.includes("won't last"));
+  check("a player with a large margin is not flagged",
+        !pickScore(rb, comfortable).reasons.includes("won't last"));
 
-  // Same discipline as the bye clash: it must land AFTER the step-6 ADP blend,
-  // or the blend's weighted average silently dilutes it by (1 - ADP_W).
-  const adpRound = { round: 8, adpRankById: { "RB-100": 5 } };
-  const blended = pickScore(rb, state({ ...adpRound })).score
-    - pickScore(rb, state({ ...adpRound, survivalCostById: { "RB-100": { cost: 12, p: 0.9 } } })).score;
-  check("the cost survives the ADP blend undiluted", Math.abs(blended - 12) < 1e-9);
+  // Same discipline as the bye clash: it must land AFTER the step-6 ADP
+  // blend, or the blend's weighted average would dilute it.
+  const adpRound = { round: 8, adpRankById: { "RB-100": 5 }, nextPick: 20 };
+  const withMargin = pickScore(rb, state(adpRound)).score;
+  const withoutMargin = pickScore(rb, state({ round: 8, adpRankById: { "RB-100": 5 } })).score;
+  check("the margin survives the ADP blend rounds (round 8 is in 6-12)",
+        withMargin > withoutMargin);
 
-  // Ordering against the bye clash: worth is settled (and discounted) first,
-  // then the opportunity cost is charged against it — so the subtraction is
-  // NOT scaled by the bye multiplier.
+  // Composes with the bye clash rather than being swallowed by it — both are
+  // multiplicative on `base`, applied in sequence.
   const byeByTeam = { MIA: 9 };
   const rbMia = player("RB", 100, { team: "MIA" });
   const byeState = (extra) => state({
-    byeByTeam, rosterByesByPos: { RB: [9, 9] }, roster: { ...ROSTER, RB: 2 }, ...extra,
+    ...r1, byeByTeam, rosterByesByPos: { RB: [9, 9] }, roster: { ...ROSTER, RB: 2 }, ...extra,
   });
-  const gap = pickScore(rbMia, byeState({})).score
-    - pickScore(rbMia, byeState({ survivalCostById: { "RB-100": { cost: 12, p: 0.9 } } })).score;
-  check("survival is charged after the bye discount, not scaled by it",
-        Math.abs(gap - 12) < 1e-9);
+  const byeOnly = pickScore(rbMia, byeState({})).score;
+  const byeAndMargin = pickScore(
+    rbMia,
+    byeState({ nextPick: 20, adpRankById: { "RB-100": 5 } }),
+  ).score;
+  check("survival urgency still raises the score on top of a bye discount",
+        byeAndMargin > byeOnly);
 }
 
 console.log();

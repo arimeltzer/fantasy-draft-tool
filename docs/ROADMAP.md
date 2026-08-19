@@ -1545,7 +1545,7 @@ Per the restructure above, each step is built **mechanism-first against the
 current objective**, with the value function injected so a later ΔP(title) can
 replace it without touching the search.
 
-### 3.1 Snake: survival probability *(highest-value snake feature)*
+### 3.1 Snake: survival probability *(highest-value snake feature)* — DONE, shipped SIMPLIFIED (deterministic margin, not the modeled probability that cleared the gate)
 Nothing in the engines computes P(player available at my next pick). This is the
 snake question — not "who is best" but "who will not last". Derive it from ADP
 and its dispersion, then choose to maximize ΔP(title) rather than raw value.
@@ -1620,6 +1620,98 @@ as such rather than buried.
 themselves reason about survival (the bots do not), or that σ is right (see
 the sweep — a pass under insensitivity means σ did not matter, not that it was
 correct).
+
+**RESULT — the pre-registered gate CLEARED, then the mechanism was SIMPLIFIED
+away from the model that cleared it. Both halves are recorded, because both
+are true and the second does not erase the first.**
+
+*Two runs of the gate, 15 minutes apart, same code and seeds, landed opposite
+verdicts (+12.00pts/10-of-10-slots vs −2.20pts/2-of-10) before either number
+meant anything.* Traced to the actual log, not inferred: `adp_probe.fetch_adp`
+had no 429 retry — unlike every other FantasyPros loop in this pipeline,
+which already solved this exact problem (`fantasypros._get_json`, 2s/4s/8s/16s
+backoff) for `fetch_projections` and `fetch_injuries`. A rate-limited pull
+silently returned `{}` for 2024/2025, and `pSurvive()`'s documented fallback
+for missing ADP (`p=1`, "assume available") — sane for one missing player —
+became a large, uniform, signal-free cost across an ENTIRE season with none.
+Fixed at the root (`fetch_adp` now routed through `_get_json`, `export_
+draft_seasons.py` paced like every other loop here) and belt-and-suspenders
+(`survival-test.mjs` now excludes any season under 120 ADP-covered players
+before it can enter a mean, loudly). This is a real, shipped fix independent
+of everything below — `git log` on `adp_probe.py`/`export_draft_seasons.py`.
+
+*With the fix in place, backtest via the borrowed 0.2 dispatch slot (run
+`32210824536`, 9 seasons genuinely covered — 2024 at 223/464, 2025 at
+215/479, both previously zero), the pre-registered gate CLEARS decisively*:
+
+| bar | result | verdict |
+|---|---|---|
+| pooled `mean/SE ≥ 2` | **+15.00** | PASS |
+| positive at majority of slots | **10/10** | PASS |
+
+Circularity control also holds: the edge survives at every bot temperature
+tried (2/4/8/16, all 10/10 slots), so it is not merely an artifact of the
+bots' own ADP-following rule.
+
+*But a check ADDED AFTER the rate-limit bug — not part of the original
+pre-registration — complicates it.* Pooling 10,800 paired drafts as
+independent is itself optimistic (seeds inside one season/slot share a
+board), so the arm was also read clustered by season, the most conservative
+lens and the one with fewest independent units:
+
+| clustering | mean/SE | units positive |
+|---|---|---|
+| pooled | +15.00 | — |
+| by slot | +11.61 | 10/10 |
+| by season | **+1.59** | **7/9** |
+
+Season-clustered does not clear the same bar of 2. One season (2024, +70.1)
+carries an outsized share of the pooled effect, and 2024/2025 — even after
+the fix — remain two of the four thinnest-ADP-coverage seasons (both under
+50% of the board). Thinner coverage is the identical fallback mechanism that
+caused the bug, just less extreme: more players defaulting to `p=1` inflates
+the effect in exactly the seasons where it is largest.
+
+*A correction, caught before it settled into this record rather than after:
+an earlier draft of this section cited a "σ sweep found no sensitivity across
+a 5x range, mean/SE 12.5–17.1" as a third finding.* That number is the
+TEMPERATURE sweep (cv held fixed at 0.35, the workflow having been hardcoded
+to a single cv value when restored after the diagnostic phase) — a real
+result, but on the wrong axis, mistakenly cited as the cv sweep. The only run
+that ever swept multiple `cv` values was the very first one (12 seeds,
+possibly predating the ADP-fetch fix — no fingerprint exists for it to check),
+and it showed mean/SE near zero at every value (0.01 to 0.24) — underpowered
+and likely still exposed to the same rate-limit fragility everything else in
+this investigation was, not the "insensitive, so σ doesn't matter" result
+originally claimed. **σ's sensitivity is genuinely UNRESOLVED** — a proper
+5-value sweep on the fixed, well-covered data was never actually run, and
+this document is not going to assert a finding it does not have. The
+simplification below does not depend on it; it rests on the two findings that
+ARE solidly evidenced (the season-clustering ambiguity above, and the real
+fragility the whole investigation surfaced) plus an independent architectural
+point: `needMult`/`byeClash` already covered need and byes before 3.1 started,
+so the only genuinely missing piece was a next-pick lookahead, and answering
+THAT does not require modeling uncertainty at all — a capped deterministic
+margin says the same directional thing with far less machinery, regardless of
+whether σ would have turned out to matter.
+
+**Consequence: replaced with a deterministic margin, per real-time user
+steer that named the same conclusion independently** — `needMult` and
+`byeClash` were already shipped and validated in `pickScore` before 3.1
+started (bye-week roadmap item), so the only genuinely missing piece was a
+next-pick lookahead, and that does not require modeling uncertainty at all.
+`margin_rounds = (adpRank − nextPick) / teams`; a capped multiplier (±15%,
+unfitted, same discipline as `byeClashStep/Max`) rather than the
+opportunity-cost subtraction. No sigma, no distribution, no per-candidate
+O(n log n) pass — `adpRank` and `nextPick` are both already-plumbed values.
+`survival.js`'s probabilistic core (`pSurvive`/`sigmaFor`/`expectedBest`/
+`survivalCosts`) stays in the repo as tested, documented infrastructure — not
+because it was wrong, but because it did not clearly earn its complexity, the
+same "parsimony decides it" call 0.2 made about the slot configs. Selftests
+rewritten for the margin mechanism (46 snake-engine, 28 draft-sim, both
+green); the sigma/temperature sweep harness (`survival-test.mjs`) stays as
+the tested apparatus that produced the insensitivity finding, not deleted,
+but the shipped mechanism no longer depends on running it.
 
 ### 3.2 Snake: positional run detection
 When three running backs go in five picks, the next five are likelier to be

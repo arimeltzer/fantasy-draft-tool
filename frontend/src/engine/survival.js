@@ -1,22 +1,65 @@
 /* =====================================================================
    SURVIVAL — P(player still available at my next pick), roadmap 3.1
 
+   STATUS: the probabilistic core below (pSurvive/sigmaFor/expectedBest/
+   survivalCosts) is TESTED BUT NOT WIRED IN. pickScore's step 9 uses a much
+   simpler deterministic margin instead (nextPick - adpRank, as a fraction of
+   a round) computed inline in snake-engine.js. This file keeps the fuller
+   model as documented, correct infrastructure — same treatment this repo
+   gives every other measured-but-not-adopted result (rookie draft capital,
+   outcome-distribution follow-ups) — because the reason it was set aside is
+   not that it was wrong, it is that it did not clearly earn its complexity.
+
+   WHY IT WAS SET ASIDE. Two solidly-evidenced findings plus an architectural
+   one — NOT three, see the correction below:
+     1. Season-clustered robustness (added after the pooled-SE gate passed,
+        because pooling 10,800 paired drafts as independent when they share
+        boards within a season is optimistic) came back at mean/SE +1.59
+        across 9 seasons — the pre-registered pooled bar (mean/SE >= 2)
+        passed, but the more conservative one did not, and 2/9 seasons were
+        negative. One season (2024, +70.1) carried a large share of the
+        pooled effect.
+     2. That same season was one of the thinnest for ADP coverage even AFTER
+        fixing the real bug this step surfaced (adp_probe.fetch_adp had no
+        429 retry, unlike every other FantasyPros loop in this pipeline —
+        see git history). Missing ADP falls back to p=1 ("assume available"),
+        which is sane for one missing player and a source of large uniform
+        cost for an entire thin season. The fix corrected zero coverage;
+        partial thinness is a smaller version of the identical mechanism.
+     3. Architectural: needMult/byeClash already covered need and byes in
+        pickScore before this step started. The only genuinely missing piece
+        was a next-pick lookahead, and answering that does not require
+        modeling uncertainty at all.
+
+   CORRECTION, caught before it settled anywhere but this file and
+   ROADMAP.md: an earlier draft cited a third finding, "the sigma sweep found
+   the gate's verdict insensitive to cv across a 5x range (mean/SE
+   12.5-17.1)". That number is the TEMPERATURE sweep (cv held fixed at 0.35),
+   mistakenly cited as the cv sweep. The only run that ever swept multiple cv
+   values was underpowered (12 seeds) and possibly predated the ADP-fetch
+   fix — not clean evidence either way. σ's sensitivity is genuinely
+   UNRESOLVED. The simplification does not need it: findings 1-3 above stand
+   on their own.
+
+   None of the above proves the probabilistic model is WRONG — the
+   pre-registered gate did clear. It proves the strongest result concentrates
+   in the season most exposed to the exact fragility that produced a false
+   result earlier in the same investigation, and that a simpler mechanism
+   reusing already-shipped, already-validated signals captures the same "who
+   will not last" direction with far less surface area to get wrong.
+   Parsimony decides it, same as 0.2's slot configs.
+
    The snake question is not "who is best" but "who will not last". Two
    players of equal value are not equal choices: if one will still be there
    in two rounds and the other will not, taking the one who would have
-   survived burns the pick on someone you could have had for free.
-
-   WHAT THIS IS NOT. It is not a re-ranking or a bonus bolted onto value.
-   It is a two-ply lookahead — score a pick by what it is worth PLUS what
-   it leaves you at your next pick — expressed in the algebraically
-   identical opportunity-cost form (see `survivalCosts`) because that form
-   drops into the existing engine as a small subtraction rather than a
-   large additive term on a different scale.
+   survived burns the pick on someone you could have had for free. That
+   question is still answered — just not by what's below.
 
    THE OBJECTIVE IS INJECTED, NOT INLINED (roadmap restructure). Every
-   function here takes `valueOf(player) -> number`. Today callers pass VBD.
-   A later ΔP(title) drops into the same argument without touching any of
-   the maths below. Nothing here knows or cares what value means.
+   function here takes `valueOf(player) -> number`. Nothing here knows or
+   cares what value means. This held for the shipped simplification too:
+   the margin multiplies `base`, which is computed from whatever valueOf
+   pickScore's caller used.
    ===================================================================== */
 
 /**

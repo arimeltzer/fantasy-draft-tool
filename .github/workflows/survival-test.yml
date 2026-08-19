@@ -1,25 +1,35 @@
-name: Survival lookahead test (roadmap 3.1)
+name: Survival lookahead test (roadmap 3.1 — STALE, see warning below)
 
-# Manual. Simulates whole snake drafts against the SHIPPED pickScore to ask
-# whether the two-ply survival lookahead earns its place, against the gate
-# pre-registered in docs/ROADMAP.md 3.1 before any of the code was written.
+# WARNING — DO NOT DISPATCH AS-IS. This workflow's own past results are real
+# (see docs/ROADMAP.md 3.1 RESULT) but the code path it depends on no longer
+# exists: draft-sim.mjs's `cfg.survival` branch used to compute survivalCosts
+# from a modeled sigma; the simplification replaced that with a deterministic
+# margin that ignores sigma entirely. Dispatching this NOW would silently
+# exercise the SIMPLIFIED mechanism while this file's own comments describe
+# the probabilistic one — a sigma sweep would report perfect "insensitivity"
+# for the wrong reason (the parameter isn't read any more, not because it
+# doesn't matter), which is precisely the failure mode CLAUDE.md's "npm run
+# build does not prove the UI renders" lesson warns about: a test that looks
+# clean and exercises the wrong thing. To make this runnable again,
+# draft-sim.mjs needs the probabilistic branch restored behind a distinct
+# flag (e.g. cfg.survivalModel === 'probabilistic'), separate from the
+# shipped cfg.survival path. Not done here — the historical result already
+# answered the question this file exists to ask; a second run is not owed
+# unless the probabilistic model is reconsidered for shipping.
 #
-# Two sweeps, and both are part of the answer rather than tuning:
+# What this validated, historically: whether a two-ply survival lookahead
+# (modeled P(player available at next pick), truncated-normal on ADP with a
+# swept dispersion `cv`) earns its place, against the gate pre-registered in
+# docs/ROADMAP.md 3.1. Gate cleared on the pre-registered terms; a
+# season-clustered robustness check added afterward did not; per-position
+# analysis pointed at fragility in the underlying ADP data (see the RESULT
+# for the full account, including a correction to an earlier mis-cited
+# sigma-sensitivity claim — sigma's sensitivity was never actually
+# established with a clean, powered sweep).
 #
-#   sigma (cv)  — there is no ADP dispersion anywhere in this project, so this
-#                 cannot be fitted. The question the pre-registration asks is
-#                 whether the VERDICT is sensitive to it. Insensitive means the
-#                 number was not doing work; sensitive means this needs real
-#                 draft-position data before it ships.
-#
-#   temperature — the circularity control. pSurvive is derived from ADP and the
-#                 opponent bots draft BY ADP, so the agent has privileged
-#                 knowledge of the room. If the edge decays as the room stops
-#                 following ADP, the headline number is largely self-fulfilling.
-#
-# Needs FANTASYPROS_API_KEY — the bots draft by that season's real ADP, and
-# pSurvive is measured against that same real ADP. Without it the whole test
-# would be the model grading its own homework.
+# The circularity-control (bot temperature) sweep did produce a real,
+# well-powered result on this same code before the simplification and is
+# recorded in the RESULT — that part does not need re-litigating.
 
 on:
   workflow_dispatch:

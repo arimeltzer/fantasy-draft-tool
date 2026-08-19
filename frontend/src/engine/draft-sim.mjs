@@ -33,7 +33,7 @@
  */
 import { pickScore, maxUseful, DEFAULT_SNAKE_PARAMS } from "./snake-engine.js";
 import { rankByAdp } from "./engine-core.js";
-import { survivalCosts, nextPickNumber } from "./survival.js";
+import { nextPickNumber } from "./survival.js";
 
 /** Deterministic RNG so a comparison can be replayed exactly. */
 export function mulberry32(seed) {
@@ -141,19 +141,12 @@ export function simulateDraft({
         poolSize: avail.length,
       };
 
-      // Survival lookahead (roadmap 3.1), opt-in per agent so the paired
-      // comparison can run identical leagues with this as the ONLY difference.
-      // `ranks` is ADP order, which is the expected-draft-position scale
-      // pSurvive wants; `vbd` is the injected objective for now.
+      // Survival margin (roadmap 3.1 — SIMPLIFIED), opt-in per agent so the
+      // paired comparison can run identical leagues with this as the ONLY
+      // difference. Just the next pick number; pickScore does the rest with
+      // adpRankById it already has.
       if (cfg.survival) {
-        const costs = survivalCosts({
-          candidates: avail,
-          nextPick: nextPickNumber(myRound, teams, cfg.slot, rounds),
-          adpOf: (p) => ranks[p.id] ?? (avail.length + 1),
-          valueOf: (p) => p.vbd,
-          sigma: cfg.sigma || {},
-        });
-        live.survivalCostById = Object.fromEntries(costs);
+        live.nextPick = nextPickNumber(myRound, teams, cfg.slot, rounds);
       }
       let best = -Infinity;
       for (const p of avail) {

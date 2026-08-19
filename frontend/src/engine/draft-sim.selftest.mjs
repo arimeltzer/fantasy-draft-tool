@@ -194,35 +194,14 @@ for (const teams of [8, 10, 12]) {
   check("the survival agent is deterministic",
         run({ survival: true }) === run({ survival: true }));
 
-  // Sigma must actually reach the maths — roadmap 3.1 SWEEPS it, so a sweep
-  // over a parameter that never arrives would report a flat curve and call it
-  // insensitivity. Needs its own board: on the one above, RB1's cost dominates
-  // the one-point value gap at every cv, so nothing turns over no matter what
-  // sigma does. Here the gap is 150 and the flip point sits at 1.3 x 150 = 195,
-  // which RB1's cost straddles as the room goes from orderly to chaotic.
-  {
-    const sigBoard = [
-      { id: 1, pos: "RB", vbd: 300, adp: 60 },
-      { id: 2, pos: "RB", vbd: 150, adp: 2 },
-      ...Array.from({ length: 60 }, (_, i) => ({
-        id: i + 3, pos: ["WR", "QB", "TE"][i % 3], vbd: +(100 - i).toFixed(1), adp: i + 3,
-      })),
-    ].map((p) => ({
-      name: `S${p.id}`, team: "XX", age: 26, risk: 0.1, trend: 0,
-      valuePoints: p.vbd + 20, ...p,
-    }));
-    const firstAt = (cv) => simulateDraft({
-      board: sigBoard, teams: 10, rounds: 15, roster, seed: 7,
-      agents: { 0: { slot: 1, survival: true, sigma: { cv } } },
-    }).rosters[0][0].id;
+  // roadmap 3.1 was SIMPLIFIED from a modeled probability (sigma parameter,
+  // swept in survival-test.mjs) to a deterministic margin — see survival.js's
+  // header for why: the sigma sweep itself found the gate's verdict
+  // insensitive to cv, which was evidence the modeling wasn't earning its
+  // complexity. No sigma exists to test here any more.
 
-    check("an orderly room makes the survivor too expensive to take now",
-          firstAt(0.05) === 2, `took ${firstAt(0.05)}`);
-    check("a chaotic room makes him worth taking anyway",
-          firstAt(3.0) === 1, `took ${firstAt(3.0)}`);
-  }
-
-  // Bot faithfulness is the circularity control — it has to be live too.
+  // Bot faithfulness is still a live concern for the simplified margin too —
+  // it reads adpRankById, which the bots' own draft order produces.
   const atTemp = (t) => simulateDraft({
     board, teams: 10, rounds: 15, roster, seed: 7, temperature: t,
     agents: { 4: { slot: 5, survival: true } },
