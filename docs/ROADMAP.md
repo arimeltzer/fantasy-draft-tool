@@ -1435,21 +1435,191 @@ becomes the objective every later phase optimizes.
 teams given 15% win about 15% of the time. An uncalibrated title probability is
 worse than none, because every downstream decision inherits its bias.
 
+**NOT STARTED, and a feasibility probe comes first — see the restructure below.**
+The gate above needs many independent team-seasons with known outcomes to
+bucket. One real league-season produces one champion, and this project has no
+corpus of historical leagues. Reconstructed leagues can supply arbitrary
+volume but risk validating the simulator against its own assumptions. Whether
+this gate is *measurable at acceptable cost* is itself an open question and is
+settled BEFORE any simulator is written — the `injury_probe.py` precedent,
+where the endpoint was verified genuine before 0.3 was built on it.
+
 > **Prompt** — "Start roadmap Phase 2, step 2.1 only: per-player outcome
 > distributions with interval-calibration validation. Do not wire them into
 > anything until the calibration check passes."
 
 ---
 
+## RESTRUCTURE — written after 2.2 closed, before Phase 3 began
+
+Two assumptions that ordered the original plan have expired. Recorded here
+rather than silently edited into the phases above, so the reasoning stays
+auditable alongside the results that forced it.
+
+**1. Finding A is no longer true. The model now beats the market.** The audit
+that opened this document put projection work first because "the market beats
+the model at every position." After Phase 0/1, on the same matched population:
+
+| | model now | plain ADP | audit's model |
+|---|---|---|---|
+| QB | 0.6358 | 0.648 | 0.497 |
+| RB | **0.6921** | 0.652 | 0.551 |
+| TE | **0.5606** | 0.535 | 0.472 |
+| WR | **0.6681** | 0.650 | 0.594 |
+
+The model beats plain ADP at RB/TE/WR and is level at QB. Remaining Phase 1
+ideas are chasing +0.003–0.01 against a baseline that has already caught the
+market — real diminishing returns, and a reason not to keep mining there.
+
+**2. Finding B is fully intact, but its decomposition was wrong.** The
+objective really is still a point estimate everywhere, and that is still the
+largest unexploited idea in the tool. 2.2's failure says nothing about the
+goal and everything about the route. Two numbers from #32203391598:
+
+- **form owns 6.7–11.7% of weekly-ratio variance** — the missing correlation
+  is game-script/matchup-level, not season-level.
+- **49.4% of player-weeks score exactly 0**, over ADP-ranked, live-board-
+  projected players.
+
+The second is the tell. A process that is half point-mass-at-zero and half
+continuous is a **mixture**, and one pooled continuous distribution cannot
+represent it — which predicts exactly the failure observed: position-dependent
+misses in OPPOSITE directions (TE 0.715 too narrow, RB 0.861 too wide). 2.2
+did not fail because the fit was tuned wrong. **It failed because the unit was
+wrong.** (Caveat before anyone acts on the 49.4%: it pools all ADP depths and
+deep players dominate the count; it needs a rank-conditioned breakdown before
+it means what it appears to mean.)
+
+**3. The plan was a tall serial tower, and it does not need to be.** 2.1 → 2.2
+→ 2.3 → Phase 3 → Phase 4, each depending on the one below, which put the
+highest-payoff lowest-risk work BEHIND the highest-risk work — and that layer
+has now failed twice. But every Phase 3 step splits into a mechanism that is
+Phase-2-free and an objective that is not:
+
+| step | mechanism (independent) | objective (needs 2.3) |
+|---|---|---|
+| 3.1 survival probability | P(available at next pick) from ADP + dispersion | "maximize ΔP(title)" |
+| 3.2 positional runs | live update from the pick log | — (rides on 3.1) |
+| 3.3 auction budget path | knapsack/DP over reachable rosters | "evaluated on P(title)" |
+| 3.4 bid ceilings | second-bidder cap from `oppBudgets` | **none — fully independent** |
+
+The original text treats building mechanisms first as a time-pressure
+compromise ("if time is short before a draft"). On the evidence it is simply
+the better ordering: the mechanisms are near-certain, independent, and closest
+to the moment the tool is actually used.
+
+**Consequences, adopted:**
+
+1. **Phase 3 mechanisms proceed now**, against the CURRENT objective, with the
+   objective injected rather than inlined.
+2. **2.3 gets a feasibility probe before any build** (recorded in 2.3 above).
+3. **If Phase 2 resumes, the unit changes from player-weeks to team-weeks.** A
+   team-week is a sum of ~9 starters; the zero-inflation that wrecked
+   per-player fits largely washes out in the sum, and P(title) only ever
+   consumes team totals. The cost is per-player weekly attribution — which
+   forfeits start/sit (4.2) and bench option value, but NOT P(title).
+4. **"Everything optimizes ΔP(title)" is no longer a prerequisite.** It is a
+   target the objective seam can reach later.
+
+**Two disciplines that make "swap the objective in later" a tweak rather than
+a rewrite**, and they are commitments, not intentions:
+
+- **The objective lives behind a seam.** Search takes an injected
+  `valueOf(player, ctx) → number`. Today it returns VBD; later ΔP(title). If
+  point-maximization gets inlined into a DP recurrence or the survival maths,
+  swapping the objective means rewriting the search.
+- **Do not fit constants under the interim objective.** This project has been
+  burned twice by exactly that — 0.2's slot configs died out of sample, and
+  1.3's signals evaporated when re-baselined against the live board. Anything
+  tuned against points may not transfer to titles. Keep Phase 3 minimally
+  parameterized and re-validate after any objective swap.
+
+---
+
 ## Phase 3 — Draft-time optimization
 
-Now the objective exists, the draft becomes a search problem. **This is where
-snake and auction genuinely diverge.**
+The draft is a search problem. **This is where snake and auction genuinely
+diverge.**
+
+Per the restructure above, each step is built **mechanism-first against the
+current objective**, with the value function injected so a later ΔP(title) can
+replace it without touching the search.
 
 ### 3.1 Snake: survival probability *(highest-value snake feature)*
 Nothing in the engines computes P(player available at my next pick). This is the
 snake question — not "who is best" but "who will not last". Derive it from ADP
 and its dispersion, then choose to maximize ΔP(title) rather than raw value.
+
+**PRE-REGISTRATION, written before the code exists.**
+
+*The quantity*: `pSurvive(i, N)` = P(player `i` is still on the board at my next
+pick, overall pick `N`). Modelled as a draft position `D_i` centred on the
+player's ADP with dispersion `σ`, truncated at 1 (nobody goes before the first
+pick), so `pSurvive(i, N) = P(D_i > N)`.
+
+*The dispersion problem, stated rather than papered over*: *no ADP dispersion
+exists anywhere in this repo* (`fantasy_players` carries `ecr, adp, aav` — a
+consensus mean with no spread; a grep for any dispersion field returns
+nothing). σ therefore has to be modelled, and there is no data here to fit it
+against.
+
+*So σ is NOT fitted — it is swept, and the sweep is the result.* Rather than
+guess a constant and quietly tune it (precisely what the restructure's second
+discipline forbids), σ is swept across a wide range and the question asked is
+whether **the gate outcome is sensitive to it**:
+  - **Insensitive** → the parameter is not load-bearing; ship with a stated
+    default and record the insensitivity as the evidence that it does not
+    matter.
+  - **Sensitive** → we have learned that real draft data is required before
+    this can ship, which is a finding and not a failure. It would also mean any
+    σ picked today is doing real work nobody measured — the exact thing 0.2's
+    hundred slot configs turned out to be doing.
+
+*Shape is held fixed at truncated-normal, and that is a documented limitation
+rather than a validated choice.* Real draft position is right-skewed (a player
+can fall much further than he can rise). Sweeping shape AND σ together would
+make this a two-hypothesis search; (c) and (e) both stayed one-hypothesis by
+holding everything but the tested parameter fixed, and this follows them.
+
+*How it changes the pick — a 2-ply lookahead, not a re-ranking.* Today the
+engine takes `argmax V(i)`. Survival-aware becomes
+`argmax [ V(i) + E(best available to me at my next pick | i taken now) ]`,
+where the expectation runs over `pSurvive` for everyone else. That second term
+is the entire point: between two players of equal value it prefers the one who
+will NOT last. Full DP over the remaining draft is exponential and unnecessary
+— 2-ply is where the value is, and the extra plies are unvalidatable anyway
+against ADP-bot opponents.
+
+*The objective seam, as a commitment*: the search calls an injected
+`valueOf(player, ctx) → number`, defaulting to VBD. ΔP(title) drops in there
+later without touching the survival maths or the lookahead. Point-maximization
+is not inlined anywhere in either.
+
+*Gate*: paired head-to-head through `draft-sim.mjs`'s existing `pairedCompare`
+— survival-aware agent against the current agent, identical pool, seed and
+opponent behaviour (common random numbers), so the difference is attributable
+to the change and nothing else. Required, both:
+1. **Pooled `mean/SE ≥ 2`.** 0.2 established the scale on this exact harness:
+   4.24 read as real, 1.16 as noise.
+2. **Positive mean at a MAJORITY of draft slots.** A gain concentrated in one
+   seat is the signature 0.2 found in the slot configs and is not shippable as
+   a general mechanism.
+
+*The threat to validity, named up front because it is severe*: `draft-sim.mjs`
+opponents are ADP bots, and `pSurvive` is DERIVED from ADP. The model therefore
+has privileged knowledge of exactly how these opponents behave, and beating
+them is partly circular — the harness's own header already warns "a config that
+only beats ADP bots has proved little." Mitigation, pre-registered: run the
+gate across a range of bot `temperature` (how faithfully the room follows ADP)
+and **report the edge as a function of room faithfulness**. If the advantage
+exists only against faithful-ADP rooms and decays to nothing as the room gets
+noisier, that is a much weaker claim than the headline number and gets reported
+as such rather than buried.
+
+*What a pass would NOT prove*: that the edge survives against opponents who
+themselves reason about survival (the bots do not), or that σ is right (see
+the sweep — a pass under insensitivity means σ did not matter, not that it was
+correct).
 
 ### 3.2 Snake: positional run detection
 When three running backs go in five picks, the next five are likelier to be
@@ -1501,8 +1671,8 @@ decided after the draft. Everything here reuses the Phase 2 objective.
 |---|---|---|---|
 | 0 | Days | Moderate, near-certain | Low — 0.1, 0.2 and 0.3 are all done; see their results above |
 | 1 | Weeks | Real, but position-specific | Moderate — 1.1/1.2 done, TE only; 1.3 done, team_change RB/WR only (qb_change/coach_change/pace failed); 1.4 done, not shipped (draft capital ≈ what ADP already knows for rookies) |
-| 2 | Weeks | Largest conceptual | **Highest** — calibration is hard and unglamorous; 2.1 confirmed it (method sound, tails unresolved, age dead) |
-| 3 | Weeks | Large, format-specific | Moderate — depends entirely on Phase 2 |
+| 2 | Weeks | Largest conceptual | **Highest** — 2.1 done (RB/WR/TE calibrated, QB excluded); 2.2 CLOSED, both attempts rejected; 2.3 not started, pending a feasibility probe |
+| 3 | Weeks | Large, format-specific | Moderate — **no longer depends on Phase 2**; mechanisms build against the current objective behind a seam (see RESTRUCTURE) |
 | 4 | Ongoing | Large over a season | Low technically, wide in scope |
 
 **Do Phase 0 first regardless.** All three steps are done. It was cheap: 0.1
@@ -1511,10 +1681,13 @@ removed ~100 numbers nobody could show still earned their place, and 0.3
 shipped a real, positionally-honest gain for QB/RB while correctly declining
 to ship one for TE/WR.
 
-**If time is short before a draft**, do Phase 0, then 3.1 (snake) or 3.3/3.4
-(auction) using the *current* projection. Survival probability and budget paths
-improve decisions even on a mediocre projection, because they attack timing and
-allocation rather than valuation.
+**Build Phase 3 mechanisms on the current objective** — 3.1 (snake) or 3.3/3.4
+(auction). Survival probability and budget paths improve decisions even on a
+mediocre projection, because they attack timing and allocation rather than
+valuation. Written originally as the "if time is short" fallback; promoted to
+the default ordering by the RESTRUCTURE above, on the evidence that the
+mechanisms are independent and near-certain while the objective above them has
+already failed twice.
 
 **Do not start Phase 2 casually.** An uncalibrated simulator that reports
 confident title probabilities is worse than the current tool, which at least
