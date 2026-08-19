@@ -85,9 +85,9 @@ jobs:
         run: |
           node frontend/src/engine/survival-test.mjs \
             --data data-pipeline/results/draft_seasons.json \
-            --seeds 1 \
+            --seeds ${{ inputs.seeds }} \
             --cvs 0.35 \
-            --temps 4 | tee data-pipeline/results/survival_test.txt
+            --temps 2,4,8,16 | tee data-pipeline/results/survival_test.txt
 
       - uses: actions/upload-artifact@v4
         with:
