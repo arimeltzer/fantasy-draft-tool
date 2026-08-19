@@ -34,6 +34,7 @@
 import { pickScore, maxUseful, DEFAULT_SNAKE_PARAMS } from "./snake-engine.js";
 import { rankByAdp } from "./engine-core.js";
 import { nextPickNumber } from "./survival.js";
+import { runHotness } from "./positional-run.js";
 
 /** Deterministic RNG so a comparison can be replayed exactly. */
 export function mulberry32(seed) {
@@ -114,6 +115,9 @@ export function simulateDraft({
   const taken = new Set();
   const rosters = Array.from({ length: teams }, () => []);
   const counts = Array.from({ length: teams }, emptyCounts);
+  // Positional-run detection (roadmap 3.2) reads recent draft-wide pace, not
+  // one team's — every pick, agent or bot, is logged.
+  const pickLog = [];
 
   for (let overall = 0; overall < order.length; overall++) {
     const team = order[overall];
@@ -148,6 +152,13 @@ export function simulateDraft({
       if (cfg.survival) {
         live.nextPick = nextPickNumber(myRound, teams, cfg.slot, rounds);
       }
+      // Positional run (roadmap 3.2), opt-in independently of survival for
+      // isolation in paired comparisons — though it is inert unless survival
+      // is ALSO on, since it only ever modifies that margin. Only the recent
+      // window matters; runHotness itself slices to `teams`.
+      if (cfg.positionalRun) {
+        live.runHotByPos = runHotness(pickLog, teams);
+      }
       let best = -Infinity;
       for (const p of avail) {
         const { score, blocked } = pickScore(p, live, cfg.params || P);
@@ -167,6 +178,7 @@ export function simulateDraft({
     taken.add(choice.id);
     rosters[team].push(choice);
     counts[team][choice.pos] = (counts[team][choice.pos] || 0) + 1;
+    pickLog.push(choice.pos);
   }
 
   return { rosters, counts };

@@ -260,6 +260,52 @@ check("a non-10-team league also uses it",
         byeAndMargin > byeOnly);
 }
 
+// ── positional run discount (roadmap 3.2) ─────────────────────────────────
+// A run shrinks the margin BEFORE the step-9 urgency check, so it can turn a
+// previously-safe read into an urgent one — that composition is the point.
+{
+  const rb = player("RB", 100);
+  const wr = player("WR", 100, { id: "WR-100" });
+  const r1 = { round: 1 };
+
+  // adpRank 31, nextPick 20, teams 10 -> margin = 1.1 rounds: just OUTSIDE
+  // the urgency window on its own.
+  const justSafe = { ...r1, nextPick: 20, adpRankById: { "RB-100": 31 } };
+  check("without a run, 1.1 rounds of margin is safe (no urgency)",
+        pickScore(rb, state(justSafe)).score === pickScore(rb, state(r1)).score);
+
+  // The same player, same margin, but RB is running hot (hot=1, the max).
+  // 1.1 x (1 - 0.30) = 0.77 rounds -> crosses under 1 -> urgency now applies.
+  const withRun = { ...justSafe, runHotByPos: { RB: 1 } };
+  check("a hot run flips a previously-safe margin into urgent",
+        pickScore(rb, state(withRun)).score > pickScore(rb, state(justSafe)).score);
+  check("the flipped case is flagged as a run",
+        pickScore(rb, state(withRun)).reasons.includes("RB run"));
+
+  // A genuinely comfortable margin survives even the maximum discount — the
+  // cap exists so a run cannot manufacture urgency out of real safety.
+  const veryComfortable = { ...r1, nextPick: 20, adpRankById: { "RB-100": 70 }, runHotByPos: { RB: 1 } };
+  check("a large margin stays safe even at maximum run discount",
+        pickScore(rb, state(veryComfortable)).score === pickScore(rb, state(r1)).score);
+
+  // Per-position: an RB run does not touch a WR's margin.
+  const wrUnaffected = { ...r1, nextPick: 20, adpRankById: { "WR-100": 31 }, runHotByPos: { RB: 1 } };
+  check("a run at one position does not discount another position's margin",
+        pickScore(wr, state(wrUnaffected)).score === pickScore(wr, state({ ...r1, nextPick: 20, adpRankById: { "WR-100": 31 } })).score);
+
+  // No runHotByPos at all is identical to hot=0 — opt-in, absent by default.
+  check("absent runHotByPos matches explicit hot=0",
+        pickScore(rb, state(justSafe)).score
+          === pickScore(rb, state({ ...justSafe, runHotByPos: { RB: 0 } })).score);
+
+  // Below the reason-flag threshold (hot=0.5 exactly, not >0.5): the numeric
+  // effect still applies but isn't surfaced as a headline "run" flag — mild
+  // heat shouldn't shout as loud as a real one.
+  const mildHeat = { ...justSafe, runHotByPos: { RB: 0.5 } };
+  check("mild heat is not flagged as a run even if it nudges the score",
+        !pickScore(rb, state(mildHeat)).reasons.includes("RB run"));
+}
+
 console.log();
 if (fails.length) {
   console.error(`snake-engine.selftest: ${pass} passed, ${fails.length} FAILED — ${fails.join(", ")}`);

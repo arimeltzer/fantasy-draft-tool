@@ -53,6 +53,14 @@ export const DEFAULT_SNAKE_PARAMS = {
   // decaying linearly to 0 at a full round of margin.
   survivalUrgencyMax: 0.15,
 
+  // Positional run discount (roadmap 3.2). Deliberately SMALL and unfitted,
+  // same discipline as byeClashStep/Max and survivalUrgencyMax: at hotness=1
+  // (every recent pick at this position, the most extreme case possible),
+  // the ADP-implied margin shrinks by at most 30% — enough to turn a
+  // marginal "safe" read into "urgent" for a player already close to that
+  // line, not enough to manufacture urgency for one comfortably inside it.
+  runMarginDiscount: 0.30,
+
   // The config every draft slot now uses — see SLOTS below for why there is
   // only one. Held-out simulation could not distinguish ten tuned configs from
   // this single shared one, so this is the whole per-slot strategy.
@@ -281,12 +289,24 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
   // A capped-multiplier read, matching how needMult/byeClash already scale
   // `base` rather than adding a separately-weighted term — keeps this in the
   // same units as steps 1/8 instead of introducing a new scale to tune.
+  //
+  // Positional run discount (roadmap 3.2, see positional-run.js). A run
+  // shrinks the trust placed in adpRank's cushion BEFORE the margin logic
+  // runs: adpRank describes normal pace, and a run is the room demonstrating
+  // it isn't drafting at normal pace right now. `s.runHotByPos` is computed
+  // ONCE per pick by the caller (same pattern as posRemaining/needs), not
+  // per-candidate — it is a property of the whole recent pick log, not of
+  // one player. Capped at runMarginDiscount, same unfitted-constant
+  // discipline as every other multiplier here.
   if (s.teams && Number.isFinite(s.nextPick) && adpRank <= s.poolSize) {
-    const marginRounds = (adpRank - s.nextPick) / s.teams;
+    let marginRounds = (adpRank - s.nextPick) / s.teams;
+    const hot = (s.runHotByPos && s.runHotByPos[pos]) || 0;
+    if (hot > 0) marginRounds *= (1 - P.runMarginDiscount * hot);
     if (marginRounds < 1) {
       const urgency = 1 + P.survivalUrgencyMax * Math.min(1, Math.max(0, 1 - marginRounds));
       base *= urgency;
       if (marginRounds < 0) reasons.push("won't last");
+      if (hot > 0.5) reasons.push(`${pos} run`);
     }
   }
 

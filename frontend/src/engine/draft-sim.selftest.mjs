@@ -209,6 +209,93 @@ for (const teams of [8, 10, 12]) {
   check("bot temperature changes opponent behaviour", atTemp(1) !== atTemp(20));
 }
 
+// ── positional run wiring (roadmap 3.2) ───────────────────────────────────
+// Slot 10 (last pick of round 1): 9 bot picks happen first. The top 60 ranks
+// are ALL running backs, so bots — who only ever draw from the top-25-by-
+// rank of what's left — are structurally unable to pick anything else for
+// all 9 of those picks (60 - 8 already-taken >= 25 at every one of the 9
+// decisions, so the pool can never be diluted by a non-RB). This is a
+// guarantee from the board's construction, not a probabilistic hope, so the
+// test can assert on it directly rather than trusting a seed.
+//
+// The alternative candidate has to be a WR: TE and QB are both hard-gated in
+// round 1 (teMinRound/QB_MIN), so WR is the only other legal first pick. That
+// collides with step 5's WR era premium (a rank-based multiplier for WRs in
+// rounds 1-3) unless the WR's rank is pushed past 72, where every premium
+// tier stops applying — hence 60 RB fillers rather than a smaller number:
+// enough other low-priority filler players exist below the focal WR that its
+// rank clears 72 and the premium never enters the comparison at all.
+{
+  // vbd deliberately LOW and uniform for every filler — bots pick by RANK
+  // only (adp), never by vbd, so this has no effect on which 9 they take.
+  // But OUR agent scores by vbd, and every filler being available at once
+  // means all the survivors compete for our pick too — they must not
+  // outscore the two focal candidates just by having been given a bigger
+  // number for no reason.
+  const rbFillers = Array.from({ length: 60 }, (_, i) => ({
+    id: i + 1, name: `RB${i + 1}`, pos: "RB", team: "XX",
+    age: 26, risk: 0.1, trend: 0, vbd: 50, valuePoints: 70, adp: i + 1,
+  }));
+  const RB_FOCAL_ID = 22;   // adp 22 -> rank 22
+  rbFillers[RB_FOCAL_ID - 1].vbd = 100;   // the value that makes the math work out below
+
+  const otherFillers = [
+    ...Array.from({ length: 10 }, (_, i) => ({
+      id: 100 + i, name: `WRf${i}`, pos: "WR", team: "XX",
+      age: 26, risk: 0.1, trend: 0, vbd: 50, valuePoints: 70, adp: 61 + i,
+    })),
+    ...Array.from({ length: 5 }, (_, i) => ({
+      id: 120 + i, name: `QBf${i}`, pos: "QB", team: "XX",
+      age: 26, risk: 0.1, trend: 0, vbd: 50, valuePoints: 70, adp: 71 + i,
+    })),
+    ...Array.from({ length: 5 }, (_, i) => ({
+      id: 130 + i, name: `TEf${i}`, pos: "TE", team: "XX",
+      age: 26, risk: 0.1, trend: 0, vbd: 50, valuePoints: 70, adp: 76 + i,
+    })),
+  ];
+  const WR_FOCAL_ID = 999;
+  // adp far out; what matters is its RANK clears 72 (see header note above),
+  // which the 80 lower-adp fillers above guarantee regardless of this value.
+  const wrFocal = {
+    id: WR_FOCAL_ID, name: "WRfocal", pos: "WR", team: "XX",
+    age: 26, risk: 0.1, trend: 0, vbd: 102, valuePoints: 120, adp: 200,
+  };
+
+  const runBoard = [...rbFillers, ...otherFillers, wrFocal];
+  const runRoster = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, BENCH: 10 };
+
+  const runOne = (positionalRun) => simulateDraft({
+    board: runBoard, teams: 10, rounds: 2, roster: runRoster, seed: 3, temperature: 1,
+    agents: { 9: { slot: 10, survival: true, positionalRun } },
+  });
+
+  const withoutRun = runOne(false);
+  const withRun = runOne(true);
+
+  // Confirm the setup: all 9 pre-picks really were RBs, in both runs (the
+  // board guarantees this; verifying it is what makes the rest of this test
+  // trustworthy rather than assumed).
+  for (const [label, result] of [["without", withoutRun], ["with", withRun]]) {
+    const prePicks = result.rosters.slice(0, 9).map((r) => r[0]?.pos);
+    check(`setup check (${label} positionalRun): all 9 pre-picks are RB`,
+          prePicks.every((p) => p === "RB"), prePicks.join(","));
+  }
+
+  // The actual claim: identical board, identical bot behaviour up to this
+  // point (same seed/temperature) — the ONLY difference is whether our
+  // agent's own scoring sees the run it just watched happen. Without it,
+  // margin (22-11)/10=1.1 rounds reads as comfortably safe and the slightly
+  // more valuable WR wins (102 x 1.30 = 133.6 > 100 x 1.30 = 130). With it,
+  // the real 9-of-9 RB run (hot=1.0) shrinks that margin to 0.77 rounds,
+  // crossing into urgency (130 x 1.0345 = 134.485), and the RB flips ahead.
+  const myPickWithout = withoutRun.rosters[9][0];
+  const myPickWith = withRun.rosters[9][0];
+  check("without run-awareness, the slightly-better-value WR is taken",
+        myPickWithout?.id === WR_FOCAL_ID, `took id ${myPickWithout?.id}`);
+  check("with run-awareness, the live RB run flips the pick to the RB",
+        myPickWith?.id === RB_FOCAL_ID, `took id ${myPickWith?.id}`);
+}
+
 console.log();
 if (fails.length) {
   console.error(`draft-sim.selftest: ${pass} passed, ${fails.length} FAILED — ${fails.join(", ")}`);

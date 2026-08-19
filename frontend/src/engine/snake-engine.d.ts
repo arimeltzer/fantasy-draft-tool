@@ -18,6 +18,10 @@ export interface SnakeParams extends EngineParams {
   adpAbsCeil: number;
   byeClashStep: number;
   byeClashMax: number;
+  /** roadmap 3.1 — capped urgency boost when adpRank-nextPick margin is thin. */
+  survivalUrgencyMax: number;
+  /** roadmap 3.2 — max shrink of that margin when the position is running hot. */
+  runMarginDiscount: number;
   SLOT_DEFAULT: SlotConfig;
   SLOTS: Record<number, SlotConfig>;
 }
@@ -40,6 +44,12 @@ export interface SnakeLiveState {
   byeByTeam?: Record<string, number | null>;
   /** Byes of the players already on MY roster, grouped by position. */
   rosterByesByPos?: Record<string, (number | null)[]>;
+  /** roadmap 3.1 — the overall pick number I next get to act on. Absent
+   *  disables the survival margin entirely (opt-in by presence). */
+  nextPick?: number;
+  /** roadmap 3.2 — per-position run hotness in [0,1], from positional-run.js
+   *  runHotness() over the recent pick log. Absent = no discount applied. */
+  runHotByPos?: Record<string, number>;
 }
 
 export interface PickScoreResult {

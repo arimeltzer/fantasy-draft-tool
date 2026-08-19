@@ -1713,9 +1713,97 @@ green); the sigma/temperature sweep harness (`survival-test.mjs`) stays as
 the tested apparatus that produced the insensitivity finding, not deleted,
 but the shipped mechanism no longer depends on running it.
 
-### 3.2 Snake: positional run detection
+### 3.2 Snake: positional run detection — DONE, shipped
 When three running backs go in five picks, the next five are likelier to be
 running backs. Update survival probabilities live from the pick log.
+
+**PRE-REGISTRATION, written before the code exists.**
+
+*The quantity*: per-position "hotness" in [0,1] — how far recent picks at a
+position exceed its fair share of a one-round window. `MIN_RUN_COUNT = 3`
+(the roadmap's own worked example, taken literally, not derived) gates out
+noise; `baseline = 1/4` (four skill positions) is the fair-rotation share;
+`windowSize = teams` (one full turn of the snake — structural, not fitted:
+a run inside one round means something different from the same count spread
+across the whole draft).
+
+*What this does NOT attempt*: distinguishing a real run (the room reaching)
+from a boring ADP-consistent stretch (round 1 is naturally RB/WR-heavy, so
+three RBs in five early picks can be exactly what ADP predicted). Telling
+those apart needs an expected-pace model, which is real work with its own
+failure modes — 0.2's ten per-slot configs were exactly an attempt at
+modelling per-slot expected behavior, and did not survive held-out data. This
+ships the simpler, honestly-labeled version: a frequency read, not a
+deviation-from-expectation read.
+
+*Mechanism*: feeds 3.1's margin, not a new step. `marginRounds *= (1 -
+runMarginDiscount * hot)`, applied before the existing capped-urgency check —
+a run means the ADP-implied cushion was computed assuming normal pace, and
+the room just demonstrated it isn't drafting at normal pace, so the trust
+placed in that cushion shrinks rather than a new signal being invented.
+`runMarginDiscount = 0.30`, same unfitted-constant discipline as
+`byeClashStep/Max` and `survivalUrgencyMax`: capped so a run can shrink a
+comfortable margin, never manufacture urgency out of a genuinely large one.
+
+*No formal historical gate, and that is a deliberate proportionality call,
+not a skipped step.* 3.1's own investigation cost real time chasing a
+rate-limit bug and a season-clustering ambiguity to validate a mechanism that
+was then simplified away — the lesson taken from that is not "always run the
+full gate," it is "match the validation to what the mechanism claims." This
+is a small, capped multiplier layered on an already-shipped, already-
+validated margin, built to the exact same discipline `byeClash` already
+shipped under without a historical backtest — that precedent's own words:
+"not fitted; there is no held-out evidence behind them, and a bigger number
+would need some." A bigger number here would need one too; 0.30 does not.
+Validated instead by an end-to-end simulator test that constructs a REAL
+emergent run (not a hand-fed hotness value) via `draft-sim.mjs` and confirms
+it flips an actual pick — see RESULT.
+
+*What a pass would NOT prove*: that 0.30 is the right cap, or that frequency-
+based detection is what a deviation-from-ADP-expectation detector would have
+found. Both are open if this is ever revisited with real weight behind it.
+
+**RESULT.** Shipped as `positional-run.js` (`runHotness()`, 16 selftests) —
+pure, stateless, takes a chronological position log and returns per-position
+hotness. Wired into `pickScore` step 9 (46→53 snake-engine selftests) and
+`draft-sim.mjs` (opt-in `cfg.positionalRun`, independent of `cfg.survival` so
+paired comparisons can isolate either mechanism; 30 draft-sim selftests, +2
+net).
+
+*The load-bearing test is end-to-end, not a hand-fed hotness value.* A board
+where the top 60 ADP ranks are entirely running backs guarantees — by
+construction, not by seed luck, since bots only ever draw from the top-25-
+by-rank of what remains — that all 9 picks before an agent at slot 10 are
+real RBs. Without run-awareness the simulator takes a marginally-better-value
+WR (133.6 > 130); with it, the SAME real 9-of-9 run the simulator itself
+produced (`hot.RB` computed as 1.0 from the actual pick log, not asserted)
+shrinks the RB's margin from 1.1 rounds to 0.77, crossing into urgency
+(134.5 > 132.6), and the pick flips to the RB. Two real engineering
+mistakes surfaced and were fixed getting there, both worth recording because
+they're the kind of thing a hand-fed unit test would never catch: giving
+every RB filler a high `vbd` (bots pick by rank only, but the AGENT scores
+by vbd, so fillers meant only to attract BOTS were also outscoring the
+actual test candidates) and not accounting for step 5's WR-era-premium
+tiers, which apply by RANK, not raw `adp` (a WR placed at `adp: 200` still
+landed inside a premium tier because only 61 total players existed on that
+board — fixed by widening the filler pool until its rank genuinely cleared
+72, not by asserting the premium away).
+
+**A gap in 3.1 found and fixed along the way.** `pickScore`'s `nextPick`-
+driven margin shipped fully tested in the engine and wired into
+`draft-sim.mjs`, but was never actually wired into the real app —
+`SnakeRoom.tsx`'s `live` object never set `nextPick`, so the mechanism was
+live in the simulator that validated it and dead in the product the
+validation was meant to justify shipping. Fixed here (`nextPick: nextMine`,
+reusing the pick-clock value `SnakeRoom.tsx` already computes) alongside 3.2's
+own wiring, since 3.2 modifies the same mechanism and building on top of an
+unwired one would have made this step's own validation meaningless. Also
+missing and fixed: `survivalUrgencyMax` was never added to `snake-engine.d.ts`
+— TypeScript had no way to catch either gap because nothing exercised the
+real code path. `npm run build` passed the whole time, which is exactly the
+"build does not prove the UI renders" lesson this file already names, one
+level removed: build passing proved the TYPES were internally consistent,
+not that the feature was reachable.
 
 ### 3.3 Auction: budget-path optimization *(highest-value auction feature)*
 The tool prices players independently. The real skill is allocation: given

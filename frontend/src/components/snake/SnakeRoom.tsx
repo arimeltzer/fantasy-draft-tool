@@ -2,6 +2,7 @@ import { memo, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio, HelpCircle } from "lucide-react";
 import { myPickNumbers, rankByAdp } from "@/engine/snake-engine.js";
+import { runHotness } from "@/engine/positional-run.js";
 import { roundsFor, currentOwners } from "@/engine/draft-order.js";
 import type { BoardPlayer, SnakeLiveState } from "@/engine/snake-engine.js";
 import { LeagueSettings, ApiLeague } from "@/lib/api";
@@ -77,6 +78,24 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
 
   const needs = useMemo(() => computeNeeds(minePlayers, settings), [minePlayers, settings]);
 
+  // Chronological positions of every in-draft pick (mine and opponents',
+  // keepers excluded — same reasoning as livePickCount: a keeper isn't a live
+  // drafting decision, so it carries no positional-run signal). Feeds 3.2's
+  // run detector; 3.1's survival margin reads `nextMine` directly below.
+  const recentPickPositions = useMemo(() => {
+    const byId = new Map(board.map((p) => [p.id as number, p.pos]));
+    return picks
+      .filter((p) => !isKeeper(p) && p.playerId != null)
+      .slice()
+      .sort((a, b) => a.overallPick - b.overallPick)
+      .map((p) => byId.get(p.playerId!))
+      .filter((pos): pos is NonNullable<typeof pos> => !!pos) as string[];
+  }, [picks, board]);
+  const runHotByPos = useMemo(
+    () => runHotness(recentPickPositions, settings.teams),
+    [recentPickPositions, settings.teams],
+  );
+
   // Bye weeks, derived from the schedule (a missing week IS the bye). Undefined
   // while loading or if the season's schedule isn't loaded — pickScore treats a
   // missing map as "no bye information" and skips the penalty entirely rather
@@ -132,8 +151,15 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
       poolSize: avail.length,
       byeByTeam,
       rosterByesByPos,
+      // roadmap 3.1 — the overall pick number I next get to act on. Absence
+      // (e.g. no picks made yet and slot unknown) disables the margin
+      // entirely rather than guessing, same "missing data skips the effect"
+      // treatment byeByTeam already gets above.
+      nextPick: nextMine,
+      // roadmap 3.2 — discounts that margin when a position is running hot.
+      runHotByPos,
     };
-  }, [board, draftedIds, minePlayers, needs, settings, byeByTeam, rosterByesByPos]);
+  }, [board, draftedIds, minePlayers, needs, settings, byeByTeam, rosterByesByPos, nextMine, runHotByPos]);
 
   /** Committed keepers store their owner's name inside the pick's `slot`
    *  marker, which lives in the DB rather than league settings — so a rename
