@@ -24,17 +24,14 @@ Run where FANTASYPROS_API_KEY lives (GitHub Actions):
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import urllib.error
-import urllib.request
 from urllib.parse import urlencode
 
 import nflreadpy as nfl
 import pandas as pd
 from scipy import stats
 
-from fantasypros import norm
+from fantasypros import _get_json, norm
 from projection_model import default_scoring, points
 
 BASE = "https://api.fantasypros.com/public/v2/json/nfl/{season}/consensus-rankings"
@@ -47,19 +44,30 @@ COMP = {
 
 
 def fetch_adp(season: int, scoring="HALF", rank_type="ADP", week=0) -> dict:
+    """Historical ADP/DRAFT-cost rankings, one season at a time.
+
+    Routed through fantasypros._get_json (429 backoff: 2s/4s/8s/16s) rather
+    than a bare urlopen. This bug was live and corrupting real results: a
+    9-season export made 18 sequential calls to this endpoint with no pacing
+    or retry, and a 429 partway through silently returned {} for the
+    remaining seasons -- which then entered a downstream simulation as
+    "these players have no ADP", not as "the fetch failed". Two runs of the
+    roadmap 3.1 survival gate 15 minutes apart got opposite pass/fail verdicts
+    for exactly this reason: whichever run got rate-limited on 2024/2025 had
+    those seasons' entire player pool fall back to pSurvive()=1 (its
+    documented behavior for missing ADP), which is a reasonable default for
+    one missing player and a source of large, uniform, signal-free "costs"
+    when an ENTIRE season is missing it. fetch_injuries() was already routed
+    through this same retry path for the identical reason (see its own
+    docstring); this endpoint should have been from the start.
+    """
     key = os.getenv("FANTASYPROS_API_KEY")
     if not key:
         raise SystemExit("FANTASYPROS_API_KEY not set")
     url = BASE.format(season=season) + "?" + urlencode(
         {"position": "ALL", "scoring": scoring, "type": rank_type, "week": week})
-    req = urllib.request.Request(url, headers={
-        "x-api-key": key, "Accept": "application/json",
-        "User-Agent": "fantasy-draft-tool/1.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = json.load(r)
-    except urllib.error.HTTPError as e:
-        print(f"  {season} type={rank_type}: HTTP {e.code} {e.read()[:160].decode('utf-8','replace')}")
+    data = _get_json(url, key, label=f"{season} type={rank_type}")
+    if data is None:
         return {}
     rows = data.get("players") or []
     out = {}

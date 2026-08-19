@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 
 from projection_backtest import (
     COMP, VOLUME, build_players, load_ages, load_seasons, season_line,
@@ -40,10 +41,11 @@ PPR = 0.5
 
 try:
     from adp_probe import fetch_adp
-    from fantasypros import norm as fp_norm
+    from fantasypros import RATE_LIMIT_PAUSE, norm as fp_norm
 except Exception:                     # no key -> no ADP, and the sim needs it
     fetch_adp = None
     fp_norm = None
+    RATE_LIMIT_PAUSE = 1.5
 
 
 def main() -> None:
@@ -73,7 +75,12 @@ def main() -> None:
             print(f"  {year}: no players")
             continue
 
+        # Paced like every other loop in this pipeline that hits FantasyPros
+        # sequentially (see fantasypros.py's own comment on this) -- pacing is
+        # the cheap first line of defense, _get_json's retry (now wired into
+        # fetch_adp) is the second, and this loop used to have neither.
         adp = fetch_adp(year, rank_type="ADP") or fetch_adp(year, rank_type="DRAFT") or {}
+        time.sleep(RATE_LIMIT_PAUSE)
         rows, actual, adp_by_id = [], {}, {}
         for i, p in enumerate(players):
             pid = i + 1                       # dense ids; the sim only needs identity

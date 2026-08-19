@@ -69,7 +69,35 @@ const LEAGUE = { teams: TEAMS, roster: ROSTER, superflex: false };
 const raw = JSON.parse(readFileSync(DATA, "utf8"));
 const sc = defaultScoring(0.5);
 const seeds = Array.from({ length: SEEDS }, (_, i) => i + 1);
-const seasons = Object.keys(raw).map(Number).sort();
+
+// A season with near-zero ADP coverage is not a thin signal, it is NO signal:
+// pSurvive() falls back to p=1 (assume available) for anyone missing ADP,
+// which is a sane default for one missing player and a source of large,
+// uniform, signal-free "costs" when an ENTIRE season is missing it -- because
+// then every candidate gets the same fallback rather than a real spread.
+// This bit the gate for real: export_draft_seasons.py's fetch_adp had no 429
+// retry, so a rate-limited pull silently produced adp:null for a whole
+// season, and two runs 15 minutes apart landed opposite pass/fail verdicts
+// depending on which one got rate-limited. fetch_adp is now paced and
+// retried (see adp_probe.py), but a season failing anyway should be EXCLUDED
+// here, not silently pooled in — the harness should not need the upstream
+// fix to be perfect to stay honest. Threshold matches export's own "thin"
+// warning (MIN_ADP_PLAYERS players).
+const MIN_ADP_PLAYERS = 120;
+const allSeasons = Object.keys(raw).map(Number).sort();
+const seasons = allSeasons.filter((s) => {
+  const withAdp = raw[s].players.filter((p) => p.adp).length;
+  if (withAdp < MIN_ADP_PLAYERS) {
+    console.log(`  ! EXCLUDING ${s}: only ${withAdp} players have ADP (need `
+      + `${MIN_ADP_PLAYERS}+) — likely a rate-limited export, not a real thin market`);
+    return false;
+  }
+  return true;
+});
+if (seasons.length < allSeasons.length) {
+  console.log(`  -> proceeding with ${seasons.length}/${allSeasons.length} seasons: `
+    + `${seasons.join(", ")}\n`);
+}
 
 function boardFor(season) {
   const players = raw[season].players.map((p) => ({
