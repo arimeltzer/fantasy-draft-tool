@@ -29,6 +29,56 @@
    ===================================================================== */
 import { maxBid } from "./auction-engine.js";
 
+/** Positions a FLEX slot accepts — a team's FLEX need is demand at all three. */
+const FLEX_ELIGIBLE = ["RB", "WR", "TE"];
+
+/**
+ * How many EXTRA bodies past the starting requirement a team plausibly
+ * rosters at each position.
+ *
+ * Stated constants, unfitted — same discipline as `byeClashStep` and
+ * `survivalUrgencyMax`. Deliberately generous rather than tight: gating a
+ * position OFF wrongly is the expensive error (it tells you a player will go
+ * cheap and then he does not), so when in doubt this assumes demand exists.
+ *
+ * NOT `maxUseful()` from snake-engine, deliberately. That returns
+ * `starters + FLEX + max(2, BENCH)` for RB/WR — nine backs in a standard
+ * league — because its job is to avoid BLOCKING a defensible sixth RB on my
+ * own roster. Reusing it here would gate essentially nothing.
+ */
+export const OPP_BENCH_ALLOWANCE = { QB: 1, RB: 3, WR: 3, TE: 1, K: 0, DST: 0 };
+
+/** Positions nobody rosters more than one of, whatever the settings claim. */
+export const SINGLETON_POSITIONS = ["K", "DST"];
+
+/**
+ * How many more players at `pos` an opponent would plausibly still take.
+ *
+ * Zero means they are done at that position and cannot be a bidder there —
+ * which is the entire point of 3.4a: a rich team with no need at a position
+ * must not hold up that position's ceiling.
+ *
+ * @param pos           position being bid on.
+ * @param leagueRoster  the league's roster requirements.
+ * @param theirCounts   how many that team already owns, by position.
+ * @param superflex     a second QB-ish starting slot changes QB demand.
+ */
+export function opponentDemand(pos, leagueRoster = {}, theirCounts = {}, superflex = false) {
+  const have = theirCounts[pos] || 0;
+
+  // K/DST are capped at exactly one, regardless of what the roster settings
+  // say. A team that has its kicker is out of the kicker market entirely, and
+  // treating it otherwise leaves a filled team alive as a phantom bidder.
+  if (SINGLETON_POSITIONS.includes(pos)) return Math.max(0, 1 - have);
+
+  const starters = (leagueRoster[pos] || 0) + (pos === "QB" && superflex ? 1 : 0);
+  // FLEX is demand at every eligible position — the team can fill it with any
+  // of them, so any of them can still attract a bid.
+  const flex = FLEX_ELIGIBLE.includes(pos) ? (leagueRoster.FLEX || 0) : 0;
+  const cap = starters + flex + (OPP_BENCH_ALLOWANCE[pos] ?? 0);
+  return Math.max(0, cap - have);
+}
+
 /**
  * What each opponent could bid on a single player right now.
  *
@@ -64,6 +114,69 @@ export function opponentCapacities(budgets = [], openSpots = [], minBid = 1) {
 export function priceCeiling(capacities = [], minBid = 1) {
   const top = capacities.reduce((m, c) => Math.max(m, c || 0), 0);
   return Math.max(minBid, top + minBid);
+}
+
+/**
+ * Per-opponent positional counts, from the pick log.
+ *
+ * Extracted into the engine rather than left inline in `AuctionRoom` for the
+ * same reason `remainingStartingSlots` was in 3.3: it is real derivation
+ * logic, and derivation buried in a component can only be tested through
+ * fixture gymnastics that end up proving very little.
+ *
+ * @param picks     draft entries: { mine, teamId, playerId }.
+ * @param posById   player id -> position.
+ * @param nOpponents how many opponent slots to produce.
+ * @returns Record<pos, count>[] — one entry per opponent, index = teamId.
+ */
+export function opponentCountsFromPicks(picks = [], posById = new Map(), nOpponents = 0) {
+  const counts = Array.from({ length: Math.max(0, nOpponents) }, () => ({}));
+  const lookup = posById instanceof Map ? (id) => posById.get(id) : (id) => posById[id];
+  for (const p of picks) {
+    if (!p || p.mine) continue;
+    const t = p.teamId;
+    if (t == null || t < 0 || t >= counts.length) continue;
+    if (p.playerId == null) continue;
+    const pos = lookup(p.playerId);
+    if (pos) counts[t][pos] = (counts[t][pos] || 0) + 1;
+  }
+  return counts;
+}
+
+/**
+ * The ceiling for a SPECIFIC position — only opponents who still need that
+ * position count (roadmap 3.4a).
+ *
+ * THIS IS A WEAKER CLAIM THAN `priceCeiling`, ON PURPOSE, AND CALLERS SHOULD
+ * KNOW WHICH THEY HOLD. `priceCeiling` is arithmetic: money that does not
+ * exist cannot be bid, so it cannot be beaten. This one adds a BEHAVIOURAL
+ * assumption — that a team at its positional cap will not bid — and if an
+ * opponent takes a fourth tight end anyway, this number was wrong in the
+ * unsafe direction: it said the player would be cheap and he was not.
+ *
+ * So it is returned ALONGSIDE the arithmetic bound, never instead of it.
+ *
+ * @returns { ceiling, arithmetic, gated, bidders } — `gated` true when demand
+ *          actually tightened the number, `bidders` how many opponents can
+ *          still want this position.
+ */
+export function priceCeilingFor(pos, {
+  budgets = [], openSpots = [], counts = [], leagueRoster = {},
+  superflex = false, minBid = 1,
+} = {}) {
+  const caps = opponentCapacities(budgets, openSpots, minBid);
+  const arithmetic = priceCeiling(caps, minBid);
+
+  const eligible = caps.map((c, i) =>
+    (opponentDemand(pos, leagueRoster, counts[i] || {}, superflex) > 0 ? c : 0));
+  const ceiling = priceCeiling(eligible, minBid);
+
+  return {
+    ceiling,
+    arithmetic,
+    gated: ceiling < arithmetic,
+    bidders: eligible.filter((c) => c > 0).length,
+  };
 }
 
 /**

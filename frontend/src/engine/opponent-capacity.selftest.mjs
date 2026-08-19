@@ -9,6 +9,7 @@
  */
 import {
   opponentCapacities, priceCeiling, cappedPrice, bindingCeiling,
+  opponentDemand, priceCeilingFor, opponentCountsFromPicks,
 } from "./opponent-capacity.js";
 import { maxBid } from "./auction-engine.js";
 
@@ -169,6 +170,139 @@ check("a full rich team does not prop up the ceiling",
         arc.every((v, i) => i === 0 || v <= arc[i - 1]), arc.join(" -> "));
   check("the ceiling is genuinely informative late (well under a full budget)",
         arc[arc.length - 1] < 40, `ended at ${arc[arc.length - 1]}`);
+}
+
+/* ================= roadmap 3.4a: positional demand ====================== */
+const LR = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 6 };
+
+/* -------------------------------- gate 2: K/DST capped at one apiece ---- */
+{
+  check("an opponent needs exactly one kicker", opponentDemand("K", LR, {}) === 1);
+  check("a team that has its kicker is out of the kicker market",
+        opponentDemand("K", LR, { K: 1 }) === 0);
+  check("same for defense", opponentDemand("DST", LR, { DST: 1 }) === 0);
+  // The cap must hold even if the league config claims more, which is the
+  // failure mode that would keep a filled team alive as a phantom bidder.
+  check("K stays capped at one even if the roster settings say three",
+        opponentDemand("K", { ...LR, K: 3 }, { K: 1 }) === 0);
+  check("DST stays capped at one even if the roster settings say two",
+        opponentDemand("DST", { ...LR, DST: 2 }, { DST: 1 }) === 0);
+}
+
+/* --------------------------- gate 1: demand monotonicity ---------------- */
+{
+  let monotone = true;
+  for (const pos of ["QB", "RB", "WR", "TE", "K", "DST"]) {
+    let prev = Infinity;
+    for (let have = 0; have <= 12; have++) {
+      const d = opponentDemand(pos, LR, { [pos]: have });
+      if (d > prev) monotone = false;
+      if (d < 0) monotone = false;
+      prev = d;
+    }
+    // Everyone must bottom out at zero — no position is infinitely hungry.
+    if (opponentDemand(pos, LR, { [pos]: 99 }) !== 0) monotone = false;
+  }
+  check("demand never rises as a position fills, and always reaches zero", monotone);
+
+  check("FLEX-eligible positions carry the flex slot as extra demand",
+        opponentDemand("RB", LR, {}) > opponentDemand("RB", { ...LR, FLEX: 0 }, {}));
+  check("a non-flex position ignores the flex slot",
+        opponentDemand("QB", LR, {}) === opponentDemand("QB", { ...LR, FLEX: 0 }, {}));
+  check("superflex raises QB demand",
+        opponentDemand("QB", LR, {}, true) > opponentDemand("QB", LR, {}, false));
+}
+
+/* ------------- gates 3 + 4: gating only ever tightens, and gates ------- */
+{
+  const budgets = [200, 50];
+  const openSpots = [10, 10];
+  // Opponent 0 is rich but completely done at TE; opponent 1 is poorer and needy.
+  const counts = [{ TE: 5 }, {}];
+
+  const te = priceCeilingFor("TE", { budgets, openSpots, counts, leagueRoster: LR });
+  check("a rich opponent with no demand cannot set the position's ceiling",
+        te.ceiling < te.arithmetic, `${te.ceiling} vs ${te.arithmetic}`);
+  check("the tighter number reflects the needy opponent, not the rich one",
+        te.ceiling === maxBid(50, 10, 1) + 1, String(te.ceiling));
+  check("gating is reported when it bit", te.gated === true);
+  check("bidder count excludes the sated opponent", te.bidders === 1);
+
+  // Same room, a position where BOTH still need bodies: no tightening.
+  const rb = priceCeilingFor("RB", { budgets, openSpots, counts, leagueRoster: LR });
+  check("with demand everywhere the gated ceiling equals the arithmetic one",
+        rb.ceiling === rb.arithmetic);
+  check("gating is reported as inactive when it did not bite", rb.gated === false);
+
+  // Gate 3 as a sweep: gating must NEVER exceed the arithmetic bound.
+  let everLoosened = false;
+  for (const pos of ["QB", "RB", "WR", "TE", "K", "DST"]) {
+    for (const c of [[{}, {}], [{ [pos]: 9 }, {}], [{}, { [pos]: 9 }], [{ [pos]: 9 }, { [pos]: 9 }]]) {
+      const r = priceCeilingFor(pos, { budgets, openSpots, counts: c, leagueRoster: LR });
+      if (r.ceiling > r.arithmetic) everLoosened = true;
+    }
+  }
+  check("gating can only tighten, never loosen, across every position", !everLoosened);
+
+  // Everyone sated: nobody can bid, so it floors rather than going negative.
+  const dead = priceCeilingFor("TE", {
+    budgets, openSpots, counts: [{ TE: 9 }, { TE: 9 }], leagueRoster: LR,
+  });
+  check("a room with no demand anywhere floors at the minimum bid",
+        dead.ceiling === 1 && dead.bidders === 0, `${dead.ceiling}/${dead.bidders}`);
+}
+
+/* ---------------------------------------- opponentCountsFromPicks ------- */
+{
+  const posById = new Map([[1, "RB"], [2, "RB"], [3, "WR"], [4, "TE"], [5, "QB"]]);
+  const picks = [
+    { mine: false, teamId: 0, playerId: 1 },
+    { mine: false, teamId: 0, playerId: 2 },
+    { mine: false, teamId: 1, playerId: 3 },
+    { mine: true,  teamId: null, playerId: 4 },   // mine — must not count
+    { mine: false, teamId: 0, playerId: null },   // no player — must not count
+    { mine: false, teamId: 9, playerId: 5 },      // out of range — must not count
+    { mine: false, teamId: null, playerId: 5 },   // no team — must not count
+  ];
+  const counts = opponentCountsFromPicks(picks, posById, 2);
+
+  check("counts one entry per opponent", counts.length === 2);
+  check("tallies an opponent's picks by position",
+        counts[0].RB === 2 && counts[1].WR === 1, JSON.stringify(counts));
+  check("my own picks are not counted as an opponent's",
+        !counts.some((c) => c.TE));
+  check("a pick with no player is skipped rather than counted as undefined",
+        !Object.keys(counts[0]).includes("undefined"));
+  check("an out-of-range teamId cannot corrupt another team's counts",
+        counts[0].QB === undefined && counts[1].QB === undefined);
+  check("an empty log gives empty counts, not undefined entries",
+        opponentCountsFromPicks([], posById, 2).every((c) => Object.keys(c).length === 0));
+  check("accepts a plain object lookup as well as a Map",
+        opponentCountsFromPicks([{ mine: false, teamId: 0, playerId: 1 }],
+                                { 1: "RB" }, 1)[0].RB === 1);
+
+  // The whole reason this is extracted: it feeds priceCeilingFor, so a wiring
+  // mistake here would silently disable demand gating in the product.
+  const rich = { budgets: [200, 200], openSpots: [10, 10], leagueRoster: LR };
+  const hungry = priceCeilingFor("RB", { ...rich, counts: opponentCountsFromPicks([], posById, 2) });
+  const sated = priceCeilingFor("RB", {
+    ...rich,
+    counts: [{ RB: 9 }, { RB: 9 }],
+  });
+  check("counts from the pick log actually drive the gated ceiling",
+        sated.ceiling < hungry.ceiling, `${sated.ceiling} vs ${hungry.ceiling}`);
+}
+
+/* ------------------------------------- the point of the whole exercise -- */
+{
+  // One rich team, already stacked at RB. Before 3.4a it would hold the RB
+  // ceiling up single-handed; after, it cannot.
+  const budgets = [180, 6, 6];
+  const openSpots = [8, 8, 8];
+  const counts = [{ RB: 9 }, {}, {}];
+  const r = priceCeilingFor("RB", { budgets, openSpots, counts, leagueRoster: LR });
+  check("a stacked rich team no longer inflates its filled position's ceiling",
+        r.ceiling < 20 && r.arithmetic > 100, `ceiling ${r.ceiling}, arithmetic ${r.arithmetic}`);
 }
 
 console.log();

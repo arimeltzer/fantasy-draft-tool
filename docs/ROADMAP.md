@@ -2034,6 +2034,107 @@ nothing about 3.4.
 run, because no auction simulator exists. This ships as a bound and a
 surface, not as a measured edge.
 
+**3.4a FOLLOW-UP — positional demand — DONE, shipped. PRE-REGISTRATION, written before the
+code exists.**
+
+*The gap.* 3.4 as shipped is position-blind: every opponent with money is
+treated as a potential bidder on every player. But a team that has filled
+every running-back slot it will plausibly use is not going to bid on your
+running back, whatever its balance says. The ceiling is therefore loose in
+exactly the common case — one rich team with no need at the position holding
+the whole estimate up.
+
+*The model, and the two variables it is built from* (both named by the user's
+own framing: we cannot know how any opponent VALUES players, so the model
+uses only what is observable — how many bodies they still need at each
+position, and how much money they have):
+  - `opponentDemand(pos, leagueRoster, theirCounts)` — how many more at that
+    position a team would plausibly roster. An opponent with zero demand at a
+    position contributes **nothing** to that player's ceiling.
+  - Capacity, unchanged, is still `maxBid(budget, openSpots)`.
+  - `priceCeilingFor(pos, ...)` = one increment above the richest opponent
+    **who still needs that position**.
+
+*The demand cap is explicit, stated, and NOT reused from `maxUseful`.* That
+function returns `starters + FLEX + max(2, BENCH)` for RB/WR — nine backs in
+a standard league — because its job is to avoid BLOCKING a defensible sixth
+RB on my own roster. Borrowing it here would gate almost nothing. Opponent
+demand needs its own tighter caps, and per the user's instruction **K and DST
+are capped at one apiece** — nobody rosters a second kicker, and letting the
+model think they might would keep a filled team alive as a phantom bidder.
+Caps are stated constants, unfitted, same discipline as `byeClashStep` and
+`survivalUrgencyMax`.
+
+*THE CLAIM WEAKENS, AND THAT IS THE IMPORTANT PART.* Shipped 3.4 is pure
+arithmetic: money that does not exist cannot be bid, so the bound cannot be
+beaten. Demand gating is a **behavioral assumption** — if an opponent takes a
+fourth tight end, the gated ceiling is simply WRONG in the unsafe direction
+(it told you the price would be low, and it was not). So:
+  - The arithmetic ceiling is **retained, not replaced**. Both are computed.
+  - The demand-gated number is the estimate; the arithmetic one remains the
+    guarantee. Where they disagree the surface can say so.
+  - Being wrong here costs a player you wanted, which is worse than the
+    reverse, so the gating must be conservative: when in doubt, assume
+    demand exists.
+
+*Gate*:
+  1. **Demand monotonicity**: filling a position never increases demand there;
+     a team at its cap has zero.
+  2. **K/DST capped at one**, regardless of league roster settings claiming
+     otherwise.
+  3. **Gated ceiling is never above the arithmetic ceiling** — gating may only
+     ever tighten. If it can loosen, the two disagree about what money exists.
+  4. **A team with no demand at a position cannot set that position's
+     ceiling**, however rich.
+
+*What a pass does NOT prove*: that the demand caps are right. They are
+judgement, not measurement, and no auction simulator exists to score them.
+
+**RESULT — shipped.** `opponentDemand()`, `priceCeilingFor()`, and
+`opponentCountsFromPicks()` added to `opponent-capacity.js`. 49 selftests
+(was 23), all four pre-registered gates met.
+
+*The caps.* `OPP_BENCH_ALLOWANCE = { QB 1, RB 3, WR 3, TE 1, K 0, DST 0 }`
+on top of starters plus FLEX for the flex-eligible positions, with K and DST
+hard-capped at one apiece regardless of what the league settings claim.
+Deliberately generous: gating a position OFF wrongly is the expensive error
+(it says a player will go cheap and then he does not), so when in doubt the
+model assumes demand exists.
+
+*Mutation-tested, three for three.* Dropping the K/DST singleton cap in
+favour of the league setting — caught. Ignoring demand entirely so gating
+never bites — caught, 6 failures. Letting gating LOOSEN rather than only
+tighten — caught, including the pre-registered gate-3 sweep across every
+position.
+
+*One design correction found while wiring, worth recording because it would
+have silently disabled the whole step.* `bindingCeiling` re-derives the
+ceiling from a raw per-opponent capacity list. Handing it the ungated list
+after computing a gated ceiling would have thrown the gating away and left
+3.4a inert while every engine test still passed. The composition now passes
+a single synthetic capacity representing the already-gated ceiling, with a
+comment saying why.
+
+*The derivation moved into the engine, and that was a test-quality decision
+rather than tidiness.* Per-opponent positional counts were first written
+inline in `AuctionRoom`, where proving they worked meant constructing a
+fixture in which the top-surplus target sat at a position both opponents
+were sated at while staying rich, available, and on a fillable roster. Four
+attempts each failed for a different incidental reason — the top target kept
+landing at a position other than the one being stacked, then the stacking
+consumed the very players the target list drew from. That is fixture
+gymnastics proving very little. `opponentCountsFromPicks()` is now an engine
+export tested directly (mine-vs-opponent, null player, out-of-range teamId,
+Map or plain-object lookup) plus an assertion that counts from a pick log
+actually move the gated ceiling — the same extraction, for the same reason,
+that `remainingStartingSlots()` got in 3.3.
+
+*Standing caveat, unchanged and important.* The arithmetic ceiling is still
+computed and returned alongside as `arithmetic`. It is the guarantee; the
+gated number is the estimate. The Phase 3 head-to-head kill gate remains
+NOT run for 3.3, 3.4 or 3.4a — no auction simulator exists, and the demand
+caps in particular are judgement that no measurement has scored.
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.

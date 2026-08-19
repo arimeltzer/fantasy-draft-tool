@@ -11,7 +11,9 @@ import {
   calibrateAuction, picksFromKeeperImport, noCalibration, describeCalibration,
 } from "@/engine/auction-calibration.js";
 import { bidCeiling, remainingStartingSlots } from "@/engine/budget-path.js";
-import { opponentCapacities, bindingCeiling } from "@/engine/opponent-capacity.js";
+import {
+  priceCeilingFor, bindingCeiling, opponentCountsFromPicks,
+} from "@/engine/opponent-capacity.js";
 import { useDraftStore } from "@/store/draftStore";
 import { usePatchLeague } from "@/hooks/useLeague";
 import { posStyle } from "@/lib/posStyles";
@@ -98,6 +100,18 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
         taken[p.teamId] += 1;
     return taken.map((n) => Math.max(0, rosterSize - n));
   }, [picks, opponents, rosterSize]);
+
+  // What each opponent already OWNS by position (roadmap 3.4a). Money alone
+  // says a rich team can bid on anyone; this is what says whether they'd
+  // want to. A team stacked at a position stops being a bidder there.
+  const oppCounts = useMemo(
+    () => opponentCountsFromPicks(
+      picks,
+      new Map(board.map((p) => [p.id as number, p.pos])),
+      opponents.length,
+    ),
+    [picks, opponents.length, board],
+  );
 
   const withPar = useMemo(() => auctionValues(board, al), [board, al]);
 
@@ -234,14 +248,6 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   );
   const valueOfPlayer = useCallback((p: BoardPlayer) => p.vbd ?? 0, []);
 
-  // What each opponent could actually bid on one player right now (roadmap
-  // 3.4) — money they hold, minus a dollar reserved for every slot they still
-  // have to fill. A full roster contributes nothing at any budget.
-  const oppCapacities = useMemo(
-    () => opponentCapacities(oppBudgets, oppOpenSpots, 1),
-    [oppBudgets, oppOpenSpots],
-  );
-
   const valueTargets = useMemo(() => {
     const targets = availDollar
       .filter((p) => ["QB", "RB", "WR", "TE"].includes(p.pos))
@@ -270,17 +276,33 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
             priceOf: priceOfPlayer,
           })
         : null;
-      // roadmap 3.4 — and the room's ability to pay. Whichever constraint
-      // binds is the actionable number; naming WHICH is the useful part.
-      const { bid: ceiling, binding } = bindingCeiling({
-        allocationCeiling: allocationCeiling ?? undefined,
-        capacities: oppCapacities,
+      // roadmap 3.4 — and the room's ability to pay. Position-aware (3.4a):
+      // only opponents who still need THIS position count, so a rich team
+      // stacked at running back stops holding up every back's ceiling.
+      const room = priceCeilingFor(t.p.pos, {
+        budgets: oppBudgets,
+        openSpots: oppOpenSpots,
+        counts: oppCounts,
+        leagueRoster: settings.roster as unknown as Record<string, number>,
+        superflex: !!settings.superflex,
         minBid: 1,
       });
-      return { ...t, allocationCeiling, ceiling, binding };
+      // Whichever constraint binds is the actionable number; naming WHICH is
+      // the useful part.
+      const { bid: ceiling, binding } = bindingCeiling({
+        allocationCeiling: allocationCeiling ?? undefined,
+        // priceCeilingFor already folded demand in, so hand bindingCeiling a
+        // single synthetic capacity rather than the raw per-opponent list —
+        // otherwise it would re-derive the ungated ceiling and the demand
+        // gating would be silently discarded.
+        capacities: [Math.max(0, room.ceiling - 1)],
+        minBid: 1,
+      });
+      return { ...t, allocationCeiling, ceiling, binding, room };
     });
   }, [availDollar, marketById, myBudgetLeft, myOpenSpots, remainingDvSum,
-      openStartSlots, dpBudget, valueOfPlayer, priceOfPlayer, oppCapacities]);
+      openStartSlots, dpBudget, valueOfPlayer, priceOfPlayer,
+      oppBudgets, oppOpenSpots, oppCounts, settings.roster, settings.superflex]);
 
   const pprLabel = settings.ppr === 1 ? "PPR" : settings.ppr === 0.5 ? "Half-PPR" : "Std";
 
