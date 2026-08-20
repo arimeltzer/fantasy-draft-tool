@@ -88,16 +88,31 @@ async def ensure_watcher(league_id: int, ext_id: str, season: int, my_team: str 
         if not (swid and espn_s2):
             handle.start_error = "espn_s2 and SWID are required for live WebSocket sync."
             return handle
+
+        # Two separate calls, two separate try/excepts — `fetch_raw_league`
+        # and `fetch_draft_security` both raise the SAME PermissionError
+        # message on any 401/403, which made an earlier version of this
+        # error message useless for telling "cookies are bad" (both calls
+        # would fail) apart from "resolved the wrong team id, and ESPN
+        # rejects draftSecurity for a team the SWID doesn't own" (only the
+        # second call fails) — a real, materially different diagnosis.
         try:
             data = await espn.fetch_raw_league(ext_id, season, espn_s2=espn_s2, swid=swid)
-            teams_by_id, my_team_id = espn.resolve_team_ids(data, my_team)
-            if my_team_id is None:
-                handle.start_error = f"Couldn't match my_team {my_team!r} to a team in this league."
-                return handle
+        except Exception as exc:  # noqa: BLE001 — reported via start_error, caller falls back
+            handle.start_error = f"league fetch failed: {type(exc).__name__}: {exc}"
+            return handle
+
+        teams_by_id, my_team_id = espn.resolve_team_ids(data, my_team)
+        if my_team_id is None:
+            handle.start_error = (f"Couldn't match my_team {my_team!r} to a team in this league. "
+                                  f"Known teams: {sorted(teams_by_id.values())}")
+            return handle
+        try:
             join_hash = await espn.fetch_draft_security(ext_id, season, my_team_id,
                                                         espn_s2=espn_s2, swid=swid)
         except Exception as exc:  # noqa: BLE001 — reported via start_error, caller falls back
-            handle.start_error = f"{type(exc).__name__}: {exc}"
+            handle.start_error = (f"draftSecurity failed for team_id={my_team_id} "
+                                  f"({teams_by_id.get(my_team_id)!r}): {type(exc).__name__}: {exc}")
             return handle
 
         handle.watcher = espn_draft_ws.LiveDraftWatcher(my_team_id=my_team_id, teams_by_id=teams_by_id,
