@@ -505,8 +505,15 @@ def parse_live_draft(data: dict, my_team: str | None = None,
             bid=int(p["bidAmount"]) if p.get("bidAmount") is not None else None,
         ))
 
-    state = LiveDraftState(picks=order_picks(picks),
-                           fmt="auction" if any(p.bid for p in picks) else "snake")
+    # `draftSettings.type` is ground truth (same field `parse_settings` already
+    # trusts for this) — inferring fmt from whether any RESOLVED pick carries a
+    # bid amount is wrong whenever zero picks have resolved yet, which is
+    # exactly the state an auction draft is in before its first pick joins a
+    # roster. Only fall back to the old inference if settings didn't say.
+    draft_type = str((data.get("settings", {}) or {}).get("draftSettings", {}).get("type", "")).upper()
+    fmt = "auction" if draft_type == "AUCTION" else "snake" if draft_type else (
+        "auction" if any(p.bid for p in picks) else "snake")
+    state = LiveDraftState(picks=order_picks(picks), fmt=fmt)
     raw_picks = (data.get("draftDetail", {}) or {}).get("picks", []) or []
     # `raw_picks` can include placeholder rows for slots that haven't been
     # picked yet (seen with playerId <= 0 on a live, in-progress draft) — a

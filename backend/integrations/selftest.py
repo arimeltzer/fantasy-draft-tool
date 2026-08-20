@@ -582,11 +582,25 @@ def test_live_draft():
     ]}})
     assert derived.picks[0].overall == 4, derived.picks[0].overall   # (2-1)*2 + 2
 
-    # An auction draft carries the price through.
-    auc = espn.parse_live_draft({**espn_data, "draftDetail": {"picks": [
+    # An auction draft carries the price through. `settings.draftSettings.type`
+    # is overridden here too — fmt now trusts that field first (see below),
+    # so a self-consistent fixture needs both to agree.
+    auction_settings = {**espn_data["settings"],
+                        "draftSettings": {"type": "AUCTION"}}
+    auc = espn.parse_live_draft({**espn_data, "settings": auction_settings, "draftDetail": {"picks": [
         {"playerId": 11, "teamId": 1, "overallPickNumber": 1, "bidAmount": 55},
     ]}})
     assert auc.fmt == "auction" and auc.picks[0].bid == 55
+
+    # fmt must come from draftSettings.type, not from inferring off resolved
+    # bid amounts — that inference silently says "snake" for an auction draft
+    # whenever ZERO picks have resolved yet, which is exactly the state a
+    # live auction draft is in before its first pick joins a roster (a real
+    # bug this fixture pins: reported as "still says I'm in a snake draft").
+    unresolved_auction = espn.parse_live_draft({**espn_data, "settings": auction_settings,
+        "draftDetail": {"picks": [{"playerId": 999, "teamId": 2, "overallPickNumber": 1}]}})
+    assert unresolved_auction.meta["resolved"] == 0
+    assert unresolved_auction.fmt == "auction", unresolved_auction.fmt
 
     # ── Yahoo ────────────────────────────────────────────────────────
     def yplayer(pid, name, pos="WR"):
