@@ -84,6 +84,14 @@ async def _run(handle: WatcherHandle, ext_id: str, season: int, team_id: int, sw
             "draft page or minimize interaction with it while syncing."
         )
         log.warning(f"WebSocket timeout for league {ext_id}: {exc}")
+    except OSError as exc:
+        # TCP connection failed — ESPN's multi-location security likely blocking
+        watcher.last_error = (
+            "Live WebSocket connection blocked at network level. ESPN's security may be "
+            "preventing the backend server from connecting. Using REST polling instead. "
+            "Close your draft page and try again."
+        )
+        log.warning(f"WebSocket TCP error for league {ext_id}: {exc}")
     except Exception as exc:  # noqa: BLE001 — surfaced via last_error, never crashes the app
         watcher.last_error = f"{type(exc).__name__}: {exc}"
         log.error(f"WebSocket error for league {ext_id}: {type(exc).__name__}: {exc}")

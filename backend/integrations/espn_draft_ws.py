@@ -167,7 +167,16 @@ async def watch_draft(league_id: str, season: int, team_id: int, swid: str, join
     # websockets major-version API this pinned 13.1 doesn't have; passing it
     # here would TypeError on every single connection attempt, silently
     # indistinguishable from "never tried" without the `started` flag below).
-    ws = await websockets.connect(url, extra_headers=headers, open_timeout=connect_timeout)
+    try:
+        ws = await websockets.connect(url, extra_headers=headers, open_timeout=connect_timeout)
+    except OSError as e:
+        # TCP connection failed — likely ESPN's multi-location security blocking
+        # at the socket level (connection refused, host unreachable, etc.)
+        raise OSError(
+            f"ESPN WebSocket connection blocked at TCP level. ESPN's multi-location security "
+            f"may be preventing the backend server from connecting. Close the draft page or "
+            f"try again in a few minutes. Original error: {type(e).__name__}"
+        ) from e
     if on_connect is not None:
         on_connect()
     async with ws:
