@@ -24,10 +24,25 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   values without waiting a render cycle for the lifted state to commit
   (React state setters are async/batched; a synchronous call right after
   `setConfig()` would otherwise still see the previous render's value).
-- Whether ESPN's actual live-draft fetch itself is failing is a separate,
-  still-open question — this fix only addresses "it silently stops when you
-  close the window." Diagnosing needs the specific symptom (network error?
-  0 picks read? which league, public or private, has the draft started?).
+- **Second bug, found by diagnosing the sync itself**: on a real, in-progress,
+  private ESPN league (cookies set correctly) already at pick 57, the panel
+  showed "Pick 1 on the clock, 0 of 160 picks read" — `draftDetail.picks` DID
+  have all 160 slots (the board itself was live), but `parse_live_draft`'s
+  roster-join resolved ZERO of them. The original code's comment ("mid-draft
+  the two views disagree BRIEFLY") was an untested assumption, and it was
+  wrong: ESPN's roster view can lag the WHOLE draft, not just the most recent
+  pick or two. This is the exact same survivorship problem the keeper-
+  candidates draft-history path already solved for end-of-season rosters
+  (`unresolved_pick_ids` + `kona_player_info`/`player_info_url`) — reused
+  rather than reinvented. `parse_live_draft()` gained a `pos_by_id` fallback
+  parameter; `fetch_and_resolve_live_draft()` (replaces the old
+  `fetch_raw_league` + `parse_live_draft` call in `sync_draft`) tops up
+  whatever the roster view didn't name, chunked the same way the existing
+  path already does, best-effort (a failed top-up returns the roster-only
+  state rather than losing the poll). Fixture test added: a pick unresolved
+  by roster alone (id 99) now resolves via `pos_by_id`; a pick roster ALREADY
+  named (id 22) is confirmed to win over a conflicting `pos_by_id` entry, so
+  the top-up only ever fills gaps.
 
 ## 2026-08 — Roadmap 2.2a RESULT: independent weekly draws REJECTED — season variance understated 3-4x
 - Ran `projection-backtest.yml` #32154937836 against live data (2016-2025,

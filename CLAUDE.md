@@ -177,8 +177,18 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   player**, so re-polling can't duplicate and keepers already logged are left
   alone. ESPN uses `fetch_raw_league` (ONE request) — never `fetch_league`,
   which sweeps 18 weeks of transactions. UI: `LiveDraftPanel.tsx` +
-  `hooks/useLiveDraft.ts` ("Live" button in both rooms); unmatched names are
-  reported, never silently dropped.
+  `hooks/useLiveDraft.ts` ("Live" button in both rooms, hook lifted to the
+  room component so closing the panel doesn't stop the poll); unmatched names
+  are reported, never silently dropped.
+  - **ESPN's roster lag isn't brief — verified against a real in-progress
+    draft.** The original code assumed the roster view catches up within a
+    poll or two; on a real draft already at pick 57, it had resolved ZERO
+    picks. `fetch_and_resolve_live_draft()` tops up with `kona_player_info`
+    (player-universe-wide, not roster-scoped) for whatever the roster hasn't
+    named yet — the exact fix already proven for the SAME survivorship
+    problem in the keeper-candidates draft-history path (`unresolved_pick_ids`
+    + `player_info_url`), reused rather than reinvented. Best-effort: a failed
+    top-up returns the roster-only state instead of losing the poll.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

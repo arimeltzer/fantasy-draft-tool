@@ -450,13 +450,20 @@ def parse_teams(data: dict, my_team: str | None) -> list[NormTeam]:
     return out
 
 
-def parse_live_draft(data: dict, my_team: str | None = None) -> LiveDraftState:
+def parse_live_draft(data: dict, my_team: str | None = None,
+                     pos_by_id: dict[int, dict] | None = None) -> LiveDraftState:
     """Join `draftDetail.picks` (order/owner/price) to the rosters (names).
 
     `mDraftDetail` fills in as the draft runs, but identifies players only by
     ESPN's numeric id, so names come from the roster entries — a drafted player
-    is on a roster. A pick whose player hasn't appeared on a roster yet (the
-    two views briefly disagreeing mid-draft) is skipped; the next poll gets it.
+    is on a roster. Verified against a real in-progress draft (pick 57 on the
+    board): the roster view can lag the WHOLE draft, not just "briefly" as the
+    original comment assumed — every pick was unresolved. Same survivorship
+    problem `parse_draft_picks` already solved for end-of-season rosters, same
+    fix: `pos_by_id` (a `kona_player_info` lookup, player-universe-wide rather
+    than roster-scoped) fills in where the roster hasn't caught up. A pick
+    resolved by neither is still skipped — the next poll, or the next top-up,
+    gets it — never guessed at.
     """
     teams_by_id = {t.get("id"): _team_name(t) for t in data.get("teams", []) or []}
     mine_key = (my_team or "").strip().lower()
@@ -479,7 +486,7 @@ def parse_live_draft(data: dict, my_team: str | None = None) -> LiveDraftState:
     size = int((data.get("settings", {}) or {}).get("size") or 0)
     picks: list[LivePick] = []
     for p in (data.get("draftDetail", {}) or {}).get("picks", []) or []:
-        pl = players.get(p.get("playerId"))
+        pl = players.get(p.get("playerId")) or (pos_by_id or {}).get(p.get("playerId"))
         if not pl or not pl["name"]:
             continue
         overall = p.get("overallPickNumber")
@@ -535,6 +542,62 @@ async def fetch_raw_league(league_id: str, season: int, espn_s2: str | None = No
         resp.raise_for_status()
         data = resp.json()
     return data[0] if isinstance(data, list) and data else data
+
+
+async def fetch_and_resolve_live_draft(league_id: str, season: int, espn_s2: str | None = None,
+                                       swid: str | None = None, my_team: str | None = None,
+                                       ca_bundle: str | None = None) -> LiveDraftState:
+    """`fetch_raw_league` + `parse_live_draft`, with a best-effort
+    `kona_player_info` top-up for whatever the roster view didn't resolve.
+
+    `parse_live_draft`'s own header explains why this exists: verified against
+    a real in-progress draft where the roster view had resolved NONE of the
+    picks already made, not just the "briefly" lagging one or two the original
+    code assumed. Same survivorship problem `fetch_league`'s draft-history path
+    already solved for end-of-season rosters (`unresolved_pick_ids` +
+    `player_info_url`), reused here rather than reinvented. Best-effort: a
+    failed top-up returns the roster-only state rather than losing the poll.
+    """
+    data = await fetch_raw_league(league_id, season, espn_s2=espn_s2, swid=swid, ca_bundle=ca_bundle)
+    state = parse_live_draft(data, my_team=my_team)
+    if state.meta.get("drafted", 0) <= state.meta.get("resolved", 0):
+        return state  # rosters already named everyone drafted so far
+
+    roster_ids = {
+        pl["id"] for t in data.get("teams", []) or []
+        for entry in (t.get("roster", {}) or {}).get("entries", []) or []
+        for pl in [(entry.get("playerPoolEntry", {}) or {}).get("player", {}) or {}]
+        if pl.get("id") is not None
+    }
+    all_ids = {
+        p.get("playerId") for p in (data.get("draftDetail", {}) or {}).get("picks", []) or []
+        if p.get("playerId") is not None
+    }
+    missing = sorted(all_ids - roster_ids)
+    if not missing:
+        return state
+
+    cookies = {}
+    if espn_s2 and swid:
+        cookies = {"espn_s2": espn_s2, "SWID": swid if swid.startswith("{") else "{" + swid + "}"}
+    verify = ca_bundle if ca_bundle else True
+    found: dict[int, dict] = {}
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True, trust_env=True,
+                                     verify=verify, cookies=cookies, headers=SITE_HEADERS) as client:
+            for i in range(0, len(missing), 200):
+                chunk = missing[i:i + 200]
+                pr = await client.get(
+                    player_info_url(league_id, season),
+                    headers={"x-fantasy-filter": player_info_filter(chunk)})
+                if pr.status_code != 200:
+                    break
+                found.update(parse_player_info(pr.json()))
+    except Exception:  # noqa: BLE001 — the top-up is optional, the poll is not
+        pass
+    if not found:
+        return state
+    return parse_live_draft(data, my_team=my_team, pos_by_id=found)
 
 
 async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,

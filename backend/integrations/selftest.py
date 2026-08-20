@@ -545,6 +545,23 @@ def test_live_draft():
     # Two contiguous picks are in, so pick 3 is on the clock.
     assert st.complete_through == 2
 
+    # A kona_player_info top-up (pos_by_id) resolves picks the roster view
+    # hasn't caught up to — verified against a real in-progress draft where
+    # the roster view had resolved NONE of the picks already made, not just
+    # the "briefly" lagging one this fixture originally modeled.
+    topped_up = espn.parse_live_draft(
+        espn_data, my_team="Team Ari",
+        pos_by_id={99: {"name": "Puka Nacua", "pos": "WR", "team": "LAR"}})
+    assert [p.overall for p in topped_up.picks] == [1, 2, 3]
+    assert topped_up.picks[2].name == "Puka Nacua" and topped_up.picks[2].owner == "Rivals"
+    assert topped_up.meta["drafted"] == 3 and topped_up.meta["resolved"] == 3
+    assert topped_up.complete_through == 3
+    # Rosters still win when both know a player — pos_by_id only fills gaps.
+    roster_wins = espn.parse_live_draft(
+        espn_data, my_team="Team Ari",
+        pos_by_id={22: {"name": "WRONG NAME", "pos": "WR", "team": "XX"}})
+    assert roster_wins.picks[0].name == "A.J. Brown"
+
     # overallPickNumber missing -> derived from round + pick and league size
     derived = espn.parse_live_draft({**espn_data, "draftDetail": {"picks": [
         {"playerId": 11, "teamId": 1, "roundId": 2, "roundPickNumber": 2},

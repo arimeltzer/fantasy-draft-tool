@@ -1109,9 +1109,8 @@ async def sync_draft(
             state = await yahoo_provider.fetch_live_draft(
                 data.ext_id, data.access_token, my_guid=data.my_guid)
         else:
-            norm_data = await espn_provider.fetch_raw_league(
-                data.ext_id, data.season, espn_s2=data.espn_s2, swid=data.swid)
-            state = espn_provider.parse_live_draft(norm_data, my_team=data.my_team)
+            state = await espn_provider.fetch_and_resolve_live_draft(
+                data.ext_id, data.season, espn_s2=data.espn_s2, swid=data.swid, my_team=data.my_team)
     except yahoo_provider.FantasyScopeError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except PermissionError as e:
