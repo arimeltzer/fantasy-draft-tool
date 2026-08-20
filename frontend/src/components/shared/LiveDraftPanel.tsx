@@ -5,10 +5,19 @@ import { useLiveDraft, LiveDraftConfig } from "@/hooks/useLiveDraft";
 import { yahooConnected } from "@/lib/yahooAuth";
 
 interface Props {
-  leagueId: number;
   settings: LeagueSettings;
-  onPicks: () => void;
   onClose: () => void;
+  // Lifted up to the room component (AuctionRoom/SnakeRoom) rather than
+  // owned here — the hook instance used to live INSIDE this panel, so
+  // closing it (unmounting) killed the poll along with it. A user who closes
+  // this to get back to drafting is exactly the person who wants syncing to
+  // keep running, not the person telling it to stop. See ROADMAP-adjacent
+  // note in AuctionRoom.tsx/SnakeRoom.tsx where the hook is now instantiated.
+  live: ReturnType<typeof useLiveDraft>;
+  config: LiveDraftConfig | null;
+  onConfigChange: (c: LiveDraftConfig | null) => void;
+  intervalMs: number;
+  onIntervalChange: (ms: number) => void;
 }
 
 const INTERVALS = [
@@ -23,25 +32,31 @@ const INTERVALS = [
  * This is polling, not a push feed — neither platform publishes its draft-room
  * socket — so the interval is the latency, and the panel says so rather than
  * implying picks arrive the instant they're made.
+ *
+ * This component is a CONTROLLER for the lifted `live` hook, not its owner —
+ * closing this panel (via the × button) only hides the UI. Syncing keeps
+ * running in the background, visible via the "live" indicator on the room's
+ * header "Live" button.
  */
-export default function LiveDraftPanel({ leagueId, settings, onPicks, onClose }: Props) {
+export default function LiveDraftPanel({ settings, onClose, live, config, onConfigChange, intervalMs, onIntervalChange }: Props) {
   const source = settings.source;
   const [provider, setProvider] = useState<"espn" | "yahoo">(
-    source?.provider === "yahoo" ? "yahoo" : "espn");
-  const [extId, setExtId] = useState(source?.extId ?? "");
-  const [myTeam, setMyTeam] = useState("");
-  const [s2, setS2] = useState("");
-  const [swid, setSwid] = useState("");
-  const [intervalMs, setIntervalMs] = useState(10_000);
+    config?.provider ?? (source?.provider === "yahoo" ? "yahoo" : "espn"));
+  const [extId, setExtId] = useState(config?.extId ?? source?.extId ?? "");
+  const [myTeam, setMyTeam] = useState(config?.myTeam ?? "");
+  const [s2, setS2] = useState(config?.espnS2 ?? "");
+  const [swid, setSwid] = useState(config?.swid ?? "");
 
-  const config: LiveDraftConfig | null = useMemo(
+  // What the FORM currently describes — not yet committed to the parent
+  // (and therefore not yet what `live` is actually polling with) until
+  // "Start watching" or "Sync now" is pressed.
+  const formConfig: LiveDraftConfig | null = useMemo(
     () => (extId.trim()
       ? { provider, extId: extId.trim(), espnS2: s2, swid, myTeam }
       : null),
     [provider, extId, s2, swid, myTeam],
   );
 
-  const live = useLiveDraft(leagueId, config, intervalMs, onPicks);
   const res = live.lastResult;
   const yahooReady = provider !== "yahoo" || yahooConnected();
 
@@ -66,7 +81,9 @@ export default function LiveDraftPanel({ leagueId, settings, onPicks, onClose }:
             Picks are <span className="text-gray-700">polled</span>, not pushed — neither platform
             offers a live feed to outside apps, so new picks show up within one interval of being
             made. Everything you log by hand still works; syncing only adds picks that aren't
-            already on the board.
+            already on the board. {live.running && "Closing this window does NOT stop it — "}
+            {live.running && <span className="text-emerald-700 font-medium">it keeps polling in the background</span>}
+            {live.running && "; the \"Live\" button up top shows it's still active."}
           </p>
 
           <div className="grid grid-cols-2 gap-2">
@@ -135,7 +152,7 @@ export default function LiveDraftPanel({ leagueId, settings, onPicks, onClose }:
               {INTERVALS.map((i) => (
                 <button
                   key={i.ms}
-                  onClick={() => setIntervalMs(i.ms)}
+                  onClick={() => onIntervalChange(i.ms)}
                   className={`px-2 py-1 text-2xs ${intervalMs === i.ms ? "bg-gray-200 font-semibold text-gray-800" : "text-gray-500 hover:text-gray-700"}`}
                 >
                   {i.label}
@@ -143,16 +160,23 @@ export default function LiveDraftPanel({ leagueId, settings, onPicks, onClose }:
               ))}
             </div>
             <button
-              onClick={() => void live.syncOnce(true)}
-              disabled={!config || live.busy}
+              onClick={() => void live.syncOnce(true, formConfig ?? undefined)}
+              disabled={!formConfig || live.busy}
               className="flex items-center gap-1.5 rounded border border-gray-300 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600 hover:border-gray-400 disabled:opacity-50"
             >
               {live.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Sync now
             </button>
             <button
-              onClick={live.toggle}
-              disabled={!config || !yahooReady}
+              onClick={() => {
+                if (live.running) {
+                  live.stop();
+                } else {
+                  onConfigChange(formConfig);
+                  live.start();
+                }
+              }}
+              disabled={!formConfig || !yahooReady}
               className={`ml-auto flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
                 live.running
                   ? "border border-gray-300 bg-gray-50 text-gray-700 hover:border-gray-400"

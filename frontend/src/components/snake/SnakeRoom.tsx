@@ -20,6 +20,7 @@ import KeeperPlanner from "@/components/shared/KeeperPlanner";
 import DraftOverview from "@/components/shared/DraftOverview";
 import DraftLogModal from "@/components/shared/DraftLogModal";
 import LiveDraftPanel from "@/components/shared/LiveDraftPanel";
+import { useLiveDraft, LiveDraftConfig } from "@/hooks/useLiveDraft";
 import TeamPicker from "@/components/shared/TeamPicker";
 import DraftOrderBoard from "@/components/shared/DraftOrderBoard";
 import InjuryBadge from "@/components/shared/InjuryBadge";
@@ -50,6 +51,13 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   const [showLog, setShowLog] = useState(false);
   const [showLive, setShowLive] = useState(false);
   const [showOrder, setShowOrder] = useState(false);
+
+  // Lifted here (not owned inside LiveDraftPanel) so closing that panel
+  // doesn't unmount the hook and kill the poll along with it — see
+  // LiveDraftPanel.tsx's own header comment.
+  const [liveConfig, setLiveConfig] = useState<LiveDraftConfig | null>(null);
+  const [liveIntervalMs, setLiveIntervalMs] = useState(10_000);
+  const liveDraft = useLiveDraft(leagueId, liveConfig, liveIntervalMs, () => void hydrate(leagueId));
 
   const draftedIds = useMemo(() => new Set(picks.map((p) => p.playerId).filter(Boolean) as number[]), [picks]);
   // Keepers occupy specific rounds, not the front of the draft, so they don't
@@ -279,10 +287,16 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
             />
             <button
               onClick={() => setShowLive(true)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300"
-              title="Follow the draft on ESPN/Yahoo and log picks automatically"
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border ${
+                liveDraft.running
+                  ? "bg-emerald-50 border-emerald-300 text-emerald-700"
+                  : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
+              title={liveDraft.running
+                ? "Live sync is running in the background — click to open the panel"
+                : "Follow the draft on ESPN/Yahoo and log picks automatically"}
             >
-              <Radio className="w-3.5 h-3.5" /> Live
+              <Radio className={`w-3.5 h-3.5 ${liveDraft.running ? "animate-pulse" : ""}`} /> Live
+              {liveDraft.running && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
             </button>
             <button
               onClick={() => { setShowOrder(true); setShowSettings(false); setShowKeepers(false); }}
@@ -320,9 +334,12 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
 
       {showLive && (
         <LiveDraftPanel
-          leagueId={leagueId}
           settings={settings}
-          onPicks={() => void hydrate(leagueId)}
+          live={liveDraft}
+          config={liveConfig}
+          onConfigChange={setLiveConfig}
+          intervalMs={liveIntervalMs}
+          onIntervalChange={setLiveIntervalMs}
           onClose={() => setShowLive(false)}
         />
       )}

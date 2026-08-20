@@ -6,6 +6,29 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
 
 ---
 
+## 2026-08 — Live draft sync: fixed closing the panel silently stopping it
+- **Bug**: `useLiveDraft`'s poll loop lived INSIDE `LiveDraftPanel.tsx`, so
+  closing the panel (the natural thing to do to get back to drafting)
+  unmounted the hook and killed `setInterval` along with it — sync silently
+  stopped the moment you closed the window, with no indication anything had
+  changed. Flagged directly: "shouldn't it keep syncing when I close the
+  window to continue to my draft?"
+- **Fix**: lifted `useLiveDraft` (and its `config`/`intervalMs` state) up
+  into `AuctionRoom.tsx`/`SnakeRoom.tsx`, which stay mounted for the whole
+  draft. `LiveDraftPanel` is now a controller over that lifted state, not
+  its owner — closing it only hides the UI. The room header's "Live" button
+  now shows a persistent emerald/pulsing indicator whenever sync is running,
+  closed panel or not, so there's visible confirmation it's still working.
+- `useLiveDraft.syncOnce()` gained an optional `overrideConfig` param so the
+  panel's "Sync now" button can fire immediately with the just-typed form
+  values without waiting a render cycle for the lifted state to commit
+  (React state setters are async/batched; a synchronous call right after
+  `setConfig()` would otherwise still see the previous render's value).
+- Whether ESPN's actual live-draft fetch itself is failing is a separate,
+  still-open question — this fix only addresses "it silently stops when you
+  close the window." Diagnosing needs the specific symptom (network error?
+  0 picks read? which league, public or private, has the draft started?).
+
 ## 2026-08 — Roadmap 2.2a RESULT: independent weekly draws REJECTED — season variance understated 3-4x
 - Ran `projection-backtest.yml` #32154937836 against live data (2016-2025,
   63,071 player-weeks). Confirms the pre-registered concern, decisively.

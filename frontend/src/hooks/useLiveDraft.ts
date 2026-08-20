@@ -45,29 +45,35 @@ export function useLiveDraft(
   const onPicksRef = useRef(onPicks);
   onPicksRef.current = onPicks;
 
-  const syncOnce = useCallback(async (apply = true) => {
-    if (!config || inFlight.current) return;
+  // `overrideConfig` lets a caller (the "Sync now" button, e.g.) fire an
+  // immediate sync with a config that hasn't been committed to this hook's
+  // own `config` param yet — that commit happens through the PARENT's state
+  // setter, which is async/batched, so a synchronous `syncOnce()` call right
+  // after setting it would otherwise still see last render's stale value.
+  const syncOnce = useCallback(async (apply = true, overrideConfig?: LiveDraftConfig) => {
+    const cfg = overrideConfig ?? config;
+    if (!cfg || inFlight.current) return;
     inFlight.current = true;
     setStatus((s) => ({ ...s, busy: true }));
     try {
       let accessToken: string | undefined;
       let myGuid: string | undefined;
-      if (config.provider === "yahoo") {
+      if (cfg.provider === "yahoo") {
         const t = await yahooAccessToken();
         if (!t) throw new Error("Yahoo session expired — reconnect in the Keepers panel.");
         accessToken = t;
         myGuid = loadYahooSession()?.guid;
       }
       const res = await api.syncDraft(leagueId, {
-        provider: config.provider,
-        ext_id: config.extId,
-        season: config.season ?? 2026,
-        match_season: config.matchSeason ?? 2026,
+        provider: cfg.provider,
+        ext_id: cfg.extId,
+        season: cfg.season ?? 2026,
+        match_season: cfg.matchSeason ?? 2026,
         access_token: accessToken,
         my_guid: myGuid,
-        espn_s2: config.espnS2 || undefined,
-        swid: config.swid || undefined,
-        my_team: config.myTeam || undefined,
+        espn_s2: cfg.espnS2 || undefined,
+        swid: cfg.swid || undefined,
+        my_team: cfg.myTeam || undefined,
         apply,
       });
       setStatus((s) => ({
