@@ -29,6 +29,8 @@ backend/            FastAPI + async SQLAlchemy (asyncpg) + Postgres, JWT auth
   models.py           ORM: User, League, Player, SosMult, Schedule, PlayerLog, DraftPick
   database.py         async engine/session (db_dep), create_all_tables
   sos.py              server-side SOS recompute for /api/admin/reload-sos
+  live_ws_registry.py process-global registry of ESPN live-draft WebSocket
+                      watchers (one per league), used by sync_draft
   integrations/       ESPN + Yahoo league import (see below)
 frontend/           React + TS + Vite + Tailwind (light design system)
   src/engine/         engine-core.js (projection+VBD) · auction-engine.js
@@ -250,16 +252,23 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     against TWO independent real examples (different league/team/value),
     not just one endpoint existing — `fetch_player_info()` was factored out
     of the roster top-up so both it and the new watcher share one lookup.
-  - **Built, still not wired into `sync_draft`.** `LiveDraftWatcher` (pure,
-    fixture-tested) accumulates `SOLD` events into `LivePick`s as they
-    arrive — no networking, so it's fully testable without a live
-    connection, same treatment as `parse_live_draft`/`parse_ws_line`. All
-    four pieces (security token, WebSocket connect, protocol parser, event
-    accumulator) are now real and tested; what's left is stitching them
-    into the live request path — a persistent per-league background task,
-    its start/stop lifecycle, and how `sync_draft` reads from it — which is
-    a materially different, harder-to-verify-without-a-live-draft change
-    from parsing logic, so it hasn't been made without checking in first.
+  - **Now wired in.** `live_ws_registry.py` (process-global, single-uvicorn-
+    worker assumption — see its docstring) keeps one `LiveDraftWatcher` per
+    league running in the background; `sync_draft`'s ESPN branch calls
+    `ensure_watcher()` on every poll (idempotent — a lock per league id makes
+    concurrent polls converge instead of racing to start two) and reads
+    `watcher.state()`. Falls back to the old REST path if cookies are
+    missing, `my_team` can't be matched to a numeric team id, or the
+    security-token fetch itself fails — best-effort, same discipline as the
+    roster top-up before it. `start_overall` seeds new picks past whatever's
+    already logged when the watcher first starts (forward-only — see the
+    `INIT`-blob note above, so picks made before the watcher connects aren't
+    recovered by this path, only new ones from that point on). A dead
+    watcher (bad auth, ESPN closing the connection, draft ending) is not
+    auto-retried; the next poll's `ensure_watcher()` call sees the finished
+    task and starts a fresh one — the same "poll picks it back up" pattern
+    this app already leans on everywhere else. `state.meta["ws_start_error"]`
+    carries why a watcher failed to start, visible in the sync response.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

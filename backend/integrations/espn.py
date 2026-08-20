@@ -574,6 +574,20 @@ async def fetch_raw_league(league_id: str, season: int, espn_s2: str | None = No
     return data[0] if isinstance(data, list) and data else data
 
 
+def resolve_team_ids(data: dict, my_team: str | None = None) -> tuple[dict[int, str], int | None]:
+    """`{teamId: name}` for the whole league, plus the numeric team id
+    matching `my_team` (an ESPN team id OR display name — same matching
+    `parse_live_draft` already does, factored out here so the live-WS
+    watcher can resolve a numeric team id ONCE at connect time instead of
+    re-deriving it from a string on every event)."""
+    teams_by_id = {t.get("id"): _team_name(t) for t in data.get("teams", []) or []}
+    mine_key = (my_team or "").strip().lower()
+    for t in data.get("teams", []) or []:
+        if mine_key and mine_key in (str(t.get("id")).lower(), _team_name(t).lower()):
+            return teams_by_id, t.get("id")
+    return teams_by_id, None
+
+
 def draft_security_url(league_id: str, season: int, team_id: int) -> str:
     return (f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{league_id}"
             f"/teams/{team_id}/draftSecurity")

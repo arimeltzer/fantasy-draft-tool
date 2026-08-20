@@ -727,7 +727,7 @@ def main():
     test_waiver_weekly_fetch(); print("✓ waiver weekly fetch")
     test_yahoo_paste(); print("✓ yahoo paste import")
     test_fantasypros_aav_paste(); print("✓ fantasypros aav paste import")
-    test_espn_draft_ws(); print("✓ espn draft websocket (unwired, parser only)")
+    test_espn_draft_ws(); print("✓ espn draft websocket (protocol + accumulator)")
     print("\nALL INTEGRATION SELFTESTS PASS")
 
 

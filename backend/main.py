@@ -22,6 +22,7 @@ from integrations import espn as espn_provider, yahoo as yahoo_provider, yahoo_p
 from integrations import fantasypros_aav_paste as aav_paste
 from integrations.base import NormPlayer, opponent_team_ids
 from integrations.matching import build_index, match_player, keeper_candidates
+import live_ws_registry
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -1102,12 +1103,44 @@ async def sync_draft(
     """
     league = await _get_league_owned(league_id, user.id, db)
 
+    existing = (await db.execute(
+        select(DraftPick.player_id).where(DraftPick.league_id == league_id)
+    )).scalars().all()
+    have = {pid for pid in existing if pid is not None}
+
     try:
         if data.provider == "yahoo":
             if not data.access_token:
                 raise HTTPException(status_code=400, detail="Yahoo access token required.")
             state = await yahoo_provider.fetch_live_draft(
                 data.ext_id, data.access_token, my_guid=data.my_guid)
+        elif data.espn_s2 and data.swid:
+            # Live WebSocket path: draftDetail.picks (REST) is a static
+            # skeleton until the draft finalizes and can never carry live
+            # picks — see CLAUDE.md "Live draft sync". The WebSocket watcher
+            # is the real mechanism; ensure_watcher is idempotent per league,
+            # so every poll just reads whatever it's accumulated so far.
+            # Best-effort: any failure here (bad cookies, ESPN closing the
+            # connection, a team-id mismatch) falls back to the REST path
+            # rather than breaking the poll outright.
+            #
+            # start_overall seeds new picks past whatever's already logged —
+            # the watcher is forward-only (no INIT backfill decoded, see
+            # espn_draft_ws.py), so picks already made before the watcher
+            # connects are NOT recovered by this path; only NEW ones from
+            # here forward are. len(existing) is only read at watcher-START
+            # (ensure_watcher no-ops on later polls), so it won't drift once
+            # the watcher is running and `existing` naturally grows.
+            handle = await live_ws_registry.ensure_watcher(
+                league_id, data.ext_id, data.season, data.my_team, data.espn_s2, data.swid,
+                start_overall=len(existing) + 1)
+            if handle.watcher is not None:
+                state = handle.watcher.state()
+                state.meta["ws_start_error"] = handle.start_error
+            else:
+                state = await espn_provider.fetch_and_resolve_live_draft(
+                    data.ext_id, data.season, espn_s2=data.espn_s2, swid=data.swid, my_team=data.my_team)
+                state.meta["ws_start_error"] = handle.start_error
         else:
             state = await espn_provider.fetch_and_resolve_live_draft(
                 data.ext_id, data.season, espn_s2=data.espn_s2, swid=data.swid, my_team=data.my_team)
@@ -1126,11 +1159,6 @@ async def sync_draft(
     if not rows:
         raise HTTPException(status_code=409, detail=f"No players loaded for season {data.match_season}.")
     index = build_index([{"id": r.id, "name": r.name, "pos": r.pos, "team": r.team} for r in rows])
-
-    existing = (await db.execute(
-        select(DraftPick.player_id).where(DraftPick.league_id == league_id)
-    )).scalars().all()
-    have = {pid for pid in existing if pid is not None}
 
     settings = league.settings or {}
     opponents = settings.get("opponents") or []

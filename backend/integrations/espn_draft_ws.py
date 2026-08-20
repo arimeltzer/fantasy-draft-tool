@@ -54,12 +54,11 @@ moment it connects forward, not the picks already made before that.
 Acceptable for the forward-only use case this was built for; revisit only if
 backfill turns out to matter in practice.
 
-Still NOT wired into `sync_draft` as of this writing — the pieces (security
-token, WebSocket connect, protocol parser, event accumulator) are all built
-and tested, but stitching them into the live request path (a persistent
-per-league background task, its lifecycle, and how `sync_draft` reads from
-it) is a distinct, harder-to-verify-without-a-live-draft change that hasn't
-been made yet. See CLAUDE.md for status.
+Wired into `sync_draft` via `backend/live_ws_registry.py`, which owns the
+persistent per-league background task and its lifecycle — this module stays
+the pure/testable layer (protocol parsing, event accumulation), same split
+as `parse_live_draft` vs. `fetch_and_resolve_live_draft`. See CLAUDE.md for
+status and `live_ws_registry.py`'s docstring for the wiring itself.
 """
 from __future__ import annotations
 
@@ -139,7 +138,7 @@ async def watch_draft(league_id: str, season: int, team_id: int, swid: str, join
                       espn_s2: str | None = None, game: str = "game-1") -> None:
     """Connects to the live draft-room WebSocket and calls `on_event` for
     every parsed line until the connection closes or the caller cancels this
-    coroutine. NOT wired into a route yet — see module docstring for status.
+    coroutine. Called from `live_ws_registry.py`, not directly by any route.
 
     Requires the `websockets` package (added to requirements.txt but not
     otherwise used in this repo yet, since nothing calls this function).

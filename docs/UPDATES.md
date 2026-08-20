@@ -177,6 +177,38 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   the parsing/accumulation logic shipped so far, so it's paused for a
   check-in rather than built without review.
 
+## 2026-08 — Live WebSocket sync wired into sync-draft (shipped mid-draft, on user request)
+- All four pieces from the prior two entries (security-token fetch,
+  WebSocket connect, protocol parser, `LiveDraftWatcher` accumulator) are
+  now stitched into the actual request path — the user was mid-draft and
+  asked for it working now rather than waiting for a design review.
+- `backend/live_ws_registry.py` (new, NOT in `integrations/` — this is
+  request-lifecycle/process state, not pure parsing logic): one
+  `LiveDraftWatcher` background task per league, kept in a module-global
+  dict. `ensure_watcher()` is idempotent and lock-guarded per league id, so
+  every `sync-draft` poll can call it safely — the first call starts the
+  watcher (one REST call to resolve team ids + `fetch_draft_security`, then
+  the WebSocket connects), every later poll just returns the already-running
+  one. Single-uvicorn-process assumption documented in the module's own
+  docstring, since that's what makes an in-memory dict safe here.
+- `sync_draft`'s ESPN branch now prefers this path when cookies are present,
+  falling back to the old REST `fetch_and_resolve_live_draft` if the watcher
+  fails to start for any reason (missing team-id match, security-token fetch
+  failing, etc.) — best-effort, matches every other fallback in this file.
+  `state.meta["ws_start_error"]` carries the reason when it falls back, so a
+  failure is visible in the sync response instead of silently reverting to
+  REST with no explanation.
+- `espn.resolve_team_ids()`: factored the team-name/my-team-id matching
+  logic out of `parse_live_draft` so the registry can resolve a numeric ESPN
+  team id ONCE at watcher-start instead of re-deriving it from a string
+  every event.
+- **Known limitation, accepted for now given the time pressure**: a watcher
+  that outlives its draft (user closes the tab without the draft ending)
+  keeps running until the process restarts — there's no idle-timeout reaper
+  yet. Low risk for a single-user personal deployment; noted here rather
+  than solved, since it wasn't worth delaying the fix the user was
+  mid-draft waiting on.
+
 ## 2026-08 — Roadmap 2.2a RESULT: independent weekly draws REJECTED — season variance understated 3-4x
 - Ran `projection-backtest.yml` #32154937836 against live data (2016-2025,
   63,071 player-weeks). Confirms the pre-registered concern, decisively.
