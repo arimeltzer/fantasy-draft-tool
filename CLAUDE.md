@@ -316,6 +316,46 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     `https://fantasy.espn.com`/`https://fantasydraft.espn.com` in addition
     to the env-driven app origin, since the bookmarklet's `fetch()` call
     runs from ESPN's origin, not ours, and needs its own CORS clearance.
+  - **The bookmarklet has a real, hit-in-practice flaw: it can defeat
+    itself.** Patching `window.WebSocket` only affects connections opened
+    AFTER the click — if ESPN's socket was already open (the normal case
+    mid-draft), the fix is "reload the page." But a reload wipes ALL page
+    JS state, the patch included, since it only ever existed in that one
+    page instance. The result is an unwinnable race: a human reloading and
+    re-clicking can't reliably beat ESPN's own script back to opening the
+    connection. `frontend/src/lib/liveBookmarklet.ts buildUserscript()`
+    solves this properly — the same hook, declared `@run-at document-start`
+    in a Tampermonkey/Violentmonkey userscript, which is GUARANTEED to run
+    before any of the page's own JS, every load, no race. `downloadUserscript()`
+    triggers a normal browser download of the `.user.js` file (this runs
+    inside our OWN app's page, not a sandboxed context, so `<a download>`
+    works normally). Promoted to the primary recommended option in
+    `LiveDraftPanel`; the bookmarklet is kept as a collapsed no-extension
+    fallback with its limitation stated up front, not discovered the hard
+    way again.
+  - **Three more real installation gotchas, found by a user actually
+    walking through it live, not anticipated in advance:**
+    (1) A downloaded `.user.js` file double-clicked in Windows Explorer
+    runs under Windows Script Host's ancient JScript engine (`.js` file
+    association), not the browser — produces a classic WSH syntax error
+    (`800A03EA`) that looks like a bug in the generated script but isn't
+    one; the browser/Tampermonkey never saw the file. Fix: install via
+    Tampermonkey's own Dashboard → Utilities → "Import from file", which
+    sidesteps the OS file association entirely.
+    (2) The draft-room UI likely runs inside an iframe on a DIFFERENT
+    espn.com subdomain than the top-level page (the WebSocket target is
+    `fantasydraft.espn.com`, not `fantasy.espn.com`) — Tampermonkey injects
+    into every matching frame by default, but only if `@match` actually
+    covers that frame's URL. Widened from `https://fantasy.espn.com/*` to
+    `https://*.espn.com/*`; the hook's own `fantasydraft.espn.com` filter
+    on which WebSocket calls to tap already keeps this safe on unrelated
+    ESPN pages.
+    (3) Modern Chrome added a SEPARATE "Allow User Scripts" toggle at
+    `chrome://extensions` (Manifest V3's dynamic-code restrictions), which
+    Tampermonkey needs ON TOP OF its own "Site access: On all sites"
+    permission — a script can be correctly installed, correctly matching,
+    and still never fire if only one of these two is set. Both are now
+    called out explicitly in the panel's install instructions.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

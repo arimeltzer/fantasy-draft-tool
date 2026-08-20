@@ -247,9 +247,15 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
               </div>
               {userscriptDone && (
                 <p className="mt-1.5 text-2xs leading-snug text-emerald-800/70">
-                  Open the downloaded <code>fantasy-live-sync.user.js</code> file (Tampermonkey
-                  will offer to install it), click Install, then reload your ESPN draft tab once.
-                  It'll run automatically from then on — no re-clicking anything.
+                  Don't double-click the downloaded file — Windows may try to run it itself and
+                  fail with a syntax error. Instead: Tampermonkey icon → Dashboard → Utilities →
+                  "Import from file" → pick <code>fantasy-live-sync.user.js</code>. Then, on
+                  recent Chrome, go to <code>chrome://extensions</code> and turn on both{" "}
+                  <span className="font-medium">"Allow User Scripts"</span> (a separate
+                  Chrome-level toggle Tampermonkey needs, independent of site permissions) and,
+                  under Tampermonkey's own Details, <span className="font-medium">Site
+                  access: "On all sites"</span>. Reload your ESPN draft tab once — it runs
+                  automatically after that, no re-clicking anything.
                 </p>
               )}
               {userscriptError && (
