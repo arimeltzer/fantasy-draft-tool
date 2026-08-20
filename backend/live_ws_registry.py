@@ -43,7 +43,7 @@ async def _run(handle: WatcherHandle, ext_id: str, season: int, team_id: int, sw
                join_hash: int, espn_s2: str | None) -> None:
     assert handle.watcher is not None
     watcher = handle.watcher
-    watcher.connected = True
+    watcher.started = True   # the task is executing, whether or not it connects
     watcher.last_error = None
 
     async def on_event(msg: dict) -> None:
@@ -57,9 +57,17 @@ async def _run(handle: WatcherHandle, ext_id: str, season: int, team_id: int, sw
         except Exception:  # noqa: BLE001 — a failed lookup retries on the next SOLD, not fatal
             pass
 
+    def on_connect() -> None:
+        watcher.connected = True
+
     try:
-        await espn_draft_ws.watch_draft(ext_id, season, team_id, swid, join_hash,
-                                        on_event, espn_s2=espn_s2)
+        await espn_draft_ws.watch_draft(ext_id, season, team_id, swid, join_hash, on_event,
+                                        espn_s2=espn_s2, on_connect=on_connect)
+        # watch_draft returned WITHOUT raising -> ESPN closed the socket on
+        # its own. During an active draft that shouldn't happen, so this is
+        # worth flagging rather than leaving last_error looking like nothing
+        # went wrong at all.
+        watcher.last_error = "WebSocket closed by ESPN (no exception raised)."
     except Exception as exc:  # noqa: BLE001 — surfaced via last_error, never crashes the app
         watcher.last_error = f"{type(exc).__name__}: {exc}"
     finally:

@@ -153,6 +153,15 @@ export interface LiveSyncResult {
     /** kona_player_info top-up diagnostics, present once the roster view has
      *  fallen behind and a top-up was attempted. */
     lookup?: { lookup_attempted?: number; lookup_found?: number; lookup_status?: string | number };
+    /** ESPN's real live-draft WebSocket path (live_ws_registry.py). When
+     *  present, this is the actual sync mechanism — `drafted`/`resolved`
+     *  above come from it, not from REST draftDetail.picks (a static
+     *  skeleton that can't reflect a live draft). */
+    started?: boolean; connected?: boolean; last_error?: string | null;
+    /** Set when the watcher failed to even START (bad cookies, my_team
+     *  didn't match a team, draftSecurity rejected) — the sync fell back to
+     *  the REST path (which can't show live picks) for this poll. */
+    ws_start_error?: string | null;
   };
   applied: boolean;
 }

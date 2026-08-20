@@ -206,6 +206,18 @@ export default function LiveDraftPanel({ settings, onClose, live, config, onConf
                 )}
               </div>
 
+              {res.meta.started !== undefined && (
+                <p className={`text-2xs ${res.meta.connected ? "text-emerald-600" : "text-amber-600"}`}>
+                  live channel: {res.meta.connected ? "connected" : res.meta.started ? "reconnecting…" : "starting…"}
+                  {res.meta.last_error ? ` — ${res.meta.last_error}` : ""}
+                </p>
+              )}
+              {res.meta.ws_start_error && (
+                <p className="text-2xs text-rose-600">
+                  live channel didn't start, using REST fallback: {res.meta.ws_start_error}
+                </p>
+              )}
+
               {res.meta.lookup && res.meta.lookup.lookup_attempted ? (
                 <p className="text-2xs text-gray-400">
                   roster view behind: looked up {res.meta.lookup.lookup_attempted}, found{" "}

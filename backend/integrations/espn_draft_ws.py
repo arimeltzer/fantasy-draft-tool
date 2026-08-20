@@ -135,10 +135,19 @@ def join_url(league_id: str, team_id: int, swid: str, join_hash: int,
 
 async def watch_draft(league_id: str, season: int, team_id: int, swid: str, join_hash: int,
                       on_event: Callable[[dict[str, Any]], Awaitable[None] | None],
-                      espn_s2: str | None = None, game: str = "game-1") -> None:
+                      espn_s2: str | None = None, game: str = "game-1",
+                      on_connect: Callable[[], None] | None = None,
+                      connect_timeout: float = 15.0) -> None:
     """Connects to the live draft-room WebSocket and calls `on_event` for
     every parsed line until the connection closes or the caller cancels this
     coroutine. Called from `live_ws_registry.py`, not directly by any route.
+
+    `on_connect`, if given, fires once the handshake actually succeeds — the
+    caller uses this to distinguish "still trying to connect" from "attempt
+    finished" in a way a bare boolean set before the attempt can't.
+    `connect_timeout` bounds the handshake itself so a network black hole
+    (egress blocked, DNS hanging) surfaces as a real, timely error instead of
+    hanging the watcher task forever with no feedback.
 
     Requires the `websockets` package (added to requirements.txt but not
     otherwise used in this repo yet, since nothing calls this function).
@@ -151,7 +160,14 @@ async def watch_draft(league_id: str, season: int, team_id: int, swid: str, join
     headers = {"Cookie": f"SWID={swid_b}" + (f"; espn_s2={espn_s2}" if espn_s2 else ""),
                "Origin": "https://fantasy.espn.com"}
 
-    async with websockets.connect(url, additional_headers=headers) as ws:
+    # `extra_headers` — NOT `additional_headers` (that's a different, newer
+    # websockets major-version API this pinned 13.1 doesn't have; passing it
+    # here would TypeError on every single connection attempt, silently
+    # indistinguishable from "never tried" without the `started` flag below).
+    ws = await websockets.connect(url, extra_headers=headers, open_timeout=connect_timeout)
+    if on_connect is not None:
+        on_connect()
+    async with ws:
         async def _keepalive() -> None:
             while True:
                 await asyncio.sleep(KEEPALIVE_SECONDS)
@@ -226,6 +242,7 @@ class LiveDraftWatcher:
         self.events: list[SoldEvent] = []
         self.pos_by_id: dict[int, dict] = {}
         self._pending: set[int] = set()   # ids already flagged for lookup, not yet resolved
+        self.started = False    # the background task has begun executing at all
         self.connected = False
         self.last_error: str | None = None
 
@@ -259,5 +276,5 @@ class LiveDraftWatcher:
         fmt = "auction" if any(e.price for e in self.events) else "snake"
         return LiveDraftState(picks=picks, fmt=fmt, meta={
             "drafted": len(self.events), "resolved": len(picks),
-            "connected": self.connected, "last_error": self.last_error,
+            "started": self.started, "connected": self.connected, "last_error": self.last_error,
         })
