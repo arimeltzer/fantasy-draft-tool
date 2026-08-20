@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from datetime import datetime, timedelta
@@ -1135,6 +1136,10 @@ async def sync_draft(
                 league_id, data.ext_id, data.season, data.my_team, data.espn_s2, data.swid,
                 start_overall=len(existing) + 1)
             if handle.watcher is not None:
+                # Give the watcher task a moment to start before reading its state.
+                # The task is scheduled asynchronously, so we need a small yield
+                # to let it begin executing (set started=True).
+                await asyncio.sleep(0.001)
                 state = handle.watcher.state()
                 state.meta["ws_start_error"] = handle.start_error
             else:

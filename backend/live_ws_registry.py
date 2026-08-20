@@ -163,6 +163,13 @@ async def ensure_watcher(league_id: int, ext_id: str, season: int, my_team: str 
         handle.task = asyncio.ensure_future(
             _run(handle, ext_id, season, my_team_id, swid, join_hash, espn_s2))
         log.info(f"League {league_id}: watcher created and task scheduled")
+
+        # Give the task a tiny moment to start executing (set started=True) so the
+        # response doesn't show started=false when the task is actually running.
+        # This prevents a race condition where ensure_future schedules the task
+        # but it hasn't executed by the time we return and call watcher.state().
+        await asyncio.sleep(0.01)
+
         return handle
 
 
