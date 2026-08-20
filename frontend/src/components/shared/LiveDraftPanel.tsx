@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
-import { Radio, Loader2, AlertTriangle, Pause, Play, RefreshCw, X } from "lucide-react";
-import { LeagueSettings } from "@/lib/api";
+import { Radio, Loader2, AlertTriangle, Pause, Play, RefreshCw, X, Link2 } from "lucide-react";
+import { LeagueSettings, api, BASE } from "@/lib/api";
 import { useLiveDraft, LiveDraftConfig } from "@/hooks/useLiveDraft";
 import { yahooConnected } from "@/lib/yahooAuth";
+import { buildBookmarklet } from "@/lib/liveBookmarklet";
 
 interface Props {
+  leagueId: number;
   settings: LeagueSettings;
   onClose: () => void;
   // Lifted up to the room component (AuctionRoom/SnakeRoom) rather than
@@ -38,7 +40,7 @@ const INTERVALS = [
  * running in the background, visible via the "live" indicator on the room's
  * header "Live" button.
  */
-export default function LiveDraftPanel({ settings, onClose, live, config, onConfigChange, intervalMs, onIntervalChange }: Props) {
+export default function LiveDraftPanel({ leagueId, settings, onClose, live, config, onConfigChange, intervalMs, onIntervalChange }: Props) {
   const source = settings.source;
   const [provider, setProvider] = useState<"espn" | "yahoo">(
     config?.provider ?? (source?.provider === "yahoo" ? "yahoo" : "espn"));
@@ -59,6 +61,47 @@ export default function LiveDraftPanel({ settings, onClose, live, config, onConf
 
   const res = live.lastResult;
   const yahooReady = provider !== "yahoo" || yahooConnected();
+
+  // Bookmarklet — see live_ws_registry.py "Browser-side ingest" and
+  // liveBookmarklet.ts for the full why. Built on demand (not on mount)
+  // since it needs a real ext_id typed into the form first.
+  const [bookmarkletHref, setBookmarkletHref] = useState<string | null>(null);
+  const [bookmarkletBusy, setBookmarkletBusy] = useState(false);
+  const [bookmarkletError, setBookmarkletError] = useState<string | null>(null);
+  const [stopBusy, setStopBusy] = useState(false);
+  const [stopMsg, setStopMsg] = useState<string | null>(null);
+
+  async function makeBookmarklet() {
+    if (!extId.trim()) return;
+    setBookmarkletBusy(true);
+    setBookmarkletError(null);
+    try {
+      const { token } = await api.getLiveIngestToken(leagueId);
+      const href = buildBookmarklet({
+        apiUrl: BASE, leagueId, token, extId: extId.trim(), season: 2026,
+        espnS2: s2 || undefined, swid: swid || undefined, myTeam: myTeam || undefined,
+        startOverall: 1,
+      });
+      setBookmarkletHref(href);
+    } catch (e) {
+      setBookmarkletError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBookmarkletBusy(false);
+    }
+  }
+
+  async function stopBackendWatcher() {
+    setStopBusy(true);
+    setStopMsg(null);
+    try {
+      const { stopped } = await api.stopLiveWatcher(leagueId);
+      setStopMsg(stopped ? "Stopped." : "Nothing was running.");
+    } catch (e) {
+      setStopMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setStopBusy(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-900/40 p-4">
@@ -144,6 +187,81 @@ export default function LiveDraftPanel({ settings, onClose, live, config, onConf
                 <input value={swid} onChange={(e) => setSwid(e.target.value)} placeholder="{SWID}"
                   className="w-full rounded border border-gray-300 bg-gray-50 px-2 py-1 font-mono text-2xs text-gray-700 focus:border-gray-400 focus:outline-none" />
               </div>
+            </details>
+          )}
+
+          {provider === "espn" && (
+            <div className="rounded border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs">
+              <div className="flex items-center gap-1.5 font-medium text-emerald-800">
+                <Link2 className="h-3.5 w-3.5" /> Live channel bookmarklet (recommended)
+              </div>
+              <p className="mt-1 text-2xs leading-snug text-emerald-800/80">
+                Reads picks straight off ESPN's own draft-room connection, from inside your
+                browser tab — doesn't touch ESPN's login/session at all, so it can't trigger the
+                multi-location kick a server-side connection can. Requires the League ID above.
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  onClick={() => void makeBookmarklet()}
+                  disabled={!extId.trim() || bookmarkletBusy}
+                  className="flex items-center gap-1.5 rounded border border-emerald-300 bg-white px-2.5 py-1.5 text-2xs font-medium text-emerald-800 hover:border-emerald-400 disabled:opacity-50"
+                >
+                  {bookmarkletBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
+                  {bookmarkletHref ? "Regenerate" : "Get bookmarklet"}
+                </button>
+                {bookmarkletHref && (
+                  <a
+                    href={bookmarkletHref}
+                    onClick={(e) => {
+                      // A javascript: href only does anything when dragged to
+                      // a bookmarks bar and clicked FROM there (on ESPN's
+                      // page) — clicking it here, still on our own site,
+                      // would run the hook against the wrong page. Block
+                      // that and say so, rather than let it silently no-op.
+                      e.preventDefault();
+                      alert("Drag this link to your bookmarks bar first, then click it from "
+                        + "the ESPN draft room tab — clicking it here won't do anything.");
+                    }}
+                    draggable
+                    className="cursor-grab rounded border border-emerald-300 bg-emerald-100 px-2.5 py-1.5 text-2xs font-medium text-emerald-900 active:cursor-grabbing"
+                    title="Drag me to your bookmarks bar"
+                  >
+                    🖐 Drag to bookmarks bar: Fantasy Live Sync
+                  </a>
+                )}
+              </div>
+              {bookmarkletHref && (
+                <p className="mt-1.5 text-2xs leading-snug text-emerald-800/70">
+                  On the ESPN draft page: click the bookmark, then reload the page if the
+                  draft-room connection was already open before you clicked it.
+                </p>
+              )}
+              {bookmarkletError && (
+                <p className="mt-1.5 text-2xs text-rose-700">{bookmarkletError}</p>
+              )}
+            </div>
+          )}
+
+          {provider === "espn" && (
+            <details className="text-xs">
+              <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+                A server-side live connection kicked me out of ESPN
+              </summary>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  onClick={() => void stopBackendWatcher()}
+                  disabled={stopBusy}
+                  className="flex items-center gap-1.5 rounded border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-2xs font-medium text-rose-700 hover:border-rose-400 disabled:opacity-50"
+                >
+                  {stopBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+                  Stop it now
+                </button>
+                {stopMsg && <span className="text-2xs text-gray-500">{stopMsg}</span>}
+              </div>
+              <p className="mt-1.5 text-2xs leading-snug text-gray-500">
+                Kills any backend-owned live connection for this league right now. The
+                bookmarklet above doesn't have this problem — use it instead going forward.
+              </p>
             </details>
           )}
 

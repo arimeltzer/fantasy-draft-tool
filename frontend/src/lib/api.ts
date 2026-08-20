@@ -1,6 +1,6 @@
 import type { StatLine } from "@/engine/engine-core.js";
 
-const BASE = import.meta.env.VITE_API_URL || "";
+export const BASE = import.meta.env.VITE_API_URL || "";
 
 export interface ApiPlayer {
   id: number;
@@ -434,10 +434,21 @@ export const api = {
   syncDraft: (leagueId: number, data: {
     provider: "espn" | "yahoo"; ext_id: string; season?: number; match_season?: number;
     access_token?: string; my_guid?: string; espn_s2?: string; swid?: string;
-    my_team?: string; apply?: boolean;
+    my_team?: string; apply?: boolean; enable_backend_ws?: boolean;
   }) => req<LiveSyncResult>(`/api/leagues/${leagueId}/sync-draft`, {
     method: "POST", body: JSON.stringify(data),
   }),
+
+  /** Kills the backend-owned WebSocket watcher for this league, if one is
+   *  running — see live_ws_registry.py "Browser-side ingest" for why this
+   *  matters (that path can trigger ESPN's multi-location kick). */
+  stopLiveWatcher: (leagueId: number) =>
+    req<{ stopped: boolean }>(`/api/leagues/${leagueId}/stop-live-watcher`, { method: "POST" }),
+
+  /** Get-or-create this league's live-ingest bookmarklet token — see
+   *  liveBookmarklet.ts. */
+  getLiveIngestToken: (leagueId: number) =>
+    req<{ token: string }>(`/api/leagues/${leagueId}/live-ingest-token`, { method: "POST" }),
 
   picks: (leagueId: number) => req<ApiPick[]>(`/api/leagues/${leagueId}/picks`),
   addPick: (leagueId: number, data: { player_id?: number; mine: boolean; team_id?: number; price?: number; slot?: string }) =>

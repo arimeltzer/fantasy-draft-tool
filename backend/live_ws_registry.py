@@ -181,3 +181,93 @@ def stop_watcher(league_id: int) -> bool:
         handle.task.cancel()
         return True
     return False
+
+
+# ── Browser-side ingest ──────────────────────────────────────────────────────
+#
+# The backend-owned watcher above (`ensure_watcher`/`_run`) connects to ESPN's
+# WebSocket FROM Railway's server IP — and that alone is enough to trip ESPN's
+# multi-location login protection and kick the user's own browser session,
+# even when the connection never fully lands. Confirmed live, not theoretical.
+#
+# Browser JS can't fix this by opening the same connection client-side either:
+# the standard `WebSocket` constructor has no headers parameter at all, and
+# `Cookie` is a forbidden header even where headers ARE settable — so neither
+# a pasted espn_s2/SWID nor the browser's own cookie jar (blocked anyway by
+# SameSite on a cross-site request from our own frontend's origin) can
+# authenticate a NEW connection opened from JS.
+#
+# The one thing that DOES work: a small bookmarklet (`lib/liveBookmarklet.ts`
+# on the frontend) that monkey-patches `window.WebSocket` on the ESPN draft
+# page ITSELF (same origin, already logged in) and taps the connection ESPN's
+# OWN client already opens — no new login, nothing for their fraud detection
+# to flag. It parses `SOLD` lines client-side and POSTs each one here. This
+# section is that endpoint's backing store: a second, independent accumulator
+# per league (`LiveDraftWatcher` is a pure accumulator either way — it doesn't
+# care whether events arrived over a live WebSocket or a pushed HTTP call).
+#
+# `sync_draft` prefers this over the backend-owned watcher whenever it has
+# ANY data, since a league with an active bookmarklet has strictly better
+# data than the failure-prone backend-owned path.
+
+_ingest_watchers: dict[int, espn_draft_ws.LiveDraftWatcher] = {}
+_ingest_context: dict[int, tuple[dict[int, str], int | None]] = {}  # teams_by_id, my_team_id
+_ingest_locks: dict[int, asyncio.Lock] = {}
+
+
+def get_ingest_watcher(league_id: int) -> espn_draft_ws.LiveDraftWatcher | None:
+    """Read-only accessor for `sync_draft` — returns the ingest-fed watcher
+    for this league, if the bookmarklet has posted anything yet."""
+    return _ingest_watchers.get(league_id)
+
+
+async def ingest_sold_event(league_id: int, ext_id: str, season: int, my_team: str | None,
+                            espn_s2: str | None, swid: str | None, start_overall: int,
+                            nominating_team_id: int, player_id: int, winning_team_id: int,
+                            price: int) -> espn_draft_ws.LiveDraftWatcher:
+    """One `SOLD` line, pushed from the bookmarklet. Resolves team names once
+    per league (cached in `_ingest_context`, same REST calls `ensure_watcher`
+    already makes for the backend-owned path — these are one-off authenticated
+    fetches, not a persistent connection, so they don't carry the same
+    multi-location risk the WebSocket itself does) and merges the event into
+    that league's accumulator, creating one on first call.
+
+    `started`/`connected` are set True immediately — unlike the backend-owned
+    watcher, there's no separate "attempting to connect" phase here: if this
+    function is being called at all, real data already arrived.
+    """
+    lock = _ingest_locks.setdefault(league_id, asyncio.Lock())
+    async with lock:
+        watcher = _ingest_watchers.get(league_id)
+        if watcher is None:
+            teams_by_id, my_team_id = _ingest_context.get(league_id, ({}, None))
+            if not teams_by_id:
+                try:
+                    data = await espn.fetch_raw_league(ext_id, season, espn_s2=espn_s2, swid=swid)
+                    teams_by_id, my_team_id = espn.resolve_team_ids(data, my_team)
+                    _ingest_context[league_id] = (teams_by_id, my_team_id)
+                    log.info(f"League {league_id}: ingest resolved {len(teams_by_id)} teams")
+                except Exception as exc:  # noqa: BLE001 — team names/is_mine degrade, events don't
+                    log.warning(f"League {league_id}: ingest team resolution failed: {exc}")
+            watcher = espn_draft_ws.LiveDraftWatcher(my_team_id=my_team_id, teams_by_id=teams_by_id,
+                                                     start_overall=start_overall)
+            _ingest_watchers[league_id] = watcher
+            log.info(f"League {league_id}: ingest watcher created")
+
+        watcher.started = True
+        watcher.connected = True
+        watcher.last_error = None
+
+        pid = watcher.on_event({
+            "type": "sold", "nominating_team_id": nominating_team_id, "player_id": player_id,
+            "winning_team_id": winning_team_id, "price": price,
+        })
+        if pid is not None:
+            try:
+                info, _diag = await espn.fetch_player_info(ext_id, season, [pid],
+                                                            espn_s2=espn_s2, swid=swid)
+                watcher.add_player_info(info)
+            except Exception as exc:  # noqa: BLE001 — retried on the next SOLD for this pid
+                log.warning(f"League {league_id}: ingest player lookup failed for {pid}: {exc}")
+
+        return watcher

@@ -420,6 +420,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
 
       {showLive && (
         <LiveDraftPanel
+          leagueId={leagueId}
           settings={settings}
           live={live}
           config={liveConfig}

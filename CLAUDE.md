@@ -269,6 +269,53 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     task and starts a fresh one — the same "poll picks it back up" pattern
     this app already leans on everywhere else. `state.meta["ws_start_error"]`
     carries why a watcher failed to start, visible in the sync response.
+  - **Fifth bug — the backend-owned watcher, working as designed, is itself
+    the problem.** Confirmed live, not theoretical: a Railway-server-side
+    WebSocket connection to ESPN's draft channel — even a FAILED attempt,
+    never mind a successful one — trips ESPN's multi-location login
+    protection and kicks the user's own browser session out of the draft
+    room. Worse under polling: a poll that hits `connect_timeout` (5s)
+    doesn't retry the SAME connection, it lets the NEXT poll's
+    `ensure_watcher()` start a brand new one — so with auto-poll on, this
+    was re-attempting every 5-30s, repeatedly hitting ESPN's check instead
+    of tripping it once. `enable_backend_ws` on `LiveDraftRequest` is now
+    OFF by default for exactly this reason; `POST
+    /api/leagues/{id}/stop-live-watcher` kills any watcher already running
+    for a league that got caught by this before the flag flipped.
+  - **Browser JS can't just open this same connection client-side either —
+    checked against the actual Web platform spec, not assumed.** The
+    standard `WebSocket` constructor has no headers parameter at all, and
+    `Cookie` is on the fetch spec's forbidden-header list even where
+    headers ARE settable elsewhere — so neither a pasted `espn_s2`/`SWID`
+    nor the browser's own cookie jar (blocked anyway by `SameSite` on a
+    cross-site request, since our frontend's origin isn't `espn.com`) can
+    authenticate a NEW connection opened from this app's own JS.
+  - **What does work: read the connection ESPN's OWN client already opens,
+    instead of opening a new one.** `frontend/src/lib/liveBookmarklet.ts`
+    builds a bookmarklet — dragged to the bookmarks bar, clicked from the
+    ESPN draft-room tab itself — that monkey-patches `window.WebSocket` in
+    that page's own origin (already logged in, nothing new to flag) and
+    taps the `SOLD` lines off whatever socket ESPN's page opens, POSTing
+    each one to `POST /api/leagues/{id}/live-ingest`. Patching the
+    constructor only catches connections opened AFTER the patch runs, so a
+    page whose socket was already open before the click needs a reload —
+    the bookmarklet's own `alert()` says so rather than silently missing
+    picks. Backed by `live_ws_registry.ingest_sold_event()`, a second,
+    independent `LiveDraftWatcher` accumulator per league (the class was
+    already a pure accumulator agnostic to where events come from) fed by
+    HTTP push instead of a live socket read; `POST
+    /api/leagues/{id}/live-ingest-token` hands out the per-league secret
+    the bookmarklet authenticates with (get-or-create, stable across calls
+    — regenerating would silently break a bookmarklet already installed).
+    Not JWT-authed, since the bookmarklet runs on ESPN's origin with no
+    access to this site's localStorage — the high-entropy token in the
+    request body IS the trust boundary, same model as a webhook secret.
+    `sync_draft` prefers this source outright the moment it has any data,
+    ahead of the backend-owned path, since it doesn't share that path's
+    kick-out risk at all. `ALLOWED_ORIGINS` now hardcodes
+    `https://fantasy.espn.com`/`https://fantasydraft.espn.com` in addition
+    to the env-driven app origin, since the bookmarklet's `fetch()` call
+    runs from ESPN's origin, not ours, and needs its own CORS clearance.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

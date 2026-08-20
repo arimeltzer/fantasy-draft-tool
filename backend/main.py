@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import secrets
 from datetime import datetime, timedelta
 from typing import Any, Literal, Optional
 
@@ -47,6 +48,12 @@ if JWT_SECRET == "changeme" and os.getenv("RAILWAY_ENVIRONMENT"):
 app = FastAPI(title="Fantasy Draft API", version="1.0.0")
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+# The live-ingest bookmarklet (see live_ws_registry.py "Browser-side ingest")
+# runs its fetch() call FROM the ESPN draft-room page's own origin, not ours —
+# that request needs CORS clearance too, or the browser drops the response
+# before our JS ever sees it. Fixed, known origins, not user-configurable, so
+# hardcoded rather than pulled from an env var like the app's own origin is.
+ALLOWED_ORIGINS = ALLOWED_ORIGINS + ["https://fantasy.espn.com", "https://fantasydraft.espn.com"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -1085,6 +1092,97 @@ class LiveDraftRequest(BaseModel):
     swid: Optional[str] = None
     my_team: Optional[str] = None         # espn team id/name to flag as yours
     apply: bool = True                # False = preview only, log nothing
+    # OFF by default — confirmed live that just ATTEMPTING this connection
+    # (never mind succeeding) can trip ESPN's multi-location login check and
+    # kick the user's own browser session. Worse under polling: a poll that
+    # hits its connect_timeout (5s) doesn't retry the same connection, it
+    # lets the NEXT poll's ensure_watcher() start a brand new attempt — so
+    # with auto-poll on, this was retrying every 5-30s, repeatedly hitting
+    # ESPN's check rather than tripping it once. The bookmarklet ingest path
+    # (live-ingest-token / live-ingest below) doesn't have this problem at
+    # all and is preferred automatically once it has data; this flag exists
+    # for anyone who wants to try the backend-owned path anyway.
+    enable_backend_ws: bool = False
+
+
+@app.post("/api/leagues/{league_id}/stop-live-watcher")
+async def stop_live_watcher(
+    league_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(db_dep),
+) -> dict:
+    """Kills the backend-owned WebSocket watcher for this league right now,
+    if one is running. Closing the LiveDraftPanel does NOT stop it by design
+    (see its docstring) — this is the explicit override for when that
+    watcher turns out to be actively harmful (ESPN's multi-location kick),
+    not just unproductive."""
+    await _get_league_owned(league_id, user.id, db)  # ownership check only
+    stopped = live_ws_registry.stop_watcher(league_id)
+    return {"stopped": stopped}
+
+
+@app.post("/api/leagues/{league_id}/live-ingest-token")
+async def get_live_ingest_token(
+    league_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(db_dep),
+) -> dict:
+    """Get-or-create the per-league secret this league's bookmarklet
+    authenticates with (see live_ws_registry.py "Browser-side ingest"). The
+    bookmarklet runs on ESPN's own origin, not ours, so it can't carry our
+    normal JWT bearer (no access to this site's localStorage from there) —
+    high-entropy token in the request body instead, same trust model as a
+    webhook secret. Stable across calls: regenerating would silently break
+    a bookmarklet already dragged into someone's bookmarks bar."""
+    league = await _get_league_owned(league_id, user.id, db)
+    settings = league.settings or {}
+    token = settings.get("liveIngestToken")
+    if not token:
+        token = secrets.token_urlsafe(24)
+        league.settings = {**settings, "liveIngestToken": token}
+        await db.commit()
+    return {"token": token}
+
+
+class LiveIngestEvent(BaseModel):
+    """One SOLD line, pushed from the browser bookmarklet. Not JWT-authed —
+    see get_live_ingest_token's docstring — `token` is the whole trust
+    boundary here, so treat a mismatch exactly like a bad password, not a
+    generic validation error."""
+    token: str
+    ext_id: str
+    season: int = 2026
+    espn_s2: Optional[str] = None
+    swid: Optional[str] = None
+    my_team: Optional[str] = None
+    start_overall: int = 1
+    nominating_team_id: int
+    player_id: int
+    winning_team_id: int
+    price: int
+
+
+@app.post("/api/leagues/{league_id}/live-ingest")
+async def live_ingest(league_id: int, data: LiveIngestEvent, db: AsyncSession = Depends(db_dep)) -> dict:
+    """Receives one SOLD event from the bookmarklet running on the ESPN draft
+    page. No JWT — see LiveIngestEvent's docstring — league is looked up by
+    id alone and the token is checked against what get_live_ingest_token
+    handed out. Deliberately narrow: this route can only feed one league's
+    accumulator, nothing else a normal authenticated call could do."""
+    result = await db.execute(select(League).where(League.id == league_id))
+    league = result.scalar_one_or_none()
+    if not league:
+        raise HTTPException(status_code=404, detail="League not found")
+    expected = (league.settings or {}).get("liveIngestToken")
+    if not expected or not secrets.compare_digest(data.token, expected):
+        raise HTTPException(status_code=401, detail="Invalid live-ingest token")
+
+    watcher = await live_ws_registry.ingest_sold_event(
+        league_id, data.ext_id, data.season, data.my_team, data.espn_s2, data.swid,
+        data.start_overall, data.nominating_team_id, data.player_id, data.winning_team_id,
+        data.price,
+    )
+    return {"ok": True, "drafted": len(watcher.events)}
 
 
 @app.post("/api/leagues/{league_id}/sync-draft")
@@ -1115,7 +1213,17 @@ async def sync_draft(
                 raise HTTPException(status_code=400, detail="Yahoo access token required.")
             state = await yahoo_provider.fetch_live_draft(
                 data.ext_id, data.access_token, my_guid=data.my_guid)
-        elif data.espn_s2 and data.swid:
+        elif live_ws_registry.get_ingest_watcher(league_id) is not None:
+            # Browser-bookmarklet ingest path (see live_ws_registry.py
+            # "Browser-side ingest"): the bookmarklet on the ESPN draft page
+            # itself has posted at least one SOLD event for this league. That
+            # data is strictly better than anything the backend-owned
+            # WebSocket path below could get — it doesn't trigger ESPN's
+            # multi-location kick at all, since nothing new logs in — so once
+            # it exists, prefer it outright rather than trying to merge two
+            # sources of the same picks.
+            state = live_ws_registry.get_ingest_watcher(league_id).state()
+        elif data.enable_backend_ws and data.espn_s2 and data.swid:
             # Live WebSocket path: draftDetail.picks (REST) is a static
             # skeleton until the draft finalizes and can never carry live
             # picks — see CLAUDE.md "Live draft sync". The WebSocket watcher
@@ -1124,6 +1232,14 @@ async def sync_draft(
             # Best-effort: any failure here (bad cookies, ESPN closing the
             # connection, a team-id mismatch) falls back to the REST path
             # rather than breaking the poll outright.
+            #
+            # **Confirmed live: even attempting this connection can trigger
+            # ESPN's multi-location login protection and kick the user's own
+            # browser session, independent of whether it ever connects.** The
+            # bookmarklet path above is the one that doesn't have this
+            # problem; this path is kept as the automatic first-poll
+            # behavior (nothing to install) but a poll that also has ingest
+            # data will always prefer that instead, from the branch above.
             #
             # start_overall seeds new picks past whatever's already logged —
             # the watcher is forward-only (no INIT backfill decoded, see

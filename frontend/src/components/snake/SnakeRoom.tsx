@@ -334,6 +334,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
 
       {showLive && (
         <LiveDraftPanel
+          leagueId={leagueId}
           settings={settings}
           live={liveDraft}
           config={liveConfig}
