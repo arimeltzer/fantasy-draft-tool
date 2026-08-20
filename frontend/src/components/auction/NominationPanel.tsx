@@ -26,6 +26,10 @@ interface TargetItem {
   /** Which constraint set the primary bid: my roster allocation, or the
    *  room's money. */
   binding?: "allocation" | "opponents" | "none";
+  /** The ceiling is real but below the modeled market price — worth
+   *  pursuing at this number, but the room is expected to take him higher.
+   *  Not a reason to hide the number (that used to be "pass"). */
+  belowMarket?: boolean;
   /** suggestBid()'s OWN independent-pricing number — shown alongside, not
    *  hidden, because the two methods disagreeing is itself informative. */
   modelBid: number;
@@ -103,9 +107,9 @@ export default function NominationPanel({ factor, phase, nominations, valueTarge
       <div className="space-y-1">
         <div className="flex items-center gap-1 text-2xs uppercase tracking-wider text-gray-400 mb-1">
           <Target className="w-3 h-3" />
-          <Tip tip="Players whose model value most exceeds their expected price — the best bargains left. The bid is the most you should pay, accounting for what's left to fill on your own roster AND what the room can actually afford (roadmap 3.3-3.5: measured to beat independent pricing head-to-head). 'pass' means he doesn't improve your reachable roster at any price.">your targets — suggested bid</Tip>
+          <Tip tip="Players whose model value most exceeds their expected price — the best bargains left. The bid is the most you should pay, accounting for what's left to fill on your own roster AND what the room can actually afford (roadmap 3.3-3.5: measured to beat independent pricing head-to-head). A '~' means the market is expected to go higher — it's your walk-away point, not a price you're favored to win at. 'pass' means he doesn't improve your reachable roster at ANY price.">your targets — suggested bid</Tip>
         </div>
-        {valueTargets.map(({ p, bid, market, pass, binding, modelBid, modelPass }) => {
+        {valueTargets.map(({ p, bid, market, pass, binding, belowMarket, modelBid, modelPass }) => {
           const st = posStyle(p.pos);
           const overMax = bid > myMax;
           const byRoom = binding === "opponents";
@@ -122,9 +126,11 @@ export default function NominationPanel({ factor, phase, nominations, valueTarge
                     ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
                     : byRoom
                     ? `Capped by the room's money: no opponent can bid more than $${bid - 1}, so you never have to pay above $${bid} no matter what he's worth. This is what the room CAN pay, not what it wants to — a hard upper bound that tightens as budgets drain.`
+                    : belowMarket
+                    ? `Your real ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him. He's worth pursuing at this price — the market (~$${market}) is likely to take him higher, so treat this as your walk-away point, not a price you're favored to win at.`
                     : "Allocation ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him — reserves a realistic price for every remaining starter, not $1."}
                 >
-                  {pass ? "pass" : `bid $${bid}${byRoom ? "*" : ""}`}
+                  {pass ? "pass" : `bid $${bid}${byRoom ? "*" : belowMarket ? "~" : ""}`}
                 </span>
               </div>
               <div className="pl-3.5 text-2xs text-gray-400 font-mono">

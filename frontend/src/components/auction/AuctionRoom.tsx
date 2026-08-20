@@ -282,13 +282,22 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
       capacities: [Math.max(0, room.ceiling - 1)],
       minBid: 1,
     });
-    // "pass" means "don't bother bidding" — that is only true when your own
-    // allocation says he doesn't improve your reachable roster at any price
-    // (ceiling === 0, or allocation-bound and under market). A room-bound
-    // ceiling under market is the OPPOSITE of a pass signal: it means
-    // nobody in the room can outbid you there.
-    const pass = ceiling <= 0 || (binding === "allocation" && ceiling < market);
-    return { allocationCeiling, bid: ceiling, binding, room, pass };
+    // "pass" means there is NO price worth paying — that is true ONLY when
+    // your own allocation says he doesn't improve your reachable roster at
+    // any price at all (ceiling <= 0). A positive ceiling below market is
+    // NOT a pass: it is a real number, the most you should offer even for a
+    // player the market will likely take past it. An earlier version hid
+    // that number behind "pass" whenever it fell short of market, on an
+    // "if you probably won't win, don't show a price" theory — flagged
+    // directly ("there must be some price worth paying for the top
+    // players... why not display a price?") because hiding a real,
+    // computed number is a worse default than showing one that might not
+    // win. `belowMarket` carries the nuance forward for the tooltip instead
+    // of for suppression: still a real ceiling, just not one the market is
+    // expected to honor.
+    const pass = ceiling <= 0;
+    const belowMarket = !pass && binding !== "opponents" && ceiling < market;
+    return { allocationCeiling, bid: ceiling, binding, room, pass, belowMarket };
   }, [openStartSlots, dpBudget, availDollar, valueOfPlayer, priceOfPlayer,
       oppBudgets, oppOpenSpots, oppCounts, settings.roster, settings.superflex]);
 
@@ -491,7 +500,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                 <Tip tip="Live value: par price repriced for how the room is actually spending. If teams have overpaid so far, remaining players are worth more (inflation), and vice versa. Red means it's above the max you can bid.">$Live</Tip>
               </span>
               <span className="text-right hidden sm:block">
-                <Tip tip="The most you should actually pay (roadmap 3.3-3.5) — accounting for what's left to fill on your own roster AND what the room can afford. Often well below $Live, including for players worth targeting: $Live is what he's worth in the abstract, $Max is what paying for him costs YOU given everything else you still need. QB/RB/WR/TE only — K/DST aren't in scope for this ceiling.">$Max</Tip>
+                <Tip tip="The most you should actually pay (roadmap 3.3-3.5) — accounting for what's left to fill on your own roster AND what the room can afford. Often well below $Live, including for players worth targeting: $Live is what he's worth in the abstract, $Max is what paying for him costs YOU given everything else you still need. A '~' means the number is real but below expected market price — worth bidding up to, just not favored to win at. 'pass' means truly no price is worth it. QB/RB/WR/TE only — K/DST aren't in scope for this ceiling.">$Max</Tip>
               </span>
               <span className="text-right">
                 <Tip tip="Type the final winning price, then hit Mine if you won the player or pick the opponent who did.">Bid / buy</Tip>
@@ -559,9 +568,11 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                                 ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
                                 : byRoom
                                 ? `Capped by the room's money: no opponent can bid more than $${c.bid - 1}, so you never have to pay above $${c.bid}.`
+                                : c.belowMarket
+                                ? "Your real ceiling — worth pursuing at this price or below, but the market is likely to take him higher."
                                 : "The most you can pay and still end up with a roster at least as good as if you skipped him — accounting for what's left to fill."}
                             >
-                              {c.pass ? "· pass" : `· max $${c.bid}${byRoom ? "*" : ""}`}
+                              {c.pass ? "· pass" : `· max $${c.bid}${byRoom ? "*" : c.belowMarket ? "~" : ""}`}
                             </span>
                           );
                         })()}
@@ -596,9 +607,11 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                             ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
                             : byRoom
                             ? `Capped by the room's money: no opponent can bid more than $${c.bid - 1}, so you never have to pay above $${c.bid} no matter what he's worth. This is what the room CAN pay, not what it wants to — a hard upper bound that tightens as budgets drain.`
+                            : c.belowMarket
+                            ? `Your real ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him. He's worth pursuing at this price or below — the market is likely to take him higher, so treat this as your walk-away point, not a price you're favored to win at.`
                             : "Allocation ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him — reserves a realistic price for every remaining starter, not $1."}
                         >
-                          {c.pass ? "pass" : `$${c.bid}${byRoom ? "*" : ""}`}
+                          {c.pass ? "pass" : `$${c.bid}${byRoom ? "*" : c.belowMarket ? "~" : ""}`}
                         </span>
                       );
                     })()}

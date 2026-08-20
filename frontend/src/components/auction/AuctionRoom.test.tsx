@@ -253,7 +253,7 @@ describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
     fireEvent.change(screen.getByPlaceholderText(/search player or team/i),
                      { target: { value: "P7" } });          // "P7" alone: not a substring of P17/P27/P37
     const r = row("P7");
-    expect(within(r).getByText(/^· (max \$\d+\*?|pass)$/)).toBeTruthy();
+    expect(within(r).getByText(/^· (max \$\d+[*~]?|pass)$/)).toBeTruthy();
   });
 
   it("populates the $Max column for the WHOLE board, not gated on search", () => {
@@ -275,5 +275,24 @@ describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
     expect(within(r).getAllByTitle(
       /allocation ceiling|capped by the room's money|doesn't improve your best reachable roster|the most you can pay/i,
     ).length).toBeGreaterThan(0);
+  });
+
+  it('shows a REAL price, not "pass", when the ceiling is real but below market', () => {
+    // Flagged directly: "There must be some price that would be worth
+    // paying for the top players... why not display a price?" An earlier
+    // version treated "the market will likely take him higher than my own
+    // ceiling" as equivalent to "no price is worth paying" and hid the
+    // number behind "pass" — conflating two different things. A positive
+    // ceiling is always a real number worth knowing, win or lose; "pass" is
+    // reserved for ceiling <= 0 (he does not help your roster at ANY price).
+    renderInApp(deepRoom());
+    const r = row("P7");   // a known belowMarket case on this fixture
+    // jsdom renders both the mobile inline badge and the sm+ dedicated
+    // column regardless of viewport — at least one of each style is
+    // expected, not necessarily exactly one.
+    const cells = within(r).getAllByTitle(/your real ceiling/i);
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.some((c) => /^\$\d+~$/.test(c.textContent ?? ""))).toBe(true);
+    expect(within(r).queryByText("pass")).toBeNull();
   });
 });

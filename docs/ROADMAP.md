@@ -2387,6 +2387,29 @@ column has nowhere to go at that width. Tests updated to match: the old
   asked for exactly rather than a broader "reset all filters" that would
   have discarded a deliberately chosen position filter too.
 
+**CORRECTION: "pass" was still conflating two different things, and it took
+a second round of feedback to see it.** `pass` fired on `ceiling <= 0` OR
+`(binding === "allocation" && ceiling < market)` — the second clause hid a
+real, positive, computed number any time the ceiling fell short of the
+modeled market price, on an unstated "if you probably won't win, don't show
+a price" theory. Flagged directly: *"There must be some price that would be
+worth paying for the top players in the league. Even if I don't ultimately
+get them, why not display a price?"* — exactly right, and exactly the
+players most likely to trip that clause (an elite player's market price is
+high, so a real, positive, below-market ceiling was common for the players
+where showing the number mattered most). Fixed: `pass` is now `ceiling <=
+0` ONLY — the one case where there is truly no price worth paying. A
+positive ceiling below market gets a new `belowMarket` flag instead of
+suppression: still shown as a real `$X`, marked `~` (distinct from the
+room-bound `*`) and explained in the tooltip as "your walk-away point, not
+a price you're favored to win at." This also loosened `valueTargets`'
+`!pass` filter for free — a below-market player who was previously excluded
+from "your targets" entirely can now appear there, which is correct: he may
+still be your best available target if the room goes cold. One new
+regression test locks in the fix directly (P7 on the DEEP_BOARD fixture is
+a known belowMarket case): asserts a real `$X~` renders and that `"pass"`
+does not appear for it. 62/62 vitest.
+
 **FOLLOW-UP: real current-season FantasyPros AAV data refines the mechanism,
 and the refined version is a MORE fundamental problem with `suggestBid()`
 than ADP coverage.** The user supplied a real FantasyPros auction-values
