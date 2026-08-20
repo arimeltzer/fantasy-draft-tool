@@ -421,6 +421,36 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     cosmetic-only (`DraftLogModal` still sorts and renders them, just not
     in perfectly-true order for that range), not worth a live renumbering
     migration mid-draft for the risk it'd carry.
+  - **Both fixes still weren't enough — caught live a THIRD time: the app
+    was showing pick 73 when ESPN's own room was on 88, a real 15-pick
+    gap, not just a numbering artifact.** `len(have)` can only be as
+    accurate as what's actually IN the database — and the transport
+    feeding it was the real problem: `liveBookmarklet.ts` posted each
+    `SOLD` event individually, fire-and-forget, no retry. A single dropped
+    request (a backgrounded browser tab throttling its timers, one
+    momentary network blip) silently and PERMANENTLY lost that pick, with
+    zero recovery path short of "Backfill prior picks" — and over a full
+    draft session that compounds into exactly this kind of growing gap.
+    **Fix: turn the transport itself into something that self-heals.** The
+    hook now keeps a full local history of every `SOLD` line it's ever
+    parsed and resends the WHOLE array on every send — on each new pick
+    AND on a 5s periodic timer, so even a quiet stretch with no new picks
+    eventually retries anything still missing. A single dropped POST now
+    delays that pick by one resend cycle instead of losing it forever.
+    Only safe because the backend dedupes: `live_ws_registry
+    .ingest_sold_events` (plural — replaces `ingest_sold_event`, kept as a
+    thin back-compat wrapper for an already-downloaded script) tracks
+    player ids already fed into a league's watcher in `_ingest_seen`, so
+    replaying the same event hundreds of times over a draft is a no-op
+    past the first. Deliberately NOT pushed down into
+    `LiveDraftWatcher.on_event` itself — a selftest pins that a repeat
+    SOLD there appends a second entry (tolerating whatever ESPN's own
+    reconnect redelivery does), so the resend-specific dedup lives one
+    layer up, in the ingest path only, rather than changing shared
+    accumulator semantics the live WebSocket path also depends on.
+    `LiveIngestEvent.events: list[dict] | None` is the new batch shape;
+    the old singular fields stay Optional so a userscript downloaded
+    before this change keeps working until it's re-fetched.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

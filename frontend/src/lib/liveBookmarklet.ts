@@ -20,12 +20,26 @@
  * nothing for their fraud detection to flag. It parses `SOLD` lines
  * client-side (same tiny grammar as `parse_ws_line` in espn_draft_ws.py,
  * ported here since the whole point is this runs OUTSIDE our backend) and
- * POSTs each one to `/api/leagues/{id}/live-ingest`.
+ * POSTs them to `/api/leagues/{id}/live-ingest`.
  *
  * Patching `WebSocket` only affects connections opened AFTER the patch runs
  * — if ESPN's page already opened its socket before you click the
  * bookmarklet, you won't see anything until the page reloads (and the
  * bookmarklet's own alert() says so, so this isn't a silent gap).
+ *
+ * **Sends its FULL locally-captured history on every send, not just the
+ * newest line — found live, not designed in from the start.** The first
+ * version POSTed one event per SOLD line, fire-and-forget, no retry. A
+ * single dropped request (a backgrounded browser tab throttling its
+ * timers, one momentary network blip) silently and PERMANENTLY lost that
+ * pick — over a full draft this compounded into a real, growing gap
+ * between ESPN's own pick count and what this app had. Resending the whole
+ * captured array — on every new pick AND on a periodic timer, so even a
+ * quiet stretch with no new picks eventually retries anything still
+ * missing — makes a single dropped request just a one-cycle delay instead
+ * of permanent data loss. Safe to do blindly, with no per-event ack
+ * tracking on this side, because the backend dedupes by player id before
+ * anything reaches the accumulator (`live_ws_registry.ingest_sold_events`).
  */
 
 export interface BookmarkletConfig {
@@ -64,8 +78,16 @@ function bookmarkletBody(cfg: BookmarkletConfig): void {
 
   const OrigWS = w.WebSocket;
   const cfgJson = JSON.stringify(cfg);
+  // Every parsed SOLD event this page instance has ever seen — resent in
+  // FULL on every send (see module docstring on why). Never trimmed: a
+  // full draft is at most a few hundred entries, trivial to resend
+  // repeatedly, and trimming would reintroduce the exact data-loss risk
+  // this exists to close.
+  const captured: Array<{ nominating_team_id: number; player_id: number;
+                          winning_team_id: number; price: number }> = [];
 
-  function post(nominatingTeamId: number, playerId: number, winningTeamId: number, price: number) {
+  function postBatch() {
+    if (captured.length === 0) return;
     const c = JSON.parse(cfgJson);
     fetch(c.apiUrl + "/api/leagues/" + c.leagueId + "/live-ingest", {
       method: "POST",
@@ -74,13 +96,12 @@ function bookmarkletBody(cfg: BookmarkletConfig): void {
         token: c.token, ext_id: c.extId, season: c.season,
         espn_s2: c.espnS2 || null, swid: c.swid || null, my_team: c.myTeam || null,
         start_overall: c.startOverall,
-        nominating_team_id: nominatingTeamId, player_id: playerId,
-        winning_team_id: winningTeamId, price: price,
+        events: captured,
       }),
-    }).catch(function () { /* best-effort — a missed POST is retried never;
-                               the next SOLD line for a DIFFERENT player still
-                               goes through, so one dropped event doesn't wedge
-                               anything else */ });
+    }).catch(function () { /* best-effort — the NEXT send (next pick, or the
+                               periodic timer below) resends this exact same
+                               list again, so a dropped request delays
+                               delivery by one cycle instead of losing it */ });
   }
 
   function handleLine(line: string) {
@@ -94,7 +115,9 @@ function bookmarkletBody(cfg: BookmarkletConfig): void {
       const winningTeamId = parseInt(parts[3], 10);
       const price = parseInt(parts[4], 10);
       if (!isNaN(playerId) && !isNaN(winningTeamId)) {
-        post(nominatingTeamId, playerId, winningTeamId, price);
+        captured.push({ nominating_team_id: nominatingTeamId, player_id: playerId,
+                        winning_team_id: winningTeamId, price: price });
+        postBatch();
       }
     }
   }
@@ -113,6 +136,11 @@ function bookmarkletBody(cfg: BookmarkletConfig): void {
     return ws;
   };
   w.WebSocket.prototype = OrigWS.prototype;
+
+  // Periodic full resync — catches anything a dropped POST missed even
+  // during a quiet stretch with no new picks (e.g. right after a
+  // backgrounded tab gets throttled and stops delivering for a while).
+  setInterval(postBatch, 5000);
 
   if (cfg.silent) {
     // eslint-disable-next-line no-console

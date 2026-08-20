@@ -265,7 +265,15 @@ class LiveDraftWatcher:
         one up per event. A pid already resolved OR already flagged (and not
         yet resolved by `add_player_info`) doesn't get re-flagged, so a burst
         of events for the same still-unresolved player doesn't fan out into
-        redundant lookup requests."""
+        redundant lookup requests.
+
+        Deliberately does NOT dedupe by player id here — a repeat SOLD for
+        an id already seen is appended as another `events` entry as-is
+        (pinned by a selftest). Line-level dedup for a caller that might
+        legitimately re-deliver the SAME event (browser-side batch resend,
+        see `live_ws_registry.ingest_sold_event`) belongs at THAT caller,
+        not baked into this shared accumulator that the live WebSocket path
+        also uses."""
         if msg.get("type") != "sold":
             return None
         self.events.append(SoldEvent(winning_team_id=msg["winning_team_id"],

@@ -1158,10 +1158,20 @@ async def get_live_ingest_token(
 
 
 class LiveIngestEvent(BaseModel):
-    """One SOLD line, pushed from the browser bookmarklet. Not JWT-authed —
-    see get_live_ingest_token's docstring — `token` is the whole trust
-    boundary here, so treat a mismatch exactly like a bad password, not a
-    generic validation error."""
+    """SOLD line(s), pushed from the browser bookmarklet/userscript. Not
+    JWT-authed — see get_live_ingest_token's docstring — `token` is the
+    whole trust boundary here, so treat a mismatch exactly like a bad
+    password, not a generic validation error.
+
+    `events` (plural) is the current shape: the hook resends its FULL
+    locally-captured list on every send, not just the newest line — a
+    single dropped fire-and-forget POST used to permanently lose that pick
+    with no retry (confirmed live: a real gap between what ESPN's room
+    showed and what this app had, growing every time a request failed to
+    land). See `live_ws_registry.ingest_sold_events` for why resending the
+    full list on every call is safe. The singular fields below are kept
+    ONLY for a userscript downloaded before this change that hasn't been
+    re-fetched yet — new downloads always send `events`."""
     token: str
     ext_id: str
     season: int = 2026
@@ -1169,19 +1179,22 @@ class LiveIngestEvent(BaseModel):
     swid: Optional[str] = None
     my_team: Optional[str] = None
     start_overall: int = 1
-    nominating_team_id: int
-    player_id: int
-    winning_team_id: int
-    price: int
+    events: Optional[list[dict]] = None
+    # Legacy single-event shape — back-compat only, see docstring above.
+    nominating_team_id: Optional[int] = None
+    player_id: Optional[int] = None
+    winning_team_id: Optional[int] = None
+    price: Optional[int] = None
 
 
 @app.post("/api/leagues/{league_id}/live-ingest")
 async def live_ingest(league_id: int, data: LiveIngestEvent, db: AsyncSession = Depends(db_dep)) -> dict:
-    """Receives one SOLD event from the bookmarklet running on the ESPN draft
-    page. No JWT — see LiveIngestEvent's docstring — league is looked up by
-    id alone and the token is checked against what get_live_ingest_token
-    handed out. Deliberately narrow: this route can only feed one league's
-    accumulator, nothing else a normal authenticated call could do."""
+    """Receives SOLD event(s) from the bookmarklet/userscript running on the
+    ESPN draft page. No JWT — see LiveIngestEvent's docstring — league is
+    looked up by id alone and the token is checked against what
+    get_live_ingest_token handed out. Deliberately narrow: this route can
+    only feed one league's accumulator, nothing else a normal authenticated
+    call could do."""
     result = await db.execute(select(League).where(League.id == league_id))
     league = result.scalar_one_or_none()
     if not league:
@@ -1199,16 +1212,24 @@ async def live_ingest(league_id: int, data: LiveIngestEvent, db: AsyncSession = 
     # accurate — see live_ws_registry.py), but a stale start_overall still
     # produces confusing numbers, so compute it fresh from the DB instead
     # of trusting the client-supplied one. Only matters the moment a NEW
-    # watcher is created (ingest_sold_event ignores it on later calls).
+    # watcher is created (ingest_sold_events ignores it on later calls).
     existing_count = len((await db.execute(
         select(DraftPick.player_id).where(DraftPick.league_id == league_id)
     )).scalars().all())
 
-    watcher = await live_ws_registry.ingest_sold_event(
-        league_id, data.ext_id, data.season, data.my_team, data.espn_s2, data.swid,
-        existing_count + 1, data.nominating_team_id, data.player_id, data.winning_team_id,
-        data.price,
-    )
+    if data.events:
+        watcher = await live_ws_registry.ingest_sold_events(
+            league_id, data.ext_id, data.season, data.my_team, data.espn_s2, data.swid,
+            existing_count + 1, data.events,
+        )
+    elif data.player_id is not None:
+        watcher = await live_ws_registry.ingest_sold_event(
+            league_id, data.ext_id, data.season, data.my_team, data.espn_s2, data.swid,
+            existing_count + 1, data.nominating_team_id or 0, data.player_id,
+            data.winning_team_id or 0, data.price or 0,
+        )
+    else:
+        raise HTTPException(status_code=400, detail="No event data in request.")
     return {"ok": True, "drafted": len(watcher.events)}
 
 
