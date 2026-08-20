@@ -1336,15 +1336,27 @@ async def sync_draft(
         if pid in have:
             skipped += 1
             continue
+        # NOT lp.overall — see on_the_clock's comment above for why any one
+        # source's own numbering can drift: the live-ingest path in
+        # particular is fire-and-forget over HTTP (liveBookmarklet.ts posts
+        # each SOLD event best-effort, "retried never" on a dropped
+        # request), so a single missed POST — a backgrounded tab throttling
+        # timers, a momentary network blip — permanently undercounts that
+        # source's own arrival-index from then on, with no way for it to
+        # self-heal. `len(have) + 1` has no such failure mode: it's derived
+        # from what's ACTUALLY confirmed persisted, so a dropped event just
+        # means a gap in NAMES (visible as a missing pick to add manually),
+        # never a growing, silently-wrong number on every pick after it.
+        overall = len(have) + 1
         if data.apply:
             db.add(DraftPick(
-                league_id=league_id, player_id=pid, overall_pick=lp.overall,
+                league_id=league_id, player_id=pid, overall_pick=overall,
                 mine=lp.is_mine,
                 team_id=None if lp.is_mine else team_id_by_name.get(lp.owner or ""),
                 price=lp.bid, slot=None,
             ))
         have.add(pid)
-        added.append({"overall": lp.overall, "name": lp.name, "pos": lp.pos,
+        added.append({"overall": overall, "name": lp.name, "pos": lp.pos,
                       "owner": "Me" if lp.is_mine else lp.owner, "price": lp.bid})
     if data.apply and added:
         await db.commit()

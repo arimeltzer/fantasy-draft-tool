@@ -400,6 +400,27 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     the draft progressed" actually means in a normal draft, independent of
     whatever overall-numbering quirks any one source's `state.picks`
     happens to carry.
+  - **Still wrong after that fix, caught live a second time: the fix only
+    covered the CLOCK, not the number attached to each individual pick.**
+    A real draft at pick 68 showed its most recent pick logged as "#56" —
+    `added[].overall` and the stored `DraftPick.overall_pick` still came
+    from `lp.overall`, i.e. the ingest watcher's own arrival-index
+    counter, unchanged by the first fix. Root cause: `liveBookmarklet.ts`
+    posts each `SOLD` event best-effort over `fetch()` — "a missed POST is
+    retried never" — so a single dropped request (a backgrounded tab
+    throttling timers, one momentary network blip) permanently
+    undercounts that source's own arrival-index from then on, with no way
+    for it to self-heal; the gap only grows. Fixed the same way as
+    `on_the_clock`: each newly-added pick's `overall` is now `len(have) +
+    1` at insertion time — derived from what's actually confirmed
+    persisted, not from any source's own counter, so a dropped POST just
+    means a gap in NAMES (a pick missing until "Backfill prior picks" or
+    manual entry fills it), never a growing, silently-wrong number
+    attached to every pick that comes after it. Existing already-stored
+    rows from before this fix keep whatever number they were given —
+    cosmetic-only (`DraftLogModal` still sorts and renders them, just not
+    in perfectly-true order for that range), not worth a live renumbering
+    migration mid-draft for the risk it'd carry.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.
