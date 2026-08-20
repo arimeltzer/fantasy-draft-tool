@@ -64,6 +64,18 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   a mix of real and placeholder (`playerId` 0 and -1) pick slots now counts
   `drafted`/`resolved` from the real ones only, with `raw_pick_slots`
   reporting the full total.
+- **Fourth bug, found from a raw payload sample requested off the still-broken
+  symptom**: even round 1 pick 1 was still `playerId: -1` on every poll,
+  well past pick 57 — not a roster-lag or a placeholder-filtering problem at
+  all, `draftDetail.picks` itself was frozen. `lm-api-reads.fantasy.espn.com`
+  sits behind a CDN; a live-draft poll loop hitting the same URL repeatedly
+  was getting served one cached snapshot instead of fresh data. Fixed in
+  `fetch_raw_league` (the live-sync-only fetch path — `fetch_league`'s
+  once-per-import calls are untouched) with a per-request timestamp query
+  param plus explicit `Cache-Control: no-cache, no-store` / `Pragma:
+  no-cache` headers. A temporary `meta["sample"]` (first 3 raw pick dicts)
+  was added and then left in place pending live confirmation — remove once
+  this is confirmed fixed against the real draft.
 
 ## 2026-08 — Roadmap 2.2a RESULT: independent weekly draws REJECTED — season variance understated 3-4x
 - Ran `projection-backtest.yml` #32154937836 against live data (2016-2025,

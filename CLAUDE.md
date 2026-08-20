@@ -202,6 +202,14 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     status or exception type) now rides along in the sync response and
     shows in the panel, so a future silent top-up failure is visible
     without server log access.
+  - **Fourth bug — not a lag at all, a frozen CDN cache.** A raw payload
+    sample pulled from the still-broken sync showed round 1 pick 1 as
+    `playerId: -1` on every poll, well past pick 57 — `draftDetail.picks`
+    itself was stale, not just the roster join. `lm-api-reads` sits behind
+    a CDN that was serving one cached snapshot to every poll. Fixed by
+    cache-busting `fetch_raw_league` only (a per-request timestamp query
+    param + `Cache-Control`/`Pragma: no-cache` headers) — `fetch_league`'s
+    once-per-import calls don't need it.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

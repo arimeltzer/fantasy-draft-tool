@@ -14,6 +14,7 @@ logged-in browser: `espn_s2` and `SWID`. Network fetch is isolated in
 from __future__ import annotations
 
 import json
+import time
 
 import httpx
 
@@ -545,14 +546,26 @@ async def fetch_raw_league(league_id: str, season: int, espn_s2: str | None = No
     Deliberately NOT `fetch_league`: that also sweeps 18 weeks of transactions
     for keeper waiver costs, which is right once and abusive on a poll loop.
     Live sync needs only the draft board, so it pays for exactly one call.
+
+    `lm-api-reads` sits behind a CDN — verified against a real in-progress
+    auction draft where every poll came back with round 1 pick 1 STILL
+    showing `playerId: -1` well past pick 57, on every retry, across a span
+    of minutes: a frozen edge-cached snapshot, not a slow-to-update roster
+    view (that theory is what the earlier `kona_player_info` top-up assumed,
+    and it doesn't apply here — there was nothing stale to top up, the
+    picks array itself was stale). Cache-busted with a per-request
+    timestamp query param plus explicit no-cache headers, live-sync only —
+    `fetch_league`'s once-per-import calls don't need it and don't get it.
     """
     cookies = {}
     if espn_s2 and swid:
         cookies = {"espn_s2": espn_s2, "SWID": swid if swid.startswith("{") else "{" + swid + "}"}
     verify = ca_bundle if ca_bundle else True
+    headers = {**SITE_HEADERS, "Cache-Control": "no-cache, no-store", "Pragma": "no-cache"}
+    url = league_url(league_id, season) + f"&_={int(time.time() * 1000)}"
     async with httpx.AsyncClient(timeout=20, follow_redirects=True, trust_env=True,
-                                 verify=verify, cookies=cookies, headers=SITE_HEADERS) as client:
-        resp = await client.get(league_url(league_id, season))
+                                 verify=verify, cookies=cookies, headers=headers) as client:
+        resp = await client.get(url)
         if resp.status_code in (401, 403):
             raise PermissionError("ESPN league is private — espn_s2 and SWID cookies required.")
         resp.raise_for_status()
