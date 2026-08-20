@@ -38,6 +38,13 @@ export interface BookmarkletConfig {
   swid?: string;
   myTeam?: string;
   startOverall: number;
+  // Bookmarklet: user-triggered, one shot — an alert() is the ONLY feedback
+  // they get that the click did anything, so it's worth the interruption.
+  // Userscript: runs automatically on every page load via @run-at
+  // document-start (see buildUserscript below) — an alert() on every load
+  // would be disruptive, so that path logs to console instead and stays
+  // silent unless something's actually wrong.
+  silent?: boolean;
 }
 
 /** The function body that runs on the ESPN page. Kept as a plain function
@@ -50,7 +57,7 @@ function bookmarkletBody(cfg: BookmarkletConfig): void {
   // see our app's types or bundler globals at all.
   const w = window as any;
   if (w.__fantasyLiveHookInstalled) {
-    alert("Fantasy live sync hook is already installed on this page.");
+    if (!cfg.silent) alert("Fantasy live sync hook is already installed on this page.");
     return;
   }
   w.__fantasyLiveHookInstalled = true;
@@ -107,19 +114,73 @@ function bookmarkletBody(cfg: BookmarkletConfig): void {
   };
   w.WebSocket.prototype = OrigWS.prototype;
 
-  alert(
-    "Fantasy live sync hook installed.\n\n" +
-    "If the draft room's socket already connected before you clicked this, " +
-    "reload the page NOW so it reconnects under the hook. Picks will start " +
-    "showing up in the app within a poll or two after that."
-  );
+  if (cfg.silent) {
+    // eslint-disable-next-line no-console
+    console.log("[fantasy-live-sync] hook installed at document-start.");
+  } else {
+    alert(
+      "Fantasy live sync hook installed.\n\n" +
+      "If the draft room's socket already connected before you clicked this, " +
+      "reload the page NOW so it reconnects under the hook. Picks will start " +
+      "showing up in the app within a poll or two after that."
+    );
+  }
 }
 
 /** Builds the `javascript:` URI for the bookmarklet — drag the returned
  * string's href onto a bookmarks bar. Config is baked into the source at
  * build time (not fetched at click time), so the bookmarklet keeps working
- * even if our API is briefly down when it's first installed. */
+ * even if our API is briefly down when it's first installed.
+ *
+ * **Known limitation, not silently swept under the rug**: patching
+ * `window.WebSocket` only affects connections opened AFTER the patch runs.
+ * If ESPN's page already opened its socket before you click this, nothing
+ * shows up until the page reloads — but reloading wipes the patch right
+ * back out (it's in-memory page JS state, not persistent), so a manual
+ * click can only ever win a race against ESPN's own script re-opening the
+ * connection on that same reload. `buildUserscript` below exists BECAUSE
+ * this race isn't reliably winnable by hand — prefer it once you've hit
+ * this in practice. */
 export function buildBookmarklet(cfg: BookmarkletConfig): string {
   const src = `(function(){(${bookmarkletBody.toString()})(${JSON.stringify(cfg)});})();`;
   return "javascript:" + encodeURIComponent(src);
+}
+
+/** Builds a Tampermonkey/Violentmonkey userscript with the same hook,
+ * declared `@run-at document-start` — guaranteed to execute before ANY of
+ * ESPN's own page JS, on every load, with no manual re-click and no race
+ * against when the draft-room socket opens. Solves the exact failure mode
+ * `buildBookmarklet` cannot: a page that reloads (or was already open)
+ * still gets patched before its own WebSocket call runs, every time. */
+export function buildUserscript(cfg: BookmarkletConfig): string {
+  const cfgSilent: BookmarkletConfig = { ...cfg, silent: true };
+  const header = [
+    "// ==UserScript==",
+    "// @name         Fantasy Draft Tool - Live Sync",
+    "// @namespace    fantasy-draft-tool",
+    "// @version      1.0",
+    "// @description  Streams live ESPN draft picks to your Fantasy Draft Tool board",
+    "// @match        https://fantasy.espn.com/*",
+    "// @run-at       document-start",
+    "// @grant        none",
+    "// ==/UserScript==",
+  ].join("\n");
+  return `${header}\n\n(function(){\n(${bookmarkletBody.toString()})(${JSON.stringify(cfgSilent)});\n})();\n`;
+}
+
+/** Triggers a browser download of the userscript file — Tampermonkey
+ * auto-detects a `.user.js` file opened/downloaded in the browser and
+ * offers to install it, no manual copy-paste into the extension's editor
+ * needed. Standard `<a download>` — this runs inside OUR OWN app's page,
+ * not a sandboxed artifact, so the download API is available normally. */
+export function downloadUserscript(cfg: BookmarkletConfig): void {
+  const blob = new Blob([buildUserscript(cfg)], { type: "text/javascript" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "fantasy-live-sync.user.js";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

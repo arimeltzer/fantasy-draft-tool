@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
-import { Radio, Loader2, AlertTriangle, Pause, Play, RefreshCw, X, Link2 } from "lucide-react";
+import { Radio, Loader2, AlertTriangle, Pause, Play, RefreshCw, X, Link2, Download } from "lucide-react";
 import { LeagueSettings, api, BASE } from "@/lib/api";
 import { useLiveDraft, LiveDraftConfig } from "@/hooks/useLiveDraft";
 import { yahooConnected } from "@/lib/yahooAuth";
-import { buildBookmarklet } from "@/lib/liveBookmarklet";
+import { buildBookmarklet, downloadUserscript } from "@/lib/liveBookmarklet";
 
 interface Props {
   leagueId: number;
@@ -62,14 +62,33 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
   const res = live.lastResult;
   const yahooReady = provider !== "yahoo" || yahooConnected();
 
-  // Bookmarklet — see live_ws_registry.py "Browser-side ingest" and
-  // liveBookmarklet.ts for the full why. Built on demand (not on mount)
+  // Bookmarklet / userscript — see live_ws_registry.py "Browser-side ingest"
+  // and liveBookmarklet.ts for the full why. Built on demand (not on mount)
   // since it needs a real ext_id typed into the form first.
+  //
+  // The bookmarklet has a real, hit-in-practice limitation: patching
+  // window.WebSocket only affects connections opened AFTER the click, and
+  // reloading the page to catch an already-open socket wipes the patch
+  // right back out (in-memory page state, not persistent) — so it can only
+  // win an unreliable race against ESPN's own script on that reload. The
+  // userscript (Tampermonkey, @run-at document-start) doesn't have this
+  // problem at all — it's the one to reach for once that's been hit.
   const [bookmarkletHref, setBookmarkletHref] = useState<string | null>(null);
   const [bookmarkletBusy, setBookmarkletBusy] = useState(false);
   const [bookmarkletError, setBookmarkletError] = useState<string | null>(null);
+  const [userscriptBusy, setUserscriptBusy] = useState(false);
+  const [userscriptError, setUserscriptError] = useState<string | null>(null);
+  const [userscriptDone, setUserscriptDone] = useState(false);
   const [stopBusy, setStopBusy] = useState(false);
   const [stopMsg, setStopMsg] = useState<string | null>(null);
+
+  function ingestConfig(token: string) {
+    return {
+      apiUrl: BASE, leagueId, token, extId: extId.trim(), season: 2026,
+      espnS2: s2 || undefined, swid: swid || undefined, myTeam: myTeam || undefined,
+      startOverall: 1,
+    };
+  }
 
   async function makeBookmarklet() {
     if (!extId.trim()) return;
@@ -77,16 +96,27 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
     setBookmarkletError(null);
     try {
       const { token } = await api.getLiveIngestToken(leagueId);
-      const href = buildBookmarklet({
-        apiUrl: BASE, leagueId, token, extId: extId.trim(), season: 2026,
-        espnS2: s2 || undefined, swid: swid || undefined, myTeam: myTeam || undefined,
-        startOverall: 1,
-      });
-      setBookmarkletHref(href);
+      setBookmarkletHref(buildBookmarklet(ingestConfig(token)));
     } catch (e) {
       setBookmarkletError(e instanceof Error ? e.message : String(e));
     } finally {
       setBookmarkletBusy(false);
+    }
+  }
+
+  async function makeUserscript() {
+    if (!extId.trim()) return;
+    setUserscriptBusy(true);
+    setUserscriptError(null);
+    setUserscriptDone(false);
+    try {
+      const { token } = await api.getLiveIngestToken(leagueId);
+      downloadUserscript(ingestConfig(token));
+      setUserscriptDone(true);
+    } catch (e) {
+      setUserscriptError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setUserscriptBusy(false);
     }
   }
 
@@ -193,53 +223,89 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
           {provider === "espn" && (
             <div className="rounded border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs">
               <div className="flex items-center gap-1.5 font-medium text-emerald-800">
-                <Link2 className="h-3.5 w-3.5" /> Live channel bookmarklet (recommended)
+                <Download className="h-3.5 w-3.5" /> Tampermonkey script (recommended)
               </div>
               <p className="mt-1 text-2xs leading-snug text-emerald-800/80">
                 Reads picks straight off ESPN's own draft-room connection, from inside your
                 browser tab — doesn't touch ESPN's login/session at all, so it can't trigger the
-                multi-location kick a server-side connection can. Requires the League ID above.
+                multi-location kick a server-side connection can. Runs automatically on every
+                page load (needs the free{" "}
+                <a href="https://www.tampermonkey.net/" target="_blank" rel="noreferrer"
+                  className="underline">Tampermonkey</a> extension — one-time install if you
+                don't have it). Requires the League ID above.
               </p>
               <div className="mt-2 flex items-center gap-2">
                 <button
-                  onClick={() => void makeBookmarklet()}
-                  disabled={!extId.trim() || bookmarkletBusy}
+                  onClick={() => void makeUserscript()}
+                  disabled={!extId.trim() || userscriptBusy}
                   className="flex items-center gap-1.5 rounded border border-emerald-300 bg-white px-2.5 py-1.5 text-2xs font-medium text-emerald-800 hover:border-emerald-400 disabled:opacity-50"
                 >
-                  {bookmarkletBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
-                  {bookmarkletHref ? "Regenerate" : "Get bookmarklet"}
+                  {userscriptBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
+                  Download script
                 </button>
-                {bookmarkletHref && (
-                  <a
-                    href={bookmarkletHref}
-                    onClick={(e) => {
-                      // A javascript: href only does anything when dragged to
-                      // a bookmarks bar and clicked FROM there (on ESPN's
-                      // page) — clicking it here, still on our own site,
-                      // would run the hook against the wrong page. Block
-                      // that and say so, rather than let it silently no-op.
-                      e.preventDefault();
-                      alert("Drag this link to your bookmarks bar first, then click it from "
-                        + "the ESPN draft room tab — clicking it here won't do anything.");
-                    }}
-                    draggable
-                    className="cursor-grab rounded border border-emerald-300 bg-emerald-100 px-2.5 py-1.5 text-2xs font-medium text-emerald-900 active:cursor-grabbing"
-                    title="Drag me to your bookmarks bar"
-                  >
-                    🖐 Drag to bookmarks bar: Fantasy Live Sync
-                  </a>
-                )}
+                {userscriptDone && <span className="text-2xs text-emerald-700">Downloaded ✓</span>}
               </div>
-              {bookmarkletHref && (
+              {userscriptDone && (
                 <p className="mt-1.5 text-2xs leading-snug text-emerald-800/70">
-                  On the ESPN draft page: click the bookmark, then reload the page if the
-                  draft-room connection was already open before you clicked it.
+                  Open the downloaded <code>fantasy-live-sync.user.js</code> file (Tampermonkey
+                  will offer to install it), click Install, then reload your ESPN draft tab once.
+                  It'll run automatically from then on — no re-clicking anything.
                 </p>
               )}
-              {bookmarkletError && (
-                <p className="mt-1.5 text-2xs text-rose-700">{bookmarkletError}</p>
+              {userscriptError && (
+                <p className="mt-1.5 text-2xs text-rose-700">{userscriptError}</p>
               )}
             </div>
+          )}
+
+          {provider === "espn" && (
+            <details className="text-xs">
+              <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+                Prefer a bookmarklet instead (no extension)?
+              </summary>
+              <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2.5 py-2">
+                <p className="text-2xs leading-snug text-amber-900">
+                  <span className="font-medium">Known limitation:</span> this only catches
+                  connections opened AFTER you click it. If the draft room's socket is already
+                  open, reloading to catch a fresh one also wipes the click's effect — you'd be
+                  racing ESPN's own script on that reload, which is unreliable by hand. Use the
+                  Tampermonkey script above if you hit this.
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    onClick={() => void makeBookmarklet()}
+                    disabled={!extId.trim() || bookmarkletBusy}
+                    className="flex items-center gap-1.5 rounded border border-amber-300 bg-white px-2.5 py-1.5 text-2xs font-medium text-amber-800 hover:border-amber-400 disabled:opacity-50"
+                  >
+                    {bookmarkletBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
+                    {bookmarkletHref ? "Regenerate" : "Get bookmarklet"}
+                  </button>
+                  {bookmarkletHref && (
+                    <a
+                      href={bookmarkletHref}
+                      onClick={(e) => {
+                        // A javascript: href only does anything when dragged to
+                        // a bookmarks bar and clicked FROM there (on ESPN's
+                        // page) — clicking it here, still on our own site,
+                        // would run the hook against the wrong page. Block
+                        // that and say so, rather than let it silently no-op.
+                        e.preventDefault();
+                        alert("Drag this link to your bookmarks bar first, then click it from "
+                          + "the ESPN draft room tab — clicking it here won't do anything.");
+                      }}
+                      draggable
+                      className="cursor-grab rounded border border-amber-300 bg-amber-100 px-2.5 py-1.5 text-2xs font-medium text-amber-900 active:cursor-grabbing"
+                      title="Drag me to your bookmarks bar"
+                    >
+                      🖐 Drag to bookmarks bar: Fantasy Live Sync
+                    </a>
+                  )}
+                </div>
+                {bookmarkletError && (
+                  <p className="mt-1.5 text-2xs text-rose-700">{bookmarkletError}</p>
+                )}
+              </div>
+            </details>
           )}
 
           {provider === "espn" && (
