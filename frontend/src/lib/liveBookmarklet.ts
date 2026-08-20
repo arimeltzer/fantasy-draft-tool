@@ -160,7 +160,14 @@ export function buildUserscript(cfg: BookmarkletConfig): string {
     "// @namespace    fantasy-draft-tool",
     "// @version      1.0",
     "// @description  Streams live ESPN draft picks to your Fantasy Draft Tool board",
-    "// @match        https://fantasy.espn.com/*",
+    // Wildcarded across the whole espn.com family, not just fantasy.espn.com
+    // — the WebSocket connects to wss://fantasydraft.espn.com, which strongly
+    // suggests the draft-room UI that actually OPENS it may render inside an
+    // iframe on that (or another) espn.com subdomain, not the top-level page
+    // you're looking at. Tampermonkey injects into every matching frame, not
+    // just the top one, by default — this only helps if it's broad enough to
+    // match whichever frame the real WebSocket call happens in.
+    "// @match        https://*.espn.com/*",
     "// @run-at       document-start",
     "// @grant        none",
     "// ==/UserScript==",
