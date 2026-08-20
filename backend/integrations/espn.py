@@ -506,9 +506,19 @@ def parse_live_draft(data: dict, my_team: str | None = None,
 
     state = LiveDraftState(picks=order_picks(picks),
                            fmt="auction" if any(p.bid for p in picks) else "snake")
-    state.meta = {"drafted": len((data.get("draftDetail", {}) or {}).get("picks", []) or []),
+    raw_picks = (data.get("draftDetail", {}) or {}).get("picks", []) or []
+    # `raw_picks` can include placeholder rows for slots that haven't been
+    # picked yet (seen with playerId <= 0 on a live, in-progress draft) — a
+    # completed draft never has these, which is why the older draft-history
+    # code this was adapted from never needed to filter them out. Counting
+    # them as "drafted" wildly overstates progress (a 10-team/16-round league
+    # showed "160 drafted" from pick 1 on) and pollutes the kona_player_info
+    # top-up's id list with junk ids.
+    real_picks = [p for p in raw_picks if isinstance(p.get("playerId"), int) and p["playerId"] > 0]
+    state.meta = {"drafted": len(real_picks),
                   "resolved": len(picks),
-                  "in_progress": bool((data.get("draftDetail", {}) or {}).get("inProgress"))}
+                  "in_progress": bool((data.get("draftDetail", {}) or {}).get("inProgress")),
+                  "raw_pick_slots": len(raw_picks)}
     return state
 
 
@@ -571,10 +581,12 @@ async def fetch_and_resolve_live_draft(league_id: str, season: int, espn_s2: str
     }
     all_ids = {
         p.get("playerId") for p in (data.get("draftDetail", {}) or {}).get("picks", []) or []
-        if p.get("playerId") is not None
+        if isinstance(p.get("playerId"), int) and p["playerId"] > 0
     }
     missing = sorted(all_ids - roster_ids)
+    diag = {"lookup_attempted": len(missing), "lookup_found": 0, "lookup_status": "skipped"}
     if not missing:
+        state.meta["lookup"] = diag
         return state
 
     cookies = {}
@@ -590,14 +602,20 @@ async def fetch_and_resolve_live_draft(league_id: str, season: int, espn_s2: str
                 pr = await client.get(
                     player_info_url(league_id, season),
                     headers={"x-fantasy-filter": player_info_filter(chunk)})
+                diag["lookup_status"] = pr.status_code
                 if pr.status_code != 200:
                     break
                 found.update(parse_player_info(pr.json()))
-    except Exception:  # noqa: BLE001 — the top-up is optional, the poll is not
-        pass
+                diag["lookup_status"] = "ok"
+    except Exception as exc:  # noqa: BLE001 — the top-up is optional, the poll is not
+        diag["lookup_status"] = f"error:{type(exc).__name__}"
+    diag["lookup_found"] = len(found)
     if not found:
+        state.meta["lookup"] = diag
         return state
-    return parse_live_draft(data, my_team=my_team, pos_by_id=found)
+    resolved = parse_live_draft(data, my_team=my_team, pos_by_id=found)
+    resolved.meta["lookup"] = diag
+    return resolved
 
 
 async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,

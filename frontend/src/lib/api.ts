@@ -144,7 +144,16 @@ export interface LiveSyncResult {
   already_had: number;
   /** Drafted names the player pool doesn't contain — reported, never dropped. */
   unmatched: string[];
-  meta: { drafted?: number; resolved?: number; in_progress?: boolean };
+  meta: {
+    drafted?: number; resolved?: number; in_progress?: boolean;
+    /** Total pick slots ESPN returned, INCLUDING ones not yet made — for a
+     *  live draft this can be the whole season's board (e.g. 160 for a
+     *  10-team/16-round league) even on pick 1, distinct from `drafted`. */
+    raw_pick_slots?: number;
+    /** kona_player_info top-up diagnostics, present once the roster view has
+     *  fallen behind and a top-up was attempted. */
+    lookup?: { lookup_attempted?: number; lookup_found?: number; lookup_status?: string | number };
+  };
   applied: boolean;
 }
 

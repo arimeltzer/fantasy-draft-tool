@@ -43,6 +43,27 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   by roster alone (id 99) now resolves via `pos_by_id`; a pick roster ALREADY
   named (id 22) is confirmed to win over a conflicting `pos_by_id` entry, so
   the top-up only ever fills gaps.
+- **Third bug: the top-up fix above shipped but didn't resolve the symptom on
+  retest** — still "0 of 160 picks read" at pick 57. Root cause: "160" was
+  never picks MADE, it was `draftDetail.picks`' raw array length, which on a
+  LIVE draft includes placeholder rows for every slot in the WHOLE season
+  (this league: 10 teams x 16 rounds = 160) even on pick 1, with
+  `playerId <= 0` for the ones nobody has taken yet. The reused top-up
+  pattern (`unresolved_pick_ids` et al.) was built for a COMPLETED draft,
+  where this placeholder row never exists — so it had never been exercised
+  against one. Two consequences: `meta["drafted"]` massively overstated
+  progress, and (the actual break) the placeholder ids got mixed into the
+  `kona_player_info` lookup's id list, which is the likely reason that
+  lookup was coming back empty. Fixed by filtering to `playerId > 0` in both
+  `parse_live_draft`'s `meta["drafted"]` count and `fetch_and_resolve_live_draft`'s
+  missing-id set; the raw slot count is kept separately as `meta["raw_pick_slots"]`
+  so it's still visible, just not mislabeled. Also added `meta["lookup"]`
+  diagnostics (ids attempted/found, last HTTP status or exception type) to
+  the sync response and the panel UI, so if a future top-up fails silently
+  again it's visible without needing server log access. Fixture test added:
+  a mix of real and placeholder (`playerId` 0 and -1) pick slots now counts
+  `drafted`/`resolved` from the real ones only, with `raw_pick_slots`
+  reporting the full total.
 
 ## 2026-08 — Roadmap 2.2a RESULT: independent weekly draws REJECTED — season variance understated 3-4x
 - Ran `projection-backtest.yml` #32154937836 against live data (2016-2025,

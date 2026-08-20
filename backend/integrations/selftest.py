@@ -562,6 +562,20 @@ def test_live_draft():
         pos_by_id={22: {"name": "WRONG NAME", "pos": "WR", "team": "XX"}})
     assert roster_wins.picks[0].name == "A.J. Brown"
 
+    # A live (not-yet-complete) draft can pre-populate the WHOLE season's pick
+    # slots, with playerId <= 0 for ones nobody has made yet — verified against
+    # a real draft that showed "160 drafted" (the full board) on pick 1. Those
+    # placeholders must not count as "drafted" or get sent to the top-up.
+    pending = espn.parse_live_draft({**espn_data, "draftDetail": {"inProgress": True, "picks": [
+        {"playerId": 22, "teamId": 2, "overallPickNumber": 1},
+        {"playerId": 11, "teamId": 1, "overallPickNumber": 2},
+        {"playerId": -1, "teamId": 2, "overallPickNumber": 3},   # not picked yet
+        {"playerId": 0, "teamId": 1, "overallPickNumber": 4},    # not picked yet
+    ]}})
+    assert pending.meta["drafted"] == 2, pending.meta["drafted"]
+    assert pending.meta["raw_pick_slots"] == 4, pending.meta["raw_pick_slots"]
+    assert pending.meta["resolved"] == 2
+
     # overallPickNumber missing -> derived from round + pick and league size
     derived = espn.parse_live_draft({**espn_data, "draftDetail": {"picks": [
         {"playerId": 11, "teamId": 1, "roundId": 2, "roundPickNumber": 2},

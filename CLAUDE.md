@@ -189,6 +189,19 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     problem in the keeper-candidates draft-history path (`unresolved_pick_ids`
     + `player_info_url`), reused rather than reinvented. Best-effort: a failed
     top-up returns the roster-only state instead of losing the poll.
+  - **That top-up initially still didn't work — a second, distinct bug.**
+    `draftDetail.picks` on a LIVE draft pre-populates placeholder rows for
+    the WHOLE season (`playerId <= 0` for slots nobody's taken), which a
+    completed draft never has — so `meta["drafted"]` read the raw array
+    length (160 for a 10-team/16-round league, even on pick 1) instead of
+    picks actually made, and those same placeholder ids polluted the
+    `kona_player_info` lookup's id list. Fixed by filtering to
+    `playerId > 0` wherever ids are counted or looked up; the raw slot
+    count is kept separately as `meta["raw_pick_slots"]`, never conflated
+    with `drafted` again. `meta["lookup"]` (ids attempted/found, last HTTP
+    status or exception type) now rides along in the sync response and
+    shows in the panel, so a future silent top-up failure is visible
+    without server log access.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

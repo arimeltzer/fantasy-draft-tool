@@ -206,6 +206,13 @@ export default function LiveDraftPanel({ settings, onClose, live, config, onConf
                 )}
               </div>
 
+              {res.meta.lookup && res.meta.lookup.lookup_attempted ? (
+                <p className="text-2xs text-gray-400">
+                  roster view behind: looked up {res.meta.lookup.lookup_attempted}, found{" "}
+                  {res.meta.lookup.lookup_found} (status {String(res.meta.lookup.lookup_status)})
+                </p>
+              ) : null}
+
               {res.added.length > 0 && (
                 <div className="space-y-0.5">
                   {res.added.slice(-6).map((a) => (
