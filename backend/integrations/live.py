@@ -3,10 +3,19 @@ integrations/live.py
 ===================
 Live draft sync — pulling picks out of a draft that is happening right now.
 
-**There is no push channel here.** Neither platform exposes its draft room
-socket publicly; both are polled. ESPN's `mDraftDetail` view and Yahoo's
-`draftresults` endpoint both fill in as a draft proceeds, so a short poll gives
-near-real-time picks. The cadence, not the code, is the latency floor.
+**Polling, for both platforms — that's a deliberate scope limit, not "there
+is no push channel."** Yahoo's `draftresults` genuinely has no push
+alternative found so far. ESPN DOES have one — a WebSocket at
+`wss://fantasydraft.espn.com/.../JOIN`, confirmed from a captured HAR of a
+real draft (`espn_draft_ws.py`) — but its auth token isn't reproducible from
+that capture alone, so it isn't wired into this module yet; see
+`espn_draft_ws.py`'s docstring and CLAUDE.md. Until that's closed, ESPN
+picks still come from `mDraftDetail`, which — also discovered via that same
+HAR — is a static skeleton until the draft is FINALIZED, not a live feed;
+polling it faster or smarter cannot produce live picks for a draft still in
+progress. Yahoo's `draftresults` does fill in as a draft proceeds, so
+polling it is the real mechanism there. The cadence, not the code, is Yahoo's
+latency floor; ESPN's live-in-progress case is presently unsolved.
 
 The join is the same on both platforms: the draft endpoint gives ORDER (overall
 pick, round, owning team, auction price) but identifies players by the

@@ -221,10 +221,34 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     PRIOR-season drafts, used for keeper import) works fine — by season's
     end the array has long since been committed — while nothing mid-draft
     ever will resolve via REST polling. **Live sync while a draft is
-    ACTIVELY in progress is a confirmed dead end for ESPN**, left as-is
-    (degrades safely, never blocks manual pick entry) rather than removed,
-    since `parse_live_draft`/the top-up/cache-busting fixes are all real,
-    correct fixes for real bugs that just weren't the actual blocker.
+    ACTIVELY in progress is a confirmed dead end for ESPN via REST**, left
+    as-is (degrades safely, never blocks manual pick entry) rather than
+    removed, since `parse_live_draft`/the top-up/cache-busting fixes are
+    all real, correct fixes for real bugs that just weren't the actual
+    blocker.
+  - **ESPN DOES have a live push channel — a full HAR capture of a real
+    mock draft found it: `wss://fantasydraft.espn.com/game-1/league-
+    {id}/JOIN`, confirmed as ESPN's OWN client's actual live mechanism,
+    not a guess.** `integrations/espn_draft_ws.py` decodes and
+    fixture-tests its plain-text line protocol against real captured lines
+    (`NOMINATION`/`BID`/`SOLD`/`PASSED`/`CLOCK`/`JOINED`/`PING`/`PONG`) —
+    `SOLD <nominatingTeamId> <playerId> <winningTeamId> <price> <flag>` is
+    the live "a pick just happened" event this whole effort was after.
+    **Not wired into `sync_draft` yet — one piece is genuinely unverified,
+    not guessed at.** The JOIN url's 5th query param is a colon-joined
+    `gameId:leagueId:teamId:swid:<signed-32-bit hash>` token; several
+    Java-`String.hashCode()`-style candidates were tried against the one
+    real `(swid, leagueId, teamId) -> hash` example captured and none
+    matched — and a match from one data point wouldn't have been
+    trustworthy anyway (32-bit space, real collision risk). `join_url()`
+    takes the hash as a required external parameter rather than fabricate
+    one. Closing this needs either the JS source itself (capture "Save all
+    as HAR with content", or breakpoint `new WebSocket(...)` and read the
+    call site) or a SECOND real example from a different draft to test
+    hypotheses against two independent points. `INIT`'s blob (the
+    full-draft-so-far backfill sent once on connect) is also left
+    undecoded on purpose — a client that joins mid-draft only sees `SOLD`
+    events from that point forward, which is the accepted scope for now.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

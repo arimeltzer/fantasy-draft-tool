@@ -101,6 +101,45 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   turned out not to be the actual blocker — kept, not reverted, since
   they're real fixes for real (if here, secondary) bugs.
 
+## 2026-08 — Found ESPN's real live-draft channel (WebSocket) — built and tested, not yet wired in
+- The prior entry concluded ESPN's live draft sync was a dead end via REST,
+  based on capturing ESPN's own draft-room traffic. The user then supplied
+  the FULL HAR of that same mock-draft session (not just the one response
+  body relayed by hand), which included the WebSocket connection ESPN's
+  client actually uses: `wss://fantasydraft.espn.com/game-1/league-{id}/JOIN`.
+  That correction matters — "ESPN has no live feed at all" was wrong; "REST
+  polling of `draftDetail.picks` can't produce one" was right.
+- Decoded the protocol from the captured messages: a plain-text, line-based
+  format (not JSON, not binary) — `NOMINATION`/`BID`/`SOLD`/`PASSED`/`CLOCK`/
+  `JOINED`/`AUTODRAFT`/`TOKEN`/`PING`/`PONG`, plus one opaque `INIT` blob sent
+  on connect. `SOLD <nominatingTeamId> <playerId> <winningTeamId> <price>
+  <flag>` is the live pick event — exactly what four rounds of REST fixes
+  were never going to produce, because `draftDetail.picks` doesn't update
+  until the draft finalizes.
+- `backend/integrations/espn_draft_ws.py`: `parse_ws_line()` (pure, and
+  fixture-tested against the real captured lines verbatim — same discipline
+  every parser in this file gets) + a `watch_draft()` WebSocket client
+  scaffold (needs the `websockets` package, added to requirements.txt).
+- **Deliberately NOT wired into `sync_draft` yet.** The JOIN url's 5th query
+  param is a `gameId:leagueId:teamId:swid:<hash>` token; the trailing hash
+  isn't reproducible from a HAR with no response bodies (no JS source, no
+  earlier XHR that returns it). Tried several Java-`String.hashCode()`-style
+  candidates against the ONE real example captured — none matched, and a
+  match from a single data point wouldn't have been trustworthy anyway (32-bit
+  hash space, real collision risk). Rather than guess and ship an auth path
+  that fails silently, `join_url()` takes the hash as a required external
+  parameter and the module stays unwired — same treatment this repo gives
+  other validated-but-not-integrated work (`docs/ROADMAP.md` 2.1's outcome
+  distributions, the unwired 2.2b lineup optimizer). `INIT`'s backfill blob
+  is left undecoded too, on purpose — a client joining mid-draft only sees
+  `SOLD` events from that point forward, an accepted scope limit for now.
+- **What would close this**: either the JS source itself (a HAR captured
+  with "Save all as HAR with content", or a breakpoint on `new WebSocket(...)`
+  read live in the browser), or a SECOND real `(swid, leagueId, teamId) ->
+  hash` example from a different draft, which turns one unverifiable data
+  point into two and makes hash-guessing an actual test instead of a shot in
+  the dark. The user is running another mock draft to capture this.
+
 ## 2026-08 — Roadmap 2.2a RESULT: independent weekly draws REJECTED — season variance understated 3-4x
 - Ran `projection-backtest.yml` #32154937836 against live data (2016-2025,
   63,071 player-weeks). Confirms the pre-registered concern, decisively.

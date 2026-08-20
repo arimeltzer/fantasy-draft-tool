@@ -14,7 +14,7 @@ import json
 
 from .base import NormLeague, NormPlayer, NormTeam, opponent_team_ids
 from .matching import build_index, match_player, keeper_candidates
-from . import espn, live, yahoo, yahoo_paste
+from . import espn, espn_draft_ws, live, yahoo, yahoo_paste
 from . import fantasypros_aav_paste as aav_paste
 
 
@@ -727,6 +727,7 @@ def main():
     test_waiver_weekly_fetch(); print("✓ waiver weekly fetch")
     test_yahoo_paste(); print("✓ yahoo paste import")
     test_fantasypros_aav_paste(); print("✓ fantasypros aav paste import")
+    test_espn_draft_ws(); print("✓ espn draft websocket (unwired, parser only)")
     print("\nALL INTEGRATION SELFTESTS PASS")
 
 
@@ -951,6 +952,74 @@ def test_fantasypros_aav_paste():
     assert ids["Austin Ekeler"] == 4           # name+pos unique even with a blank/stale team
     assert ids["Alec Pierce"] is None          # not in the pool -> unmatched, not guessed
     assert ids["Jordan Love"] is None
+
+
+def test_espn_draft_ws():
+    """`espn_draft_ws.parse_ws_line` against lines copied verbatim from a real
+    captured HAR of ESPN's actual draft-room WebSocket (`wss://fantasydraft.
+    espn.com/.../JOIN`) — the channel ESPN's own client uses for live picks,
+    which `integrations/live.py`'s REST polling can never see (see CLAUDE.md).
+    Real values, not synthesized, same discipline as `test_yahoo_paste` and
+    `test_fantasypros_aav_paste`."""
+    p = espn_draft_ws.parse_ws_line
+
+    sold = p("SOLD 6 4570037 13 1 0\n")
+    assert sold == {"type": "sold", "nominating_team_id": 6, "player_id": 4570037,
+                     "winning_team_id": 13, "price": 1, "flag": 0}, sold
+
+    bid = p("BID 6 4570037 1 25000 25000\n")
+    assert bid == {"type": "bid", "team_id": 6, "player_id": 4570037,
+                    "amount": 1, "clock_ms": 25000, "clock_ms2": 25000}, bid
+
+    nomination = p("NOMINATION 6 25000\n")
+    assert nomination == {"type": "nomination", "team_id": 6, "clock_ms": 25000}, nomination
+
+    passed = p("PASSED 7 3046439 false\n")
+    assert passed == {"type": "passed", "team_id": 7, "player_id": 3046439, "auto": False}, passed
+
+    # CLOCK has two shapes depending on phase — between-nomination vs. active bid.
+    clock_idle = p("CLOCK 3 522\n")
+    assert clock_idle == {"type": "clock", "phase": 3, "clock_ms": 522}, clock_idle
+    clock_bid = p("CLOCK 2 24749 6 4570037 1\n")
+    assert clock_bid == {"type": "clock", "phase": 2, "clock_ms": 24749,
+                          "team_id": 6, "player_id": 4570037, "amount": 1}, clock_bid
+
+    joined = p("JOINED 7 {B32FA1C0-4AC4-4241-9C27-345AA44C4300}\n")
+    assert joined == {"type": "joined", "team_id": 7,
+                       "swid": "{B32FA1C0-4AC4-4241-9C27-345AA44C4300}"}, joined
+
+    autodraft = p("AUTODRAFT 7 false\n")
+    assert autodraft == {"type": "autodraft", "team_id": 7, "enabled": False}, autodraft
+
+    token = p("TOKEN 1:550003701:7:{B32FA1C0-4AC4-4241-9C27-345AA44C4300}:-1221336021\n")
+    assert token == {"type": "token",
+                      "raw": "1:550003701:7:{B32FA1C0-4AC4-4241-9C27-345AA44C4300}:-1221336021"}, token
+
+    # PING/PONG payloads are URL-encoded ("%20" -> " ") in the wire format.
+    ping = p("PING PING%201787195389520\n")
+    assert ping == {"type": "ping", "payload": "PING 1787195389520"}, ping
+    pong = p("PONG PING%201787195389520\n")
+    assert pong == {"type": "pong", "payload": "PING 1787195389520"}, pong
+
+    # INIT's payload is a large opaque blob (undecoded — see module docstring);
+    # the type still parses so a caller can at least recognize it arrived.
+    init = p("INIT AAAAAQAAAAEgyGP1AAAABw==\n")
+    assert init == {"type": "init"}, init
+
+    # Unknown/garbage lines don't raise, and don't get invented data.
+    assert p("") is None
+    assert p("   \n") is None
+    assert p("SOMETHING_FUTURE 1 2 3\n") is None
+    assert p("SOLD not-a-number 1 2 3 4\n") is None   # malformed field, not a crash
+
+    # join_url composes the exact query-string shape from the capture, given
+    # an externally-supplied hash — it does not fabricate one (see docstring).
+    url = espn_draft_ws.join_url("550003701", 7, "{B32FA1C0-4AC4-4241-9C27-345AA44C4300}",
+                                 -1221336021, nocache=1413)
+    assert url == ("wss://fantasydraft.espn.com/game-1/league-550003701/JOIN"
+                    "?1=1&2=550003701&3=7&4={B32FA1C0-4AC4-4241-9C27-345AA44C4300}"
+                    "&5=1:550003701:7:{B32FA1C0-4AC4-4241-9C27-345AA44C4300}:-1221336021"
+                    "&6=false&7=false&8=KONA&nocache=1413"), url
 
 
 if __name__ == "__main__":
