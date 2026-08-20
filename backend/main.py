@@ -1190,9 +1190,23 @@ async def live_ingest(league_id: int, data: LiveIngestEvent, db: AsyncSession = 
     if not expected or not secrets.compare_digest(data.token, expected):
         raise HTTPException(status_code=401, detail="Invalid live-ingest token")
 
+    # `data.start_overall` is baked into the userscript/bookmarklet at
+    # DOWNLOAD time and never updates after that — if the hook connects long
+    # after download (Tampermonkey install friction, troubleshooting, or
+    # picks logged via backfill in between), that value is stale. The
+    # ingest watcher's OWN numbering only matters for cosmetic ordering
+    # (DraftLogModal re-sorts by it; nothing else depends on it being
+    # accurate — see live_ws_registry.py), but a stale start_overall still
+    # produces confusing numbers, so compute it fresh from the DB instead
+    # of trusting the client-supplied one. Only matters the moment a NEW
+    # watcher is created (ingest_sold_event ignores it on later calls).
+    existing_count = len((await db.execute(
+        select(DraftPick.player_id).where(DraftPick.league_id == league_id)
+    )).scalars().all())
+
     watcher = await live_ws_registry.ingest_sold_event(
         league_id, data.ext_id, data.season, data.my_team, data.espn_s2, data.swid,
-        data.start_overall, data.nominating_team_id, data.player_id, data.winning_team_id,
+        existing_count + 1, data.nominating_team_id, data.player_id, data.winning_team_id,
         data.price,
     )
     return {"ok": True, "drafted": len(watcher.events)}
@@ -1338,7 +1352,18 @@ async def sync_draft(
     return {
         "provider": data.provider,
         "fmt": state.fmt,
-        "on_the_clock": state.complete_through + 1,
+        # NOT state.complete_through — that's derived from whichever source's
+        # OWN overall-pick numbering happened to produce `state.picks`, which
+        # for the live-ingest path is arrival-order counting from whatever
+        # start_overall the watcher had at creation (stale/approximate, see
+        # live_ingest's docstring) — disconnected from what's actually
+        # logged once backfill or an earlier source added picks the watcher
+        # never itself witnessed. `len(have)` is the TRUE total distinct
+        # drafted players known to this league after this poll (every branch
+        # above feeds through the same per-player dedup loop), which is
+        # exactly what "how far has the draft progressed" means in any
+        # normal draft — one pick, one player, no gaps.
+        "on_the_clock": len(have) + 1,
         "added": added,
         "added_count": len(added),
         "already_had": skipped,

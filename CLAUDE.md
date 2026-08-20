@@ -381,6 +381,25 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     off `picks.length`, not the stored number) depends on `overall_pick`
     being globally sequential — display views re-sort by it, so mismatched
     numbering between the two sources still renders in a sane order.
+  - **`on_the_clock` was itself wrong, caught live: it was reading the
+    ingest watcher's OWN isolated pick count, not the league's true
+    total.** A real draft at pick 52 showed as "pick 36 on the clock" — the
+    ingest watcher numbers picks by arrival order from a `start_overall`
+    baked into the userscript at DOWNLOAD time, which goes stale the moment
+    ANY picks land through another route afterward (backfill, or just
+    Tampermonkey install friction delaying when the hook actually
+    connects). `sync_draft`'s `on_the_clock` was built from
+    `state.complete_through`, i.e. that same isolated counter, so it
+    under-reported the moment the two sources diverged. Fixed twice: (1)
+    `live_ingest` now computes `start_overall` fresh from an actual
+    `DraftPick` count query at watcher-creation time instead of trusting
+    the client-supplied value; (2) more importantly, `on_the_clock` is now
+    `len(have) + 1` — `have` is the TRUE set of distinct drafted players
+    known to the league after this poll (every source already funnels
+    through the same per-player dedup loop), which is what "how far has
+    the draft progressed" actually means in a normal draft, independent of
+    whatever overall-numbering quirks any one source's `state.picks`
+    happens to carry.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.
