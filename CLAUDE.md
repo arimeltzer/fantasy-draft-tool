@@ -210,6 +210,21 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     cache-busting `fetch_raw_league` only (a per-request timestamp query
     param + `Cache-Control`/`Pragma: no-cache` headers) — `fetch_league`'s
     once-per-import calls don't need it.
+  - **The real finding, confirmed by capturing ESPN's OWN draft-room
+    traffic: `draftDetail.picks` is a static skeleton until the draft is
+    FINALIZED, not a live feed — polling it harder was never going to
+    work.** ESPN's own `mDraftDetail` request, mid-draft past pick 57, came
+    back with picks as bare `{id, teamId: -1}` — no `playerId` key at all.
+    Their own client isn't using this endpoint for live pick data either;
+    it almost certainly gets that over a separate channel (WebSocket/
+    SockJS), out of scope here. This is why `parse_draft_picks` (completed
+    PRIOR-season drafts, used for keeper import) works fine — by season's
+    end the array has long since been committed — while nothing mid-draft
+    ever will resolve via REST polling. **Live sync while a draft is
+    ACTIVELY in progress is a confirmed dead end for ESPN**, left as-is
+    (degrades safely, never blocks manual pick entry) rather than removed,
+    since `parse_live_draft`/the top-up/cache-busting fixes are all real,
+    correct fixes for real bugs that just weren't the actual blocker.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

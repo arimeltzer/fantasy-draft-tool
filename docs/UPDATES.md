@@ -76,6 +76,30 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   no-cache` headers. A temporary `meta["sample"]` (first 3 raw pick dicts)
   was added and then left in place pending live confirmation — remove once
   this is confirmed fixed against the real draft.
+- **Fifth finding, and the real one: ESPN's own draft room doesn't use this
+  endpoint for live pick data either — confirmed from a live network capture
+  the user pulled directly off ESPN's draft page.** Its own `mDraftDetail`
+  request came back with picks shaped as bare `{id, teamId: -1}` — no
+  `playerId` key AT ALL, not even a placeholder — for a draft already well
+  past pick 57. Every prior "fix" (roster top-up, placeholder filtering,
+  cache-busting, fmt inference) was chasing symptoms of the same underlying
+  fact: **`draftDetail.picks` on `lm-api-reads` is a static skeleton
+  (draft order only) until the whole draft is finalized, not a live feed.**
+  ESPN's own client almost certainly gets live pick-by-pick updates over a
+  separate channel (WebSocket/SockJS) that was never in scope here. This is
+  why the codebase's OTHER use of `draftDetail.picks`
+  (`parse_draft_picks`, completed prior-season drafts for keeper import)
+  works fine — by season's end ESPN has long since committed real
+  `playerId`s into the array — while polling it mid-draft never will.
+  **Not fixable by polling REST harder; a WebSocket integration would be a
+  much larger, riskier scope than fits the time available. Live sync while
+  a draft is ACTIVELY in progress is a confirmed dead end for ESPN** — left
+  as-is (degrades safely: 0 synced, never blocks manual pick entry) rather
+  than ripped out, since the same code path still works for its other
+  purpose. `fetch_and_resolve_live_draft`'s `kona_player_info` top-up and
+  the cache-busting fix are both harmless, correct fixes for problems that
+  turned out not to be the actual blocker — kept, not reverted, since
+  they're real fixes for real (if here, secondary) bugs.
 
 ## 2026-08 — Roadmap 2.2a RESULT: independent weekly draws REJECTED — season variance understated 3-4x
 - Ran `projection-backtest.yml` #32154937836 against live data (2016-2025,
