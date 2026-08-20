@@ -1103,6 +1103,19 @@ class LiveDraftRequest(BaseModel):
     # all and is preferred automatically once it has data; this flag exists
     # for anyone who wants to try the backend-owned path anyway.
     enable_backend_ws: bool = False
+    # One-shot: also pull ESPN's REST draftDetail.picks (roster-join +
+    # kona_player_info top-up, same as the no-ingest fallback path) and merge
+    # whatever it resolves in alongside the live-ingest picks. For picks made
+    # BEFORE the bookmarklet/userscript connected — e.g. joining an
+    # already-in-progress draft late — there's no live event to replay (the
+    # WebSocket's one-time INIT backfill blob is deliberately left undecoded,
+    # see espn_draft_ws.py), but ESPN's roster view usually DOES catch up for
+    # picks that are no longer brand new, just not for ones seconds old —
+    # this is exactly the case that's stale enough to have caught up. Off by
+    # default and not run every poll: it's the same roster-lag-prone REST
+    # path documented as a live-picks dead end, only useful as an occasional
+    # one-shot catch-up, not a replacement for the live path.
+    backfill: bool = False
 
 
 @app.post("/api/leagues/{league_id}/stop-live-watcher")
@@ -1273,6 +1286,21 @@ async def sync_draft(
         raise
     except Exception as e:  # noqa: BLE001 — surface provider errors cleanly
         raise HTTPException(status_code=502, detail=f"{data.provider} draft fetch failed: {e}")
+
+    if data.backfill and data.provider == "espn" and data.espn_s2 and data.swid:
+        # See LiveDraftRequest.backfill's docstring. Best-effort and additive
+        # only — merged into `state.picks` BEFORE the per-player dedup loop
+        # below, so a pick this resolves that's already logged (or already
+        # present from the live path) is silently skipped there, same as any
+        # other duplicate. A failure here degrades to "no backfill this
+        # round", never to breaking the live picks the poll already had.
+        try:
+            backfill_state = await espn_provider.fetch_and_resolve_live_draft(
+                data.ext_id, data.season, espn_s2=data.espn_s2, swid=data.swid, my_team=data.my_team)
+            state.picks = list(backfill_state.picks) + list(state.picks)
+            state.meta["backfill_resolved"] = backfill_state.meta.get("resolved")
+        except Exception as exc:  # noqa: BLE001 — reported, not raised
+            state.meta["backfill_error"] = f"{type(exc).__name__}: {exc}"
 
     rows = (await db.execute(
         select(Player.id, Player.name, Player.pos, Player.team).where(Player.season == data.match_season)

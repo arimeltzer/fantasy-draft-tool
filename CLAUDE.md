@@ -356,6 +356,31 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     permission — a script can be correctly installed, correctly matching,
     and still never fire if only one of these two is set. Both are now
     called out explicitly in the panel's install instructions.
+  - **Confirmed working end-to-end on a real live draft** — picks populated
+    on the board in real time via the userscript path once all three
+    installation gotchas above were resolved.
+  - **Backfill for joining late** (`LiveDraftRequest.backfill`, "Backfill
+    prior picks" button in `LiveDraftPanel`): the live-ingest path is
+    forward-only by design (the WebSocket's one-time `INIT` backfill blob
+    is deliberately left undecoded — see `espn_draft_ws.py`), so picks made
+    BEFORE the userscript/bookmarklet connects aren't recovered by it. Full
+    `INIT` decoding was considered and rejected as the fix: undocumented,
+    protobuf-shaped from a raw look at it, and reverse-engineering it
+    without a real capture to check against isn't something to attempt
+    live during a user's actual draft. The cheap alternative instead: the
+    EXISTING REST roster-join path (`fetch_and_resolve_live_draft`,
+    already shipped as the plain fallback) resolves fine for picks that
+    are no longer brand new — the "roster hasn't caught up" problem is
+    specifically about picks seconds old, not ones from several minutes or
+    picks ago. One-shot, not run every poll (still the same roster-lag-prone
+    path that's a confirmed dead end for keeping up with LIVE picks) —
+    merged into `state.picks` before the existing per-player dedup loop, so
+    it's safe to call repeatedly with no duplication risk. Verified safe to
+    merge two pick sources at all: pick-adding dedupes by PLAYER id, not by
+    `overall_pick`, and nothing downstream (`SnakeRoom`'s pick clock keys
+    off `picks.length`, not the stored number) depends on `overall_pick`
+    being globally sequential — display views re-sort by it, so mismatched
+    numbering between the two sources still renders in a sane order.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

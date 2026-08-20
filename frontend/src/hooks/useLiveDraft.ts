@@ -50,7 +50,7 @@ export function useLiveDraft(
   // own `config` param yet — that commit happens through the PARENT's state
   // setter, which is async/batched, so a synchronous `syncOnce()` call right
   // after setting it would otherwise still see last render's stale value.
-  const syncOnce = useCallback(async (apply = true, overrideConfig?: LiveDraftConfig) => {
+  const syncOnce = useCallback(async (apply = true, overrideConfig?: LiveDraftConfig, backfill = false) => {
     const cfg = overrideConfig ?? config;
     if (!cfg || inFlight.current) return;
     inFlight.current = true;
@@ -75,6 +75,7 @@ export function useLiveDraft(
         swid: cfg.swid || undefined,
         my_team: cfg.myTeam || undefined,
         apply,
+        backfill,
       });
       setStatus((s) => ({
         ...s,

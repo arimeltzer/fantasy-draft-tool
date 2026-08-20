@@ -133,6 +133,22 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
     }
   }
 
+  // Backfill — for picks made BEFORE the live channel connected (e.g.
+  // joining an already-in-progress draft late). One-shot REST catch-up, not
+  // continuous — see LiveDraftRequest.backfill's docstring on the backend
+  // for why this can resolve OLDER picks even though the same REST path is
+  // a confirmed dead end for LIVE ones.
+  const [backfillBusy, setBackfillBusy] = useState(false);
+
+  async function runBackfill() {
+    setBackfillBusy(true);
+    try {
+      await live.syncOnce(true, formConfig ?? undefined, true);
+    } finally {
+      setBackfillBusy(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-900/40 p-4">
       <div className="mt-10 w-full max-w-lg rounded-xl border border-gray-200 bg-gray-50 shadow-xl">
@@ -262,6 +278,33 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
                 <p className="mt-1.5 text-2xs text-rose-700">{userscriptError}</p>
               )}
             </div>
+          )}
+
+          {provider === "espn" && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void runBackfill()}
+                disabled={!formConfig || backfillBusy}
+                className="flex items-center gap-1.5 rounded border border-gray-300 bg-gray-50 px-2.5 py-1.5 text-2xs text-gray-600 hover:border-gray-400 disabled:opacity-50"
+              >
+                {backfillBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                Backfill prior picks
+              </button>
+              <span className="text-2xs text-gray-400">
+                For picks made before you connected — e.g. joining a draft already in progress.
+                One-shot, not automatic.
+              </span>
+            </div>
+          )}
+          {res?.meta.backfill_resolved !== undefined && (
+            <p className="text-2xs text-gray-500">
+              ESPN's roster view has {res.meta.backfill_resolved} pick{res.meta.backfill_resolved === 1 ? "" : "s"} resolved
+              (new ones just added show below). Picks made very recently may not have caught up
+              there yet — try again in a minute if any are still missing.
+            </p>
+          )}
+          {res?.meta.backfill_error && (
+            <p className="text-2xs text-rose-600">Backfill failed: {res.meta.backfill_error}</p>
           )}
 
           {provider === "espn" && (

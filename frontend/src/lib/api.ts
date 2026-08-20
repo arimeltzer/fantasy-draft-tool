@@ -162,6 +162,11 @@ export interface LiveSyncResult {
      *  didn't match a team, draftSecurity rejected) — the sync fell back to
      *  the REST path (which can't show live picks) for this poll. */
     ws_start_error?: string | null;
+    /** Present when `backfill: true` was sent — how many picks ESPN's REST
+     *  roster-join resolved on this one-shot catch-up attempt (for picks
+     *  made before the live channel connected). */
+    backfill_resolved?: number;
+    backfill_error?: string;
   };
   applied: boolean;
 }
@@ -434,7 +439,7 @@ export const api = {
   syncDraft: (leagueId: number, data: {
     provider: "espn" | "yahoo"; ext_id: string; season?: number; match_season?: number;
     access_token?: string; my_guid?: string; espn_s2?: string; swid?: string;
-    my_team?: string; apply?: boolean; enable_backend_ws?: boolean;
+    my_team?: string; apply?: boolean; enable_backend_ws?: boolean; backfill?: boolean;
   }) => req<LiveSyncResult>(`/api/leagues/${leagueId}/sync-draft`, {
     method: "POST", body: JSON.stringify(data),
   }),
