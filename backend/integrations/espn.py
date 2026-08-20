@@ -518,7 +518,13 @@ def parse_live_draft(data: dict, my_team: str | None = None,
     state.meta = {"drafted": len(real_picks),
                   "resolved": len(picks),
                   "in_progress": bool((data.get("draftDetail", {}) or {}).get("inProgress")),
-                  "raw_pick_slots": len(raw_picks)}
+                  "raw_pick_slots": len(raw_picks),
+                  # Temporary diagnostic: `drafted == 0` with real picks on the
+                  # board (verified against a real league at pick 57+) means
+                  # the playerId>0 filter above is wrong for this payload shape
+                  # in some way not yet seen — a handful of raw entries as-is
+                  # is the fastest way to find out without guessing again.
+                  "sample": raw_picks[:3]}
     return state
 
 

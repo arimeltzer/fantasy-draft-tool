@@ -153,6 +153,11 @@ export interface LiveSyncResult {
     /** kona_player_info top-up diagnostics, present once the roster view has
      *  fallen behind and a top-up was attempted. */
     lookup?: { lookup_attempted?: number; lookup_found?: number; lookup_status?: string | number };
+    /** Temporary diagnostic: a few raw draftDetail.picks entries as ESPN sent
+     *  them, so a real payload shape can be inspected via the Network tab
+     *  without server log access. Remove once live sync is confirmed working
+     *  for both snake and auction ESPN leagues. */
+    sample?: Record<string, unknown>[];
   };
   applied: boolean;
 }
