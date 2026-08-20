@@ -24,8 +24,11 @@ previous attempt died instead of just silently getting zero picks again.
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from integrations import espn, espn_draft_ws
+
+log = logging.getLogger(__name__)
 
 
 class WatcherHandle:
@@ -45,6 +48,7 @@ async def _run(handle: WatcherHandle, ext_id: str, season: int, team_id: int, sw
     watcher = handle.watcher
     watcher.started = True   # the task is executing, whether or not it connects
     watcher.last_error = None
+    log.info(f"ESPN WebSocket watcher started for league {ext_id}, team {team_id}")
 
     async def on_event(msg: dict) -> None:
         pid = watcher.on_event(msg)
@@ -59,6 +63,7 @@ async def _run(handle: WatcherHandle, ext_id: str, season: int, team_id: int, sw
 
     def on_connect() -> None:
         watcher.connected = True
+        log.info(f"ESPN WebSocket connected for league {ext_id}")
 
     try:
         await espn_draft_ws.watch_draft(ext_id, season, team_id, swid, join_hash, on_event,
@@ -68,7 +73,8 @@ async def _run(handle: WatcherHandle, ext_id: str, season: int, team_id: int, sw
         # worth flagging rather than leaving last_error looking like nothing
         # went wrong at all.
         watcher.last_error = "WebSocket closed by ESPN (no exception raised)."
-    except asyncio.TimeoutError:
+        log.warning(f"WebSocket closed unexpectedly for league {ext_id}")
+    except asyncio.TimeoutError as exc:
         # Connection attempt timed out — likely ESPN's multi-location security
         # kicking in (backend server IP differs from browser IP). Fallback to
         # REST polling will happen automatically; document this for the user.
@@ -77,8 +83,10 @@ async def _run(handle: WatcherHandle, ext_id: str, season: int, team_id: int, sw
             "login protection active). Using REST polling instead — close your "
             "draft page or minimize interaction with it while syncing."
         )
+        log.warning(f"WebSocket timeout for league {ext_id}: {exc}")
     except Exception as exc:  # noqa: BLE001 — surfaced via last_error, never crashes the app
         watcher.last_error = f"{type(exc).__name__}: {exc}"
+        log.error(f"WebSocket error for league {ext_id}: {type(exc).__name__}: {exc}")
     finally:
         watcher.connected = False
 
@@ -97,13 +105,18 @@ async def ensure_watcher(league_id: int, ext_id: str, season: int, my_team: str 
     async with lock:
         existing = _watchers.get(league_id)
         if existing and existing.task is not None and not existing.task.done():
+            log.debug(f"Reusing existing watcher for league {league_id}")
             return existing
+
+        if existing and existing.task and existing.task.done():
+            log.info(f"Previous watcher task finished for league {league_id}; starting new one")
 
         handle = WatcherHandle()
         _watchers[league_id] = handle
 
         if not (swid and espn_s2):
             handle.start_error = "espn_s2 and SWID are required for live WebSocket sync."
+            log.warning(f"League {league_id}: missing espn_s2 or SWID")
             return handle
 
         # Two separate calls, two separate try/excepts — `fetch_raw_league`
@@ -115,27 +128,33 @@ async def ensure_watcher(league_id: int, ext_id: str, season: int, my_team: str 
         # second call fails) — a real, materially different diagnosis.
         try:
             data = await espn.fetch_raw_league(ext_id, season, espn_s2=espn_s2, swid=swid)
+            log.info(f"League {league_id}: fetched raw league data")
         except Exception as exc:  # noqa: BLE001 — reported via start_error, caller falls back
             handle.start_error = f"league fetch failed: {type(exc).__name__}: {exc}"
+            log.error(f"League {league_id}: {handle.start_error}")
             return handle
 
         teams_by_id, my_team_id = espn.resolve_team_ids(data, my_team)
         if my_team_id is None:
             handle.start_error = (f"Couldn't match my_team {my_team!r} to a team in this league. "
                                   f"Known teams: {sorted(teams_by_id.values())}")
+            log.warning(f"League {league_id}: {handle.start_error}")
             return handle
         try:
             join_hash = await espn.fetch_draft_security(ext_id, season, my_team_id,
                                                         espn_s2=espn_s2, swid=swid)
+            log.info(f"League {league_id}: fetched draft security token for team {my_team_id}")
         except Exception as exc:  # noqa: BLE001 — reported via start_error, caller falls back
             handle.start_error = (f"draftSecurity failed for team_id={my_team_id} "
                                   f"({teams_by_id.get(my_team_id)!r}): {type(exc).__name__}: {exc}")
+            log.error(f"League {league_id}: {handle.start_error}")
             return handle
 
         handle.watcher = espn_draft_ws.LiveDraftWatcher(my_team_id=my_team_id, teams_by_id=teams_by_id,
                                                         start_overall=start_overall)
         handle.task = asyncio.ensure_future(
             _run(handle, ext_id, season, my_team_id, swid, join_hash, espn_s2))
+        log.info(f"League {league_id}: watcher created and task scheduled")
         return handle
 
 
