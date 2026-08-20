@@ -140,6 +140,43 @@ happened and why. Newest first. Add an entry per meaningful chunk of work
   point into two and makes hash-guessing an actual test instead of a shot in
   the dark. The user is running another mock draft to capture this.
 
+## 2026-08 — The JOIN token mystery is solved: it's a real ESPN endpoint, not a hash
+- A second capture (with response bodies this time, unlike the first) settled
+  it outright: `GET .../seasons/{season}/segments/0/leagues/{leagueId}/teams/
+  {teamId}/draftSecurity` returns a bare integer — exactly the value that
+  appears as the JOIN url's 5th query param. Not derived client-side at all;
+  ESPN's own client just asks for it. Confirmed against TWO independent real
+  examples (different league, team, and resulting value), which is what
+  actually closes this — one match could have been coincidence, two isn't.
+  (The very first extra upload this session turned out to be the same file
+  re-sent by accident — same md5 — so it took a genuinely new capture to get
+  the second data point.)
+- `espn.fetch_draft_security()` + `draft_security_url()`: same cookie-auth
+  pattern as every other authenticated ESPN call in this file.
+- `espn.fetch_player_info()`: factored the `kona_player_info` chunked-lookup
+  loop out of `fetch_and_resolve_live_draft`'s inline top-up so the new
+  live-WS accumulator can share it instead of duplicating the request/diag
+  logic. Behavior-preserving — `fetch_and_resolve_live_draft`'s existing
+  fixture tests still pass unchanged.
+- `espn_draft_ws.py` gained `SoldEvent`, `sold_events_to_picks()`, and
+  `LiveDraftWatcher` — a pure accumulator (no networking) that turns a
+  stream of parsed `SOLD` events plus on-demand name lookups into
+  `LivePick`s, fixture-tested including the "still unresolved -> not in
+  state() yet, no data invented" and "same still-pending id doesn't get
+  re-flagged for lookup twice" cases.
+- Removed the temporary `meta["sample"]` diagnostic from `parse_live_draft`
+  (REST) — it served its purpose (finding this whole thing was a dead end)
+  and there's no further REST-side fix to diagnose now that the fix lives on
+  the WebSocket side instead.
+- **Still not wired into `sync_draft`.** All four building blocks (security
+  token, WS connect, protocol parser, event accumulator) are real and
+  tested now; the remaining step — a persistent per-league background task,
+  its lifecycle, and how the polling endpoint the frontend already calls
+  would read from it — is a materially different kind of change (touches
+  the live request path, can't be fully verified without a live draft) from
+  the parsing/accumulation logic shipped so far, so it's paused for a
+  check-in rather than built without review.
+
 ## 2026-08 — Roadmap 2.2a RESULT: independent weekly draws REJECTED — season variance understated 3-4x
 - Ran `projection-backtest.yml` #32154937836 against live data (2016-2025,
   63,071 player-weeks). Confirms the pre-registered concern, decisively.

@@ -31,37 +31,35 @@ one per line, the instant they happen in the draft room:
 `SOLD` is the one that matters for sync: player id, winning team, price, live,
 the moment ESPN's own draft room shows it.
 
-**What's NOT solved yet — deliberately left unguessed rather than shipped
-wrong:**
+**The JOIN url's 5th query param is SOLVED — it isn't a guess or a derived
+hash, it's a real ESPN endpoint.** It's a colon-joined
+`gameId:leagueId:teamId:swid:<signed-32-bit-int>` token; the first attempt at
+this (see CLAUDE.md) tried to reverse-engineer the trailing int as some
+Java-`String.hashCode()`-style function of the SWID and got nowhere — because
+it isn't derived client-side at all. A SECOND captured HAR (this one WITH
+response bodies) showed the real mechanism: ESPN's own client calls
+`GET .../seasons/{season}/segments/0/leagues/{leagueId}/teams/{teamId}/
+draftSecurity` (`espn.fetch_draft_security()`, same espn_s2/SWID cookies
+every other authenticated call here already uses) and gets back a bare
+integer body — exactly the value that appears in the JOIN url. Two
+independent real examples (different league, team, and resulting value) both
+matched this mechanism exactly, which is what actually confirmed it, not
+just the endpoint existing.
 
-1. **The JOIN url's 5th query param.** It's a colon-joined
-   `gameId:leagueId:teamId:swid:<signed-32-bit-int>` token, and that trailing
-   int isn't reproducible from anything visible in a HAR that has no response
-   bodies (this repo's capture doesn't — no JS source, no earlier XHR that
-   returns it). A best-effort Java-`String.hashCode()`-style guess over
-   several candidate input strings (bare SWID, braced SWID, various
-   `gameId:leagueId:teamId:swid` orderings, upper/lowercase) was tried against
-   the ONE known example and none matched — and even a match wouldn't have
-   been trustworthy from a single data point (32-bit hash space, real
-   collision risk). `join_url()` below takes it as a REQUIRED external
-   parameter; there is deliberately no `_guess_join_token()` here. Closing
-   this needs either the actual JS source (capture "Save all as HAR with
-   content", or set a breakpoint on `new WebSocket(...)` and read the call
-   site) or a SECOND real `(leagueId, teamId, swid) -> token` example from a
-   different draft to test hypotheses against two independent points instead
-   of one.
-2. **`INIT`'s blob.** Sent once on connect, presumably the full draft-so-far
-   backfill in an undocumented binary encoding (protobuf-shaped from a raw
-   look at it). This module does not attempt to decode it — a client that
-   joins mid-draft only sees `SOLD` events from the moment it connects
-   forward, not the picks already made before that. Acceptable for the
-   forward-only use case this was built for; revisit only if backfill turns
-   out to matter in practice.
+**What's still NOT solved, on purpose:** `INIT`'s blob. Sent once on connect,
+presumably the full draft-so-far backfill in an undocumented binary encoding
+(protobuf-shaped from a raw look at it). This module does not attempt to
+decode it — a client that joins mid-draft only sees `SOLD` events from the
+moment it connects forward, not the picks already made before that.
+Acceptable for the forward-only use case this was built for; revisit only if
+backfill turns out to matter in practice.
 
-Until (1) is resolved, nothing in this module is wired into `sync_draft` —
-it's real, tested infrastructure sitting unused, same treatment this repo
-gives other validated-but-not-integrated work (see CLAUDE.md's "Outcome
-distributions" and "2.2b lineup optimizer" for the same pattern).
+Still NOT wired into `sync_draft` as of this writing — the pieces (security
+token, WebSocket connect, protocol parser, event accumulator) are all built
+and tested, but stitching them into the live request path (a persistent
+per-league background task, its lifecycle, and how `sync_draft` reads from
+it) is a distinct, harder-to-verify-without-a-live-draft change that hasn't
+been made yet. See CLAUDE.md for status.
 """
 from __future__ import annotations
 
@@ -69,8 +67,11 @@ import asyncio
 import inspect
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from urllib.parse import unquote
 from typing import Any
+
+from .live import LiveDraftState, LivePick, order_picks
 
 WS_HOST = "wss://fantasydraft.espn.com"
 KEEPALIVE_SECONDS = 15  # matched to the capture: sends land ~15.0s apart
@@ -138,7 +139,7 @@ async def watch_draft(league_id: str, season: int, team_id: int, swid: str, join
                       espn_s2: str | None = None, game: str = "game-1") -> None:
     """Connects to the live draft-room WebSocket and calls `on_event` for
     every parsed line until the connection closes or the caller cancels this
-    coroutine. NOT wired into any route yet — see module docstring for why.
+    coroutine. NOT wired into a route yet — see module docstring for status.
 
     Requires the `websockets` package (added to requirements.txt but not
     otherwise used in this repo yet, since nothing calls this function).
@@ -170,3 +171,94 @@ async def watch_draft(league_id: str, season: int, team_id: int, swid: str, join
                         await result
         finally:
             pinger.cancel()
+
+
+@dataclass
+class SoldEvent:
+    """One `SOLD` line, already parsed. Arrival order IS draft order — the
+    WebSocket delivers these live, one at a time, in the order they happen."""
+    winning_team_id: int
+    player_id: int
+    price: int
+
+
+def sold_events_to_picks(events: list[SoldEvent], pos_by_id: dict[int, dict],
+                         teams_by_id: dict[int, str] | None = None,
+                         my_team_id: int | None = None, start_overall: int = 1) -> list[LivePick]:
+    """Turns accumulated SOLD events into `LivePick`s, resolving names from
+    `pos_by_id` (the same `{id: {name, pos, team}}` shape `fetch_player_info`
+    /`parse_player_info` already produce — SOLD carries no name, only ids).
+
+    A player id `pos_by_id` doesn't know about yet is skipped, not guessed —
+    the same "leave it for the next lookup" discipline `parse_live_draft`
+    uses for an unresolved roster join. Overall pick numbers are assigned by
+    ARRIVAL POSITION (`start_overall` + index), including for skipped events,
+    so a pick that resolves on a later call still gets the number matching
+    when it actually happened rather than being renumbered to fill a gap.
+    """
+    picks = []
+    for i, ev in enumerate(events):
+        info = pos_by_id.get(ev.player_id)
+        if not info or not info.get("name"):
+            continue
+        picks.append(LivePick(
+            overall=start_overall + i, name=info["name"], pos=info.get("pos", ""),
+            team=info.get("team", ""), owner=(teams_by_id or {}).get(ev.winning_team_id),
+            is_mine=(my_team_id is not None and ev.winning_team_id == my_team_id),
+            bid=ev.price,
+        ))
+    return picks
+
+
+class LiveDraftWatcher:
+    """Pure accumulator for one draft's WebSocket session — no networking.
+    `main.py`'s eventual live-sync route owns the actual connection (via
+    `watch_draft`) and the player-name lookups (via `espn.fetch_player_info`);
+    this class only tracks state and turns it into a `LiveDraftState` on
+    request, which keeps the accumulation logic itself fully unit-testable
+    without a live connection, same as `parse_live_draft` and `parse_ws_line`.
+    """
+
+    def __init__(self, my_team_id: int | None = None, teams_by_id: dict[int, str] | None = None,
+                start_overall: int = 1) -> None:
+        self.my_team_id = my_team_id
+        self.teams_by_id = dict(teams_by_id or {})
+        self.start_overall = start_overall
+        self.events: list[SoldEvent] = []
+        self.pos_by_id: dict[int, dict] = {}
+        self._pending: set[int] = set()   # ids already flagged for lookup, not yet resolved
+        self.connected = False
+        self.last_error: str | None = None
+
+    def on_event(self, msg: dict[str, Any]) -> int | None:
+        """Feed one parsed message (from `parse_ws_line`) in. Returns the
+        player id that now needs a name lookup, if this event introduced a
+        new unresolved one — the caller batches these rather than looking
+        one up per event. A pid already resolved OR already flagged (and not
+        yet resolved by `add_player_info`) doesn't get re-flagged, so a burst
+        of events for the same still-unresolved player doesn't fan out into
+        redundant lookup requests."""
+        if msg.get("type") != "sold":
+            return None
+        self.events.append(SoldEvent(winning_team_id=msg["winning_team_id"],
+                                     player_id=msg["player_id"], price=msg["price"]))
+        pid = msg["player_id"]
+        if pid in self.pos_by_id or pid in self._pending:
+            return None
+        self._pending.add(pid)
+        return pid
+
+    def add_player_info(self, info: dict[int, dict]) -> None:
+        """Merge a `fetch_player_info()` result in, once the caller has
+        resolved whatever `on_event` flagged as unresolved."""
+        self.pos_by_id.update(info)
+        self._pending -= set(info.keys())
+
+    def state(self) -> LiveDraftState:
+        picks = order_picks(sold_events_to_picks(
+            self.events, self.pos_by_id, self.teams_by_id, self.my_team_id, self.start_overall))
+        fmt = "auction" if any(e.price for e in self.events) else "snake"
+        return LiveDraftState(picks=picks, fmt=fmt, meta={
+            "drafted": len(self.events), "resolved": len(picks),
+            "connected": self.connected, "last_error": self.last_error,
+        })

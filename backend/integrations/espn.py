@@ -526,13 +526,7 @@ def parse_live_draft(data: dict, my_team: str | None = None,
     state.meta = {"drafted": len(real_picks),
                   "resolved": len(picks),
                   "in_progress": bool((data.get("draftDetail", {}) or {}).get("inProgress")),
-                  "raw_pick_slots": len(raw_picks),
-                  # Temporary diagnostic: `drafted == 0` with real picks on the
-                  # board (verified against a real league at pick 57+) means
-                  # the playerId>0 filter above is wrong for this payload shape
-                  # in some way not yet seen — a handful of raw entries as-is
-                  # is the fastest way to find out without guessing again.
-                  "sample": raw_picks[:3]}
+                  "raw_pick_slots": len(raw_picks)}
     return state
 
 
@@ -580,6 +574,73 @@ async def fetch_raw_league(league_id: str, season: int, espn_s2: str | None = No
     return data[0] if isinstance(data, list) and data else data
 
 
+def draft_security_url(league_id: str, season: int, team_id: int) -> str:
+    return (f"{READ_HOST}/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{league_id}"
+            f"/teams/{team_id}/draftSecurity")
+
+
+async def fetch_draft_security(league_id: str, season: int, team_id: int, espn_s2: str | None = None,
+                               swid: str | None = None, ca_bundle: str | None = None) -> int:
+    """The signed-32-bit integer that closes the draft-room WebSocket JOIN
+    url's auth token — `espn_draft_ws.py`'s query param 5 is
+    `gameId:leagueId:teamId:swid:<this value>`.
+
+    Not a guess and not derived: confirmed straight from a captured HAR —
+    ESPN's own client calls this exact endpoint (with the SAME espn_s2/SWID
+    cookies every other authenticated call here already uses) and gets back
+    a bare integer body, no computation needed on our side at all. Scoped to
+    `team_id` — fetch for the team you're joining AS, same as ESPN's client
+    does (there is no evidence it works for an arbitrary other team).
+    """
+    cookies = {}
+    if espn_s2 and swid:
+        cookies = {"espn_s2": espn_s2, "SWID": swid if swid.startswith("{") else "{" + swid + "}"}
+    verify = ca_bundle if ca_bundle else True
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True, trust_env=True,
+                                 verify=verify, cookies=cookies, headers=SITE_HEADERS) as client:
+        resp = await client.get(draft_security_url(league_id, season, team_id))
+        if resp.status_code in (401, 403):
+            raise PermissionError("ESPN league is private — espn_s2 and SWID cookies required.")
+        resp.raise_for_status()
+    return int(resp.text.strip())
+
+
+async def fetch_player_info(league_id: str, season: int, ids: list[int], espn_s2: str | None = None,
+                            swid: str | None = None, ca_bundle: str | None = None) -> tuple[dict[int, dict], dict]:
+    """`kona_player_info`, chunked and best-effort — id -> {name, pos, team}
+    for whatever ids are given, plus a diagnostics dict (attempted/found
+    counts, last HTTP status or exception type) so a caller can tell a real
+    failure from "nothing was missing" without server log access. Shared by
+    `fetch_and_resolve_live_draft`'s roster top-up and the live-WS watcher's
+    SOLD-event name resolution — same lookup, two different callers."""
+    diag = {"lookup_attempted": len(ids), "lookup_found": 0, "lookup_status": "skipped"}
+    if not ids:
+        return {}, diag
+
+    cookies = {}
+    if espn_s2 and swid:
+        cookies = {"espn_s2": espn_s2, "SWID": swid if swid.startswith("{") else "{" + swid + "}"}
+    verify = ca_bundle if ca_bundle else True
+    found: dict[int, dict] = {}
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True, trust_env=True,
+                                     verify=verify, cookies=cookies, headers=SITE_HEADERS) as client:
+            for i in range(0, len(ids), 200):
+                chunk = ids[i:i + 200]
+                pr = await client.get(
+                    player_info_url(league_id, season),
+                    headers={"x-fantasy-filter": player_info_filter(chunk)})
+                diag["lookup_status"] = pr.status_code
+                if pr.status_code != 200:
+                    break
+                found.update(parse_player_info(pr.json()))
+                diag["lookup_status"] = "ok"
+    except Exception as exc:  # noqa: BLE001 — the lookup is optional, the caller isn't
+        diag["lookup_status"] = f"error:{type(exc).__name__}"
+    diag["lookup_found"] = len(found)
+    return found, diag
+
+
 async def fetch_and_resolve_live_draft(league_id: str, season: int, espn_s2: str | None = None,
                                        swid: str | None = None, my_team: str | None = None,
                                        ca_bundle: str | None = None) -> LiveDraftState:
@@ -610,32 +671,8 @@ async def fetch_and_resolve_live_draft(league_id: str, season: int, espn_s2: str
         if isinstance(p.get("playerId"), int) and p["playerId"] > 0
     }
     missing = sorted(all_ids - roster_ids)
-    diag = {"lookup_attempted": len(missing), "lookup_found": 0, "lookup_status": "skipped"}
-    if not missing:
-        state.meta["lookup"] = diag
-        return state
-
-    cookies = {}
-    if espn_s2 and swid:
-        cookies = {"espn_s2": espn_s2, "SWID": swid if swid.startswith("{") else "{" + swid + "}"}
-    verify = ca_bundle if ca_bundle else True
-    found: dict[int, dict] = {}
-    try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True, trust_env=True,
-                                     verify=verify, cookies=cookies, headers=SITE_HEADERS) as client:
-            for i in range(0, len(missing), 200):
-                chunk = missing[i:i + 200]
-                pr = await client.get(
-                    player_info_url(league_id, season),
-                    headers={"x-fantasy-filter": player_info_filter(chunk)})
-                diag["lookup_status"] = pr.status_code
-                if pr.status_code != 200:
-                    break
-                found.update(parse_player_info(pr.json()))
-                diag["lookup_status"] = "ok"
-    except Exception as exc:  # noqa: BLE001 — the top-up is optional, the poll is not
-        diag["lookup_status"] = f"error:{type(exc).__name__}"
-    diag["lookup_found"] = len(found)
+    found, diag = await fetch_player_info(league_id, season, missing,
+                                          espn_s2=espn_s2, swid=swid, ca_bundle=ca_bundle)
     if not found:
         state.meta["lookup"] = diag
         return state

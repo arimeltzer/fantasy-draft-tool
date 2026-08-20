@@ -234,21 +234,32 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     (`NOMINATION`/`BID`/`SOLD`/`PASSED`/`CLOCK`/`JOINED`/`PING`/`PONG`) —
     `SOLD <nominatingTeamId> <playerId> <winningTeamId> <price> <flag>` is
     the live "a pick just happened" event this whole effort was after.
-    **Not wired into `sync_draft` yet — one piece is genuinely unverified,
-    not guessed at.** The JOIN url's 5th query param is a colon-joined
-    `gameId:leagueId:teamId:swid:<signed-32-bit hash>` token; several
-    Java-`String.hashCode()`-style candidates were tried against the one
-    real `(swid, leagueId, teamId) -> hash` example captured and none
-    matched — and a match from one data point wouldn't have been
-    trustworthy anyway (32-bit space, real collision risk). `join_url()`
-    takes the hash as a required external parameter rather than fabricate
-    one. Closing this needs either the JS source itself (capture "Save all
-    as HAR with content", or breakpoint `new WebSocket(...)` and read the
-    call site) or a SECOND real example from a different draft to test
-    hypotheses against two independent points. `INIT`'s blob (the
-    full-draft-so-far backfill sent once on connect) is also left
-    undecoded on purpose — a client that joins mid-draft only sees `SOLD`
-    events from that point forward, which is the accepted scope for now.
+    `INIT`'s blob (the full-draft-so-far backfill sent once on connect) is
+    left undecoded on purpose — a client that joins mid-draft only sees
+    `SOLD` events from that point forward, which is the accepted scope.
+  - **The JOIN url's auth token is SOLVED — a real ESPN endpoint, not a
+    derived hash.** First attempt tried to reverse-engineer the 5th query
+    param (`gameId:leagueId:teamId:swid:<signed-32-bit int>`) as a
+    Java-`String.hashCode()`-style function of the SWID; none of several
+    candidates matched the one captured example, and a match from one data
+    point wouldn't have been trustworthy anyway. A SECOND captured HAR —
+    this one with response bodies — showed it isn't derived client-side at
+    all: `GET .../teams/{teamId}/draftSecurity` (`espn.
+    fetch_draft_security()`, same espn_s2/SWID cookies as every other
+    authenticated call here) returns the bare integer directly. Confirmed
+    against TWO independent real examples (different league/team/value),
+    not just one endpoint existing — `fetch_player_info()` was factored out
+    of the roster top-up so both it and the new watcher share one lookup.
+  - **Built, still not wired into `sync_draft`.** `LiveDraftWatcher` (pure,
+    fixture-tested) accumulates `SOLD` events into `LivePick`s as they
+    arrive — no networking, so it's fully testable without a live
+    connection, same treatment as `parse_live_draft`/`parse_ws_line`. All
+    four pieces (security token, WebSocket connect, protocol parser, event
+    accumulator) are now real and tested; what's left is stitching them
+    into the live request path — a persistent per-league background task,
+    its start/stop lifecycle, and how `sync_draft` reads from it — which is
+    a materially different, harder-to-verify-without-a-live-draft change
+    from parsing logic, so it hasn't been made without checking in first.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

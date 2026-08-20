@@ -1021,6 +1021,50 @@ def test_espn_draft_ws():
                     "&5=1:550003701:7:{B32FA1C0-4AC4-4241-9C27-345AA44C4300}:-1221336021"
                     "&6=false&7=false&8=KONA&nocache=1413"), url
 
+    # A SECOND, independent real capture (different league, team, and
+    # resulting value) — same shape, confirming join_url generalizes rather
+    # than having been fit to the one example above.
+    url2 = espn_draft_ws.join_url("2053165706", 9, "{B32FA1C0-4AC4-4241-9C27-345AA44C4300}",
+                                  1087841463, nocache=896252)
+    assert url2 == ("wss://fantasydraft.espn.com/game-1/league-2053165706/JOIN"
+                     "?1=1&2=2053165706&3=9&4={B32FA1C0-4AC4-4241-9C27-345AA44C4300}"
+                     "&5=1:2053165706:9:{B32FA1C0-4AC4-4241-9C27-345AA44C4300}:1087841463"
+                     "&6=false&7=false&8=KONA&nocache=896252"), url2
+
+    # draftSecurity is the REST endpoint that hands back that exact join-hash
+    # value directly (see espn.fetch_draft_security) — url shape pinned
+    # against the real captured request.
+    assert espn.draft_security_url("2053165706", 2026, 9) == (
+        "https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/2026"
+        "/segments/0/leagues/2053165706/teams/9/draftSecurity")
+
+    # ── accumulator: SOLD events -> LivePicks, no networking ────────────
+    watcher = espn_draft_ws.LiveDraftWatcher(my_team_id=7, teams_by_id={6: "Team A", 13: "Team B"},
+                                             start_overall=5)
+    # First SOLD: player unresolved yet -> on_event flags it for lookup.
+    needs_lookup = watcher.on_event(sold)
+    assert needs_lookup == 4570037, needs_lookup
+    # Re-feeding the SAME unresolved player again doesn't re-flag it.
+    assert watcher.on_event(sold) is None
+    # Still unresolved -> not in state() yet, but it kept its slot (position 0).
+    assert watcher.state().picks == []
+    watcher.add_player_info({4570037: {"name": "Puka Nacua", "pos": "WR", "team": "LAR"}})
+    st = watcher.state()
+    assert len(st.picks) == 2, st.picks   # both queued SOLD events now resolve
+    assert st.picks[0].overall == 5 and st.picks[0].name == "Puka Nacua"
+    assert st.picks[0].owner == "Team B" and st.picks[0].bid == 1
+    assert st.picks[0].is_mine is False
+    assert st.fmt == "auction"   # a real price was seen
+    assert st.meta["drafted"] == 2 and st.meta["resolved"] == 2
+
+    # A second, DIFFERENT unresolved player in a fresh watcher.
+    w2 = espn_draft_ws.LiveDraftWatcher(my_team_id=13)
+    assert w2.on_event(p("SOLD 1 999999 13 5 0\n")) == 999999
+    assert w2.state().picks == []   # still unresolved -> not silently guessed
+    w2.add_player_info({999999: {"name": "Nobody Known", "pos": "RB", "team": "XX"}})
+    assert w2.state().picks[0].is_mine is True   # winning_team_id == my_team_id
+    assert w2.state().picks[0].overall == 1      # default start_overall
+
 
 if __name__ == "__main__":
     main()
