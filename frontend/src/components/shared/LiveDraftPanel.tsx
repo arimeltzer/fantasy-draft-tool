@@ -193,6 +193,13 @@ export default function LiveDraftPanel({ settings, onClose, live, config, onConf
             </p>
           )}
 
+          {res?.meta.last_error?.includes("timed out") && (
+            <div className="rounded border border-amber-200 bg-amber-50 px-2.5 py-2 text-2xs text-amber-900">
+              <div className="font-medium text-amber-800 mb-1">Live sync is using REST fallback</div>
+              <p>ESPN's multi-location login protection is preventing the live WebSocket connection. For best results, close your draft page or avoid clicking while syncing.</p>
+            </div>
+          )}
+
           {res && (
             <div className="space-y-2 rounded border border-gray-200 bg-gray-100 px-2.5 py-2">
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-2xs text-gray-600">
@@ -209,7 +216,7 @@ export default function LiveDraftPanel({ settings, onClose, live, config, onConf
               {res.meta.started !== undefined && (
                 <p className={`text-2xs ${res.meta.connected ? "text-emerald-600" : "text-amber-600"}`}>
                   live channel: {res.meta.connected ? "connected" : res.meta.started ? "reconnecting…" : "starting…"}
-                  {res.meta.last_error ? ` — ${res.meta.last_error}` : ""}
+                  {res.meta.last_error && !res.meta.last_error.includes("timed out") ? ` — ${res.meta.last_error}` : ""}
                 </p>
               )}
               {res.meta.ws_start_error && (

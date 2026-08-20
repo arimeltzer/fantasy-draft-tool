@@ -137,7 +137,7 @@ async def watch_draft(league_id: str, season: int, team_id: int, swid: str, join
                       on_event: Callable[[dict[str, Any]], Awaitable[None] | None],
                       espn_s2: str | None = None, game: str = "game-1",
                       on_connect: Callable[[], None] | None = None,
-                      connect_timeout: float = 15.0) -> None:
+                      connect_timeout: float = 5.0) -> None:
     """Connects to the live draft-room WebSocket and calls `on_event` for
     every parsed line until the connection closes or the caller cancels this
     coroutine. Called from `live_ws_registry.py`, not directly by any route.
@@ -146,8 +146,11 @@ async def watch_draft(league_id: str, season: int, team_id: int, swid: str, join
     caller uses this to distinguish "still trying to connect" from "attempt
     finished" in a way a bare boolean set before the attempt can't.
     `connect_timeout` bounds the handshake itself so a network black hole
-    (egress blocked, DNS hanging) surfaces as a real, timely error instead of
-    hanging the watcher task forever with no feedback.
+    (egress blocked, DNS hanging, or ESPN's multi-location security kicking
+    in) surfaces as a real, timely error instead of hanging the watcher task
+    forever with no feedback. Default is 5.0s — short enough that a failed
+    connection attempt doesn't trigger ESPN's session invalidation, but long
+    enough for a real handshake to complete.
 
     Requires the `websockets` package (added to requirements.txt but not
     otherwise used in this repo yet, since nothing calls this function).

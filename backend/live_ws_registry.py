@@ -68,6 +68,15 @@ async def _run(handle: WatcherHandle, ext_id: str, season: int, team_id: int, sw
         # worth flagging rather than leaving last_error looking like nothing
         # went wrong at all.
         watcher.last_error = "WebSocket closed by ESPN (no exception raised)."
+    except asyncio.TimeoutError:
+        # Connection attempt timed out — likely ESPN's multi-location security
+        # kicking in (backend server IP differs from browser IP). Fallback to
+        # REST polling will happen automatically; document this for the user.
+        watcher.last_error = (
+            "Live WebSocket connection timed out (ESPN may have multi-location "
+            "login protection active). Using REST polling instead — close your "
+            "draft page or minimize interaction with it while syncing."
+        )
     except Exception as exc:  # noqa: BLE001 — surfaced via last_error, never crashes the app
         watcher.last_error = f"{type(exc).__name__}: {exc}"
     finally:
