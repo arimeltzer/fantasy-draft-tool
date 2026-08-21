@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Radio, Loader2, AlertTriangle, Pause, Play, RefreshCw, X, Link2, Download } from "lucide-react";
 import { LeagueSettings, api, BASE } from "@/lib/api";
 import { useLiveDraft, LiveDraftConfig } from "@/hooks/useLiveDraft";
 import { yahooConnected } from "@/lib/yahooAuth";
+import { loadEspnCreds, saveEspnCreds } from "@/lib/espnAuth";
+import EspnCredsNote from "@/components/shared/EspnCredsNote";
 import { buildBookmarklet, downloadUserscript } from "@/lib/liveBookmarklet";
 
 interface Props {
@@ -46,8 +48,12 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
     config?.provider ?? (source?.provider === "yahoo" ? "yahoo" : "espn"));
   const [extId, setExtId] = useState(config?.extId ?? source?.extId ?? "");
   const [myTeam, setMyTeam] = useState(config?.myTeam ?? "");
-  const [s2, setS2] = useState(config?.espnS2 ?? "");
-  const [swid, setSwid] = useState(config?.swid ?? "");
+  // `config` wins when the parent already has a live config in memory;
+  // otherwise fall back to the browser-stored pair. `liveConfig` is plain
+  // component state that starts null on every page load, so without this
+  // fallback the cookies had to be re-pasted for every draft session.
+  const [s2, setS2] = useState(() => config?.espnS2 ?? loadEspnCreds()?.espnS2 ?? "");
+  const [swid, setSwid] = useState(() => config?.swid ?? loadEspnCreds()?.swid ?? "");
 
   // What the FORM currently describes — not yet committed to the parent
   // (and therefore not yet what `live` is actually polling with) until
@@ -61,6 +67,16 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
 
   const res = live.lastResult;
   const yahooReady = provider !== "yahoo" || yahooConnected();
+
+  // Remember cookies that demonstrably WORKED. A sync that came back with a
+  // result (rather than setting `live.error`) is ESPN having accepted them,
+  // which is a stronger signal than the user having typed something. Covers
+  // both "Sync now" and "Start watching" without either button needing to
+  // know about credential storage. `saveEspnCreds` no-ops unless both halves
+  // are present, so a public league syncing with empty fields stores nothing.
+  useEffect(() => {
+    if (provider === "espn" && res && !live.error) saveEspnCreds(s2, swid);
+  }, [res, live.error, provider, s2, swid]);
 
   // Bookmarklet / userscript — see live_ws_registry.py "Browser-side ingest"
   // and liveBookmarklet.ts for the full why. Built on demand (not on mount)
@@ -232,6 +248,7 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
                   className="w-full rounded border border-gray-300 bg-gray-50 px-2 py-1 font-mono text-2xs text-gray-700 focus:border-gray-400 focus:outline-none" />
                 <input value={swid} onChange={(e) => setSwid(e.target.value)} placeholder="{SWID}"
                   className="w-full rounded border border-gray-300 bg-gray-50 px-2 py-1 font-mono text-2xs text-gray-700 focus:border-gray-400 focus:outline-none" />
+                <EspnCredsNote />
               </div>
             </details>
           )}

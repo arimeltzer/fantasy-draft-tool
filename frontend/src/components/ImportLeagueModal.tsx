@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { X, Loader2, Check, AlertTriangle, ChevronRight } from "lucide-react";
 import { saveYahooSession, loadYahooSession, onYahooSession, clearYahooSession } from "@/lib/yahooAuth";
+import { loadEspnCreds, saveEspnCreds } from "@/lib/espnAuth";
+import EspnCredsNote from "@/components/shared/EspnCredsNote";
 import { api, ImportReport, YahooPasteReport } from "@/lib/api";
 
 interface Props {
@@ -28,8 +30,12 @@ export default function ImportLeagueModal({ onClose }: Props) {
   const [yahooMode, setYahooMode] = useState<"paste" | "oauth">("paste");
   const [draftText, setDraftText] = useState("");
   const [rostersText, setRostersText] = useState("");
-  const [espnS2, setEspnS2] = useState("");
-  const [swid, setSwid] = useState("");
+  // Prefilled from the browser-stored pair, so a returning user (or a second
+  // ESPN league on the same account) doesn't re-paste cookies. Saved back on a
+  // SUCCESSFUL import only — see `submit` — so a typo can't overwrite a good
+  // saved pair.
+  const [espnS2, setEspnS2] = useState(() => loadEspnCreds()?.espnS2 ?? "");
+  const [swid, setSwid] = useState(() => loadEspnCreds()?.swid ?? "");
   const [myTeam, setMyTeam] = useState("");
 
   // Yahoo
@@ -170,6 +176,10 @@ export default function ImportLeagueModal({ onClose }: Props) {
               seed_rosters: seedRosters,
             }
       );
+      // Only now, with the import proven to have worked, remember the pair.
+      // Saving on keystroke would persist a half-typed or wrong cookie and
+      // then silently prefill it into the keeper and live-sync screens.
+      if (provider === "espn") saveEspnCreds(espnS2, swid);
       qc.invalidateQueries({ queryKey: ["leagues"] });
       setReport(res.report);
       setNewId(res.league.id);
@@ -294,6 +304,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
                     <p className="text-2xs text-faint">Copy from a logged-in espn.com browser session (DevTools → Application → Cookies).</p>
                     <Field label="espn_s2"><input className="field font-mono text-xs" value={espnS2} onChange={(e) => setEspnS2(e.target.value)} /></Field>
                     <Field label="SWID"><input className="field font-mono text-xs" value={swid} onChange={(e) => setSwid(e.target.value)} placeholder="{XXXX-...}" /></Field>
+                    <EspnCredsNote />
                   </div>
                 )}
               </>

@@ -3,6 +3,8 @@ import { Download, Loader2, ChevronDown, AlertTriangle } from "lucide-react";
 import { keeperCost } from "@/engine/keeper.js";
 import { api, KeeperCandidate, KeeperImportCache, KeeperRule, WaiverReport } from "@/lib/api";
 import { encodeKeeper } from "@/lib/keeperPick";
+import { hasEspnCreds, loadEspnCreds, saveEspnCreds } from "@/lib/espnAuth";
+import EspnCredsNote from "@/components/shared/EspnCredsNote";
 import { posStyle } from "@/lib/posStyles";
 
 interface Props {
@@ -35,9 +37,12 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
   // spending habits persist at all, which one draft cannot answer.
   const [historySeasons, setHistorySeasons] = useState(2);
   const [draftMeta, setDraftMeta] = useState<Record<string, unknown> | null>(null);
-  const [priv, setPriv] = useState(false);
-  const [s2, setS2] = useState("");
-  const [swid, setSwid] = useState("");
+  // Prefilled from the browser-stored pair (saved at import). A stored pair
+  // also pre-ticks "private league" — having the cookies is the reason you'd
+  // tick it, and leaving it unticked would silently drop them from the call.
+  const [priv, setPriv] = useState(() => hasEspnCreds());
+  const [s2, setS2] = useState(() => loadEspnCreds()?.espnS2 ?? "");
+  const [swid, setSwid] = useState(() => loadEspnCreds()?.swid ?? "");
   const [myTeam, setMyTeam] = useState("");
 
   const [loading, setLoading] = useState(false);
@@ -88,6 +93,9 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
         // costs still come from `season` alone.
         history_seasons: historySeasons,
       });
+      // Proven-good cookies: remember them for the other ESPN screens. Same
+      // save-on-success rule the import modal uses.
+      if (priv) saveEspnCreds(s2, swid);
       setCands(res.candidates);
       setWaivers(res.waivers);
       const stamp = new Date().toISOString();
@@ -251,6 +259,7 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
                 className="w-full rounded-md border border-line bg-sunken px-2 py-1 text-xs text-ink focus:border-brand focus:outline-none" />
               <input value={swid} onChange={(e) => setSwid(e.target.value)} placeholder="SWID cookie"
                 className="w-full rounded-md border border-line bg-sunken px-2 py-1 text-xs text-ink focus:border-brand focus:outline-none" />
+              <EspnCredsNote />
             </div>
           )}
 

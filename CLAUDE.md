@@ -137,6 +137,26 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   (`python -m integrations.selftest`).
   - **ESPN**: unofficial read API; public leagues need nothing, private need
     `espn_s2`/`SWID` cookies. Works (no app registration). See `backend/INTEGRATIONS.md`.
+  - **Those cookies are stored once and reused** (`lib/espnAuth.ts`, mirroring
+    `lib/yahooAuth.ts`). Three screens need them — import, keeper auto-fill,
+    live sync — and each used to hold its own `useState("")`, so the pair was
+    re-pasted per screen AND after every reload (`liveConfig` is plain
+    component state that starts null). Now: prefilled everywhere, saved only
+    on a call that DEMONSTRABLY WORKED (successful import / keeper fetch /
+    sync that returned a result rather than setting `live.error`) so a typo
+    can't overwrite a good pair, and never half-saved — `saveEspnCreds`
+    no-ops unless BOTH halves are present, since ESPN rejects one without the
+    other and a half-save turns "missing cookies" into a confusing "bad
+    cookies" failure. `EspnCredsNote` renders "Saved in this browser · Forget"
+    under every cookie input, so the storage is never invisible.
+    **localStorage, deliberately NOT the DB**: `League.settings` is returned
+    by the leagues API on every fetch, so cookies there would ride to the
+    client constantly and into anything logging a response, and a DB
+    compromise would leak a live ESPN ACCOUNT session per user — not merely
+    fantasy data. Same call `yahooAuth.ts` already made for a longer-lived
+    refresh token. Cost is per-browser storage, stated in the UI.
+    `espnAuth.test.ts` pins the refusals (half pairs, clobbering, corrupt
+    records, storage disabled).
   - **Yahoo (no API)**: `integrations/yahoo_paste.py` imports from the Draft
     Results + Starting Rosters pages pasted as text — no credentials at all.
     Rosters define who's keepable, draft results give the round cost; the
