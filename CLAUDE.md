@@ -451,6 +451,31 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     `LiveIngestEvent.events: list[dict] | None` is the new batch shape;
     the old singular fields stay Optional so a userscript downloaded
     before this change keeps working until it's re-fetched.
+  - **The `SOLD` line's two team-id positions were WRONG from the start —
+    caught live via a direct cross-check, not a second HAR.** The original
+    field order (`SOLD <nominatingTeamId> <playerId> <winningTeamId>
+    <price> <flag>`) was never independently verified against a
+    known-correct answer, just plausible-looking from one captured
+    example. A user hit visibly wrong team assignment (Ja'Marr Chase shown
+    on the wrong team) and, on request, cross-checked three consecutive
+    `SOLD` lines directly against ESPN's own draft room: the SAME team won
+    all three players, matching the value at the position originally
+    labeled "nominating" every time — while the position originally
+    labeled "winning" held values (11, 12, 13) completely outside the
+    league's real 10-team id range. Player id and price positions were
+    separately confirmed correct in the same exchange (prices matched
+    exactly) and are unchanged. Diagnosing this took building visibility
+    first: `LiveDraftWatcher.state()` now exposes `teams_by_id`,
+    `my_team_id`, and the last 10 raw events (both team-id fields) via a
+    "Debug: team ID mapping" section in `LiveDraftPanel` — without that,
+    this would have been unfindable from guessing alone. The third
+    position's true meaning is still unconfirmed (kept as
+    `nominating_team_id` for the field name only; nothing downstream
+    treats it as authoritative). Fixed in both places that parse this
+    line — `espn_draft_ws.py` (backend, used by the disabled backend-WS
+    path and fixture-tested) and `liveBookmarklet.ts` (the hook that
+    actually runs client-side for the live-ingest path) — they must be
+    kept in sync since they parse the same wire format independently.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

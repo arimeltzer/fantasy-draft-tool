@@ -963,9 +963,16 @@ def test_espn_draft_ws():
     `test_fantasypros_aav_paste`."""
     p = espn_draft_ws.parse_ws_line
 
+    # Field order corrected live, not from the original HAR guess: a real
+    # user cross-checked a SOLD line against ESPN's own draft room and the
+    # team at THIS position (position 1, "6" here) was the actual winning
+    # bidder for three consecutive picks — the position originally labeled
+    # "winning" (position 3, "13" here) held values outside the league's
+    # real team-id range entirely. Player id and price positions (2 and 4)
+    # were independently confirmed correct and are unchanged.
     sold = p("SOLD 6 4570037 13 1 0\n")
-    assert sold == {"type": "sold", "nominating_team_id": 6, "player_id": 4570037,
-                     "winning_team_id": 13, "price": 1, "flag": 0}, sold
+    assert sold == {"type": "sold", "nominating_team_id": 13, "player_id": 4570037,
+                     "winning_team_id": 6, "price": 1, "flag": 0}, sold
 
     bid = p("BID 6 4570037 1 25000 25000\n")
     assert bid == {"type": "bid", "team_id": 6, "player_id": 4570037,
@@ -1052,13 +1059,14 @@ def test_espn_draft_ws():
     st = watcher.state()
     assert len(st.picks) == 2, st.picks   # both queued SOLD events now resolve
     assert st.picks[0].overall == 5 and st.picks[0].name == "Puka Nacua"
-    assert st.picks[0].owner == "Team B" and st.picks[0].bid == 1
+    assert st.picks[0].owner == "Team A" and st.picks[0].bid == 1   # winning_team_id=6 -> "Team A"
     assert st.picks[0].is_mine is False
     assert st.fmt == "auction"   # a real price was seen
     assert st.meta["drafted"] == 2 and st.meta["resolved"] == 2
 
-    # A second, DIFFERENT unresolved player in a fresh watcher.
-    w2 = espn_draft_ws.LiveDraftWatcher(my_team_id=13)
+    # A second, DIFFERENT unresolved player in a fresh watcher. winning_team_id
+    # is position 1 in the wire line ("1" here, see the field-order note above).
+    w2 = espn_draft_ws.LiveDraftWatcher(my_team_id=1)
     assert w2.on_event(p("SOLD 1 999999 13 5 0\n")) == 999999
     assert w2.state().picks == []   # still unresolved -> not silently guessed
     w2.add_player_info({999999: {"name": "Nobody Known", "pos": "RB", "team": "XX"}})

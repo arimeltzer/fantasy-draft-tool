@@ -108,11 +108,17 @@ function bookmarkletBody(cfg: BookmarkletConfig): void {
     line = line.trim();
     if (!line) return;
     const parts = line.split(" ");
-    // SOLD <nominatingTeamId> <playerId> <winningTeamId> <price> <flag>
+    // SOLD <winningTeamId> <playerId> <?> <price> <flag> — positions 1 and 3
+    // were swapped from the original guess (labeled nominating/winning
+    // respectively). Confirmed wrong live: a user cross-checked against
+    // ESPN's own draft room and position 1 was the real winning bidder for
+    // three consecutive picks, while position 3 held values outside the
+    // league's real team-id range entirely. Position 3's true meaning is
+    // unconfirmed; kept only for the backend's diagnostic display.
     if (parts[0] === "SOLD" && parts.length >= 5) {
-      const nominatingTeamId = parseInt(parts[1], 10);
+      const winningTeamId = parseInt(parts[1], 10);
       const playerId = parseInt(parts[2], 10);
-      const winningTeamId = parseInt(parts[3], 10);
+      const nominatingTeamId = parseInt(parts[3], 10);
       const price = parseInt(parts[4], 10);
       if (!isNaN(playerId) && !isNaN(winningTeamId)) {
         captured.push({ nominating_team_id: nominatingTeamId, player_id: playerId,

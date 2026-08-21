@@ -18,7 +18,7 @@ one per line, the instant they happen in the draft room:
 
     NOMINATION <teamId> <clockMs>
     BID <teamId> <playerId> <amount> <clockMs> [<clockMs2>]
-    SOLD <nominatingTeamId> <playerId> <winningTeamId> <price> <flag>
+    SOLD <winningTeamId> <playerId> <?> <price> <flag>
     PASSED <teamId> <playerId> <auto:true|false>
     CLOCK <phase> <clockMs> [<teamId> <playerId> <amount>]   -- ticks ~1/sec
     JOINED <teamId> <swid>
@@ -30,6 +30,22 @@ one per line, the instant they happen in the draft room:
 
 `SOLD` is the one that matters for sync: player id, winning team, price, live,
 the moment ESPN's own draft room shows it.
+
+**`SOLD`'s two team-id positions were WRONG in the first version of this
+file and got corrected live, not from a second HAR.** The original guess —
+`SOLD <nominatingTeamId> <playerId> <winningTeamId> <price> <flag>` — was
+never independently verified against a known-correct answer; it just
+looked plausible from the one captured example. A real user hit visibly
+wrong team assignment mid-draft, and cross-checking three consecutive
+`SOLD` lines against what ESPN's own room actually showed proved the FIRST
+team-id position (originally labeled "nominating") was the true winning
+bidder — constant across three different picks the same team won — while
+the position originally labeled "winning" held values outside the
+league's real 1-10 team-id range entirely. Player id and price positions
+were independently confirmed correct in the same exchange and are
+unchanged. The third position's true meaning is unconfirmed (kept as
+`nominating_team_id` for the field name only — nothing downstream treats
+it as authoritative for anything).
 
 **The JOIN url's 5th query param is SOLVED — it isn't a guess or a derived
 hash, it's a real ESPN endpoint.** It's a colon-joined
@@ -86,8 +102,18 @@ def parse_ws_line(line: str) -> dict[str, Any] | None:
     cmd, *rest = line.split(" ")
     try:
         if cmd == "SOLD" and len(rest) >= 5:
-            return {"type": "sold", "nominating_team_id": int(rest[0]), "player_id": int(rest[1]),
-                    "winning_team_id": int(rest[2]), "price": int(rest[3]), "flag": int(rest[4])}
+            # rest[0]/rest[2] were swapped from the original HAR-based guess
+            # — confirmed WRONG live: a real user cross-checked against
+            # ESPN's own draft room and rest[0] (originally labeled
+            # "nominating") was the actual winning bidder for three
+            # consecutive picks, while rest[2] (originally "winning") held
+            # values outside the league's real team-id range entirely. The
+            # field at rest[2]'s TRUE meaning is unconfirmed — kept as
+            # `nominating_team_id` for backward field-name compatibility,
+            # but nothing downstream treats it as authoritative for
+            # anything (only `winning_team_id` drives owner/is_mine).
+            return {"type": "sold", "nominating_team_id": int(rest[2]), "player_id": int(rest[1]),
+                    "winning_team_id": int(rest[0]), "price": int(rest[3]), "flag": int(rest[4])}
         if cmd == "BID" and len(rest) >= 4:
             out: dict[str, Any] = {"type": "bid", "team_id": int(rest[0]), "player_id": int(rest[1]),
                                     "amount": int(rest[2]), "clock_ms": int(rest[3])}
