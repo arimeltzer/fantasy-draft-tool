@@ -322,6 +322,18 @@ def player_info_url(league_id: str, season: int) -> str:
             f"?view={PLAYER_INFO_VIEW}")
 
 
+def history_player_info_url(league_id: str, season: int) -> str:
+    """Same lookup as `player_info_url`, for a season old enough that ESPN
+    has retired it off the per-season path — the SAME cutover
+    `history_league_url` exists for, just missing here until a real
+    multi-season pull (2016-2017 on a 9-season request) surfaced it: the
+    league/draft itself resolved fine via `history_league_url`'s fallback,
+    but the SEPARATE player-name lookup had no fallback of its own and
+    404'd, silently leaving most of those two seasons' picks unnamed."""
+    return (f"{READ_HOST}/apis/v3/games/ffl/leagueHistory/{league_id}"
+            f"?seasonId={season}&view={PLAYER_INFO_VIEW}")
+
+
 def player_info_filter(ids: list[int]) -> str:
     """`x-fantasy-filter` header value selecting just the ids we're missing."""
     return json.dumps({"players": {"filterIds": {"value": [int(i) for i in ids]}}})
@@ -1023,9 +1035,13 @@ async def fetch_draft_history(league_id: str, seasons: list[int],
                 found: dict[int, dict] = {}
                 try:
                     for i in range(0, len(missing), 200):
-                        pr = await client.get(
-                            player_info_url(league_id, season),
-                            headers={"x-fantasy-filter": player_info_filter(missing[i:i + 200])})
+                        headers = {"x-fantasy-filter": player_info_filter(missing[i:i + 200])}
+                        pr = await client.get(player_info_url(league_id, season), headers=headers)
+                        if pr.status_code != 200:
+                            # Same per-season/leagueHistory cutover the league
+                            # fetch above already falls back for — this call
+                            # needs the identical fallback, not a new one.
+                            pr = await client.get(history_player_info_url(league_id, season), headers=headers)
                         if pr.status_code != 200:
                             diag[season] += f" players:HTTP {pr.status_code}"
                             break

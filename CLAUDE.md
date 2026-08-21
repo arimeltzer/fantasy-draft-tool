@@ -807,6 +807,24 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   `espn.fetch_draft_history` via the `leagueHistory` host): older drafts are
   pooled as SHARES, weighted `RECENCY_DECAY ** age` so a departed roster of
   managers can't outvote the current one. More seasons = stronger adjustment.
+  `history_seasons` was capped at 6 in both the UI and a hardcoded backend
+  `min()`; raised to 15 for a user who wanted 10 years — `fetch_draft_history`
+  itself has no such limit, each season is independent and best-effort.
+  - **The fetch-per-season diagnostics existed but were never shown anywhere**
+    — `KeeperAutofill.tsx` captured `draft_meta.history` into state and never
+    rendered it, so a user pulling 9 seasons had no way to tell "it worked"
+    from "it silently returned nothing." Added a summary line ("N of M
+    seasons loaded") with full per-season detail on hover.
+  - **That visibility immediately found a real gap it was built to catch**:
+    2016-2017 came back `history:ok players:HTTP 404` — the league/draft
+    itself resolved fine via `history_league_url`'s existing per-season→
+    leagueHistory fallback, but the SEPARATE player-name lookup
+    (`player_info_url`) had no fallback of its own, leaving most of those two
+    seasons' picks unnamed (present, priced, but unmatched to a position —
+    useless to the calibration model, which needs position to attribute
+    spend). Fixed with `history_player_info_url`, the identical fallback
+    pattern `history_league_url` already established, tried only after the
+    per-season URL 404s.
 - **It tests its own premise.** `assessStability` predicts each season's shares
   from the OTHER seasons (leave-one-out) and compares against the generic
   split. Verdict is **per position**, not global — a league steady at QB/TE but
