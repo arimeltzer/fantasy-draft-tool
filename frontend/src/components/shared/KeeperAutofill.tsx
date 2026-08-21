@@ -286,7 +286,17 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
                   return <span className="text-amber-600">no history returned</span>;
                 }
                 const entries = Object.entries(hist).sort((a, b) => Number(b[0]) - Number(a[0]));
-                const ok = entries.filter(([, v]) => v.endsWith(":ok")).length;
+                // NOT endsWith(":ok") — the backend always appends
+                // " picks:N named:M" after a season resolves (see
+                // fetch_draft_history), so a real success reads e.g.
+                // "history:ok picks:150 named:140" and never actually ends
+                // in ":ok". Checking for "picks:" instead — present once
+                // real draft data was parsed, regardless of whether the
+                // separate player-name lookup also fully succeeded — is
+                // what "loaded" actually means here; a season that never
+                // got that far (no draft found, an HTTP error, an
+                // exception) has no "picks:" at all.
+                const ok = entries.filter(([, v]) => v.includes(" picks:")).length;
                 return (
                   <span title={entries.map(([y, v]) => `${y}: ${v}`).join("\n")}>
                     <span className={ok === entries.length ? "text-emerald-600" : "text-amber-600"}>
