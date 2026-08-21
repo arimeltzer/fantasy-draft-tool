@@ -955,6 +955,44 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   You make one pick, so the 3rd-best QB isn't a choice — it's the same choice
   repeated, and it used to fill four slots the round a gate opened.
 
+## `$Max` once starters are filled (auction)
+
+- `bidCeiling`'s own header says bench slots are "$1 filler and are NOT in the
+  DP" — a scoping call for the STARTER-slot knapsack, not a claim that bench
+  players are worthless. `AuctionRoom.tsx ceilingFor` used to translate that
+  into `allocationCeiling: null` once `openStartSlots` emptied out, and
+  `bindingCeiling` treats `null`/non-finite as UNCONSTRAINED — falling
+  through to "whatever the room can theoretically pay", the SAME
+  undifferentiated number for every remaining player regardless of value. A
+  real, hit-in-practice bug, caught by a user whose starters filled and
+  `$Max` went to one fixed price with nothing in the targets panel — not the
+  design working as intended.
+- **A flat `$1` for everyone was tried as the fix and rejected on the spot**
+  ("if I can get a player for $2 I should [see that]") — it would only trade
+  one undifferentiated number for a different undifferentiated one. Shipped
+  instead: `allocationCeiling = market` once starters are full. Every
+  remaining pick is bench value at that point, and a bench player's worth
+  IS his own market price — there's no more "does this beat an alternative
+  for my last open slot" question for the DP to answer. `bindingCeiling`
+  still caps it by room capacity exactly as before, so a $2 real bargain
+  reads as $2, a $20 player still on the board reads as the real stash he'd
+  be, and the two are distinguishable again.
+- **This is a value fix, not a depth model, and a user caught the gap in the
+  same breath**: bench slots have real strategic worth beyond standalone
+  market price — bye-week coverage, injury-replacement insurance — that
+  market price alone doesn't capture. `bye-weeks.js byeClash` already exists
+  and is wired into the SNAKE recommender, but it's a COLLISION PENALTY
+  (don't stack too many shared-bye players at one position), not the
+  INSURANCE CREDIT this would need (reward depth you already have coverage
+  for) — a genuinely different model, and nothing in this codebase currently
+  prices injury-replacement value at all (the existing "injury discount"
+  discounts a player's OWN projection from HIS OWN reported status, not the
+  value of backing him up). Deliberately NOT improvised live mid-draft under
+  the same discipline every kill gate in this file exists to enforce —
+  flagged as real follow-up work, not shipped as a guess. The user offered
+  multi-year draft data for their league, useful for this AND for
+  `auction-calibration.js`'s existing spend-share model.
+
 ## Gotchas
 
 - Auth uses `bcrypt` directly (NOT passlib — breaks on Python 3.13).

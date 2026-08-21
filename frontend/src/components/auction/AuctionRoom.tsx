@@ -285,12 +285,32 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   // lookup. Pulled out so the two call sites cannot drift about what "the
   // suggested bid" means.
   const ceilingFor = useCallback((p: BoardPlayer, market: number) => {
+    // Once every STARTING slot is filled, bidCeiling has no more allocation
+    // decision to make (its own header comment: "bench slots are $1 filler
+    // and are NOT in the DP"). The old code passed `null` here, which
+    // bindingCeiling treats as UNCONSTRAINED — falling through to
+    // "whatever the room can theoretically pay", the SAME undifferentiated
+    // number for every remaining player regardless of value. A real,
+    // hit-in-practice bug (a user filled their starters and $Max went to
+    // one fixed price with nothing in reach on the targets panel), not the
+    // design working as intended.
+    //
+    // A flat $1 for everyone would only trade one undifferentiated number
+    // for another — flagged directly ("if I can get a player for $2 I
+    // should [see that]"). Every remaining pick is now bench value, and a
+    // bench player's worth is exactly his own market price — there's no
+    // more "does this beat an alternative for my last open slot" question
+    // to run through the DP for. Using `market` as the allocation ceiling
+    // here expresses that directly: a $2 real bargain shows as $2 (capped
+    // by room capacity below, same as ever), a $20 player still on the
+    // board post-starters shows as the real stash he'd be, and the two are
+    // finally distinguishable again.
     const allocationCeiling = openStartSlots.length
       ? bidCeiling({
           player: p, slots: openStartSlots, budget: dpBudget,
           pool: availDollar, valueOf: valueOfPlayer, priceOf: priceOfPlayer,
         })
-      : null;
+      : market;
     // roadmap 3.4 — and the room's ability to pay. Position-aware (3.4a):
     // only opponents who still need THIS position count, so a rich team
     // stacked at running back stops holding up every back's ceiling.
