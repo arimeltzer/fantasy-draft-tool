@@ -175,6 +175,15 @@ export interface LiveSyncResult {
      *  expose team data this way) is visible instead of just showing up as
      *  "wrong team" on the board with no explanation. */
     team_resolution_error?: string | null;
+    /** Diagnostic for a wrong-team-assignment report: exactly what numeric
+     *  team id/name mapping this app resolved, and the last few raw SOLD
+     *  events (both team-id fields the wire protocol carries), so a
+     *  mismatch against what actually happened in ESPN's own room can be
+     *  pinned to a specific cause instead of guessed at. */
+    my_team_id?: number | null;
+    teams_by_id?: Record<string, string>;
+    recent_events?: { player_id: number; nominating_team_id: number; winning_team_id: number;
+                      price: number; name: string | null }[];
   };
   applied: boolean;
 }

@@ -471,6 +471,34 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
                 </p>
               ) : null}
 
+              {res.meta.teams_by_id && (
+                <details className="text-2xs text-gray-500">
+                  <summary className="cursor-pointer hover:text-gray-700">
+                    Debug: team ID mapping (for a wrong-team-assignment report)
+                  </summary>
+                  <div className="mt-1 space-y-1 rounded border border-gray-200 bg-white p-1.5">
+                    <div>
+                      <span className="font-medium">my_team_id:</span> {String(res.meta.my_team_id)}
+                    </div>
+                    <div>
+                      <span className="font-medium">teams_by_id:</span>{" "}
+                      {Object.entries(res.meta.teams_by_id).map(([id, name]) => `${id}=${name}`).join(", ")}
+                    </div>
+                    {res.meta.recent_events && res.meta.recent_events.length > 0 && (
+                      <div>
+                        <span className="font-medium">recent raw events:</span>
+                        {res.meta.recent_events.map((e, i) => (
+                          <div key={i} className="font-mono">
+                            {e.name ?? `player ${e.player_id}`} — nominating={e.nominating_team_id},
+                            winning={e.winning_team_id}, price={e.price}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </details>
+              )}
+
               {res.added.length > 0 && (
                 <div className="space-y-0.5">
                   {res.added.slice(-6).map((a) => (

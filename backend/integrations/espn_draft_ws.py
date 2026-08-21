@@ -207,6 +207,11 @@ class SoldEvent:
     winning_team_id: int
     player_id: int
     price: int
+    # Kept for diagnosing a wrong-team-assignment report live (was
+    # discarded before) — the SOLD line's OTHER team-id field, in case
+    # winning/nominating turn out to be mixed up somewhere for a
+    # not-yet-explained reason. Not otherwise used in the picks pipeline.
+    nominating_team_id: int = 0
 
 
 def sold_events_to_picks(events: list[SoldEvent], pos_by_id: dict[int, dict],
@@ -282,7 +287,8 @@ class LiveDraftWatcher:
         if msg.get("type") != "sold":
             return None
         self.events.append(SoldEvent(winning_team_id=msg["winning_team_id"],
-                                     player_id=msg["player_id"], price=msg["price"]))
+                                     player_id=msg["player_id"], price=msg["price"],
+                                     nominating_team_id=msg.get("nominating_team_id", 0)))
         pid = msg["player_id"]
         if pid in self.pos_by_id or pid in self._pending:
             return None
@@ -303,4 +309,17 @@ class LiveDraftWatcher:
             "drafted": len(self.events), "resolved": len(picks),
             "started": self.started, "connected": self.connected, "last_error": self.last_error,
             "team_resolution_error": self.team_resolution_error,
+            # Diagnostic for a wrong-team-assignment report — lets a human
+            # (or us, reading the raw response) cross-check "ESPN's room
+            # said Team X won this player" against exactly what numeric id
+            # this app captured and what name it resolved that id to,
+            # rather than guessing where a mismatch is coming from.
+            "my_team_id": self.my_team_id,
+            "teams_by_id": self.teams_by_id,
+            "recent_events": [
+                {"player_id": e.player_id, "nominating_team_id": e.nominating_team_id,
+                 "winning_team_id": e.winning_team_id, "price": e.price,
+                 "name": self.pos_by_id.get(e.player_id, {}).get("name")}
+                for e in self.events[-10:]
+            ],
         })
