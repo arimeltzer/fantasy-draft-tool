@@ -42,3 +42,19 @@ export declare function byeReport(
   roster?: { pos: string; bye?: number | null }[],
   starters?: Record<string, number>,
 ): ByeReportRow[];
+
+export interface ByeCollisionEntry {
+  pos: string;
+  bye: number;
+  name: string;
+}
+
+/** Real-time, unpriced board flag: every one of your own players at the same
+ *  position on the same bye week as the candidate. Not a valuation input —
+ *  see the function's own docstring for why this is deliberately separate
+ *  from `byeClash`/`byeReport`. */
+export declare function byeCollisions(
+  pos: string | null | undefined,
+  bye: number | null | undefined,
+  roster?: ByeCollisionEntry[],
+): ByeCollisionEntry[];

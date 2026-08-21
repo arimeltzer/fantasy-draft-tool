@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { renderInApp, BOARD, SETTINGS, LEAGUE } from "@/test/fixtures";
+import { renderInApp, BOARD, SETTINGS, LEAGUE, player, SCHEDULE_FIXTURE } from "@/test/fixtures";
 import { useDraftStore } from "@/store/draftStore";
 import SnakeRoom from "./SnakeRoom";
 
@@ -39,6 +39,7 @@ vi.mock("@/lib/api", async (orig) => {
       deletePick: vi.fn(async () => undefined),
       updatePick: vi.fn(async () => ({})),
       commonOpponents: vi.fn(async () => []),
+      schedule: vi.fn(async () => SCHEDULE_FIXTURE),
     },
   };
 });
@@ -61,6 +62,10 @@ function row(name: string): HTMLElement {
 
 const names = () => BOARD.map((p) => p.name)
   .filter((n) => within(list()).queryByText(n) !== null);
+
+/** "hide taken" starts on and hides ANY drafted player, mine included — not
+ *  just opponents'. */
+const hideTaken = () => screen.getByText("hide taken").querySelector("input")!;
 
 beforeEach(() => {
   useDraftStore.setState({ leagueId: 1, picks: [], syncing: false });
@@ -105,8 +110,6 @@ describe("SnakeRoom player board", () => {
     expect(names()).toEqual([]);
     expect(screen.getByText(/no players match/i)).toBeTruthy();
   });
-
-  const hideTaken = () => screen.getByText("hide taken").querySelector("input")!;
 
   it("drops a drafted player off the board, since 'hide taken' starts on", async () => {
     renderInApp(room());
@@ -168,5 +171,55 @@ describe("SnakeRoom player board", () => {
     // and the failure isn't silent — it used to be an unhandled rejection
     // with nothing shown on screen at all.
     await waitFor(() => expect(window.alert).toHaveBeenCalled());
+  });
+});
+
+/**
+ * "Make the model bye week aware so it will flag for me when I have another
+ * player at the same position with the same bye week... I can then make the
+ * decision in real time" — deliberately unpriced, so pickScore's own byeClash
+ * penalty (already shipped) is untouched; this is a separate display-only
+ * flag on the board itself.
+ */
+describe("SnakeRoom bye-collision flag (real-time, unpriced)", () => {
+  const BYE_BOARD = [...BOARD, player({ id: 5, name: "Backup Back", pos: "RB", team: "CAR", ecr: 50, adp: 50 })];
+  const byeRoom = () => (
+    <SnakeRoom league={LEAGUE} settings={SETTINGS} board={BYE_BOARD} leagueId={1} />
+  );
+
+  it("flags a candidate sharing a bye week with a same-position player I already own", async () => {
+    // Bijan Robinson (RB/ATL) is already mine; Backup Back (RB/CAR) shares
+    // ATL's week-3 bye per SCHEDULE_FIXTURE.
+    useDraftStore.setState({
+      leagueId: 1, syncing: false,
+      picks: [{ pickId: 1, playerId: 1, overallPick: 1, mine: true, teamId: null, price: null, slot: null }],
+    });
+    renderInApp(byeRoom());
+
+    await waitFor(() => {
+      const r = within(list()).getByText("Backup Back").closest(".grid") as HTMLElement;
+      expect(within(r).getByLabelText(/bye clash week 3/i)).toBeTruthy();
+    });
+  });
+
+  it("does not flag a different position, or the owned player himself", async () => {
+    useDraftStore.setState({
+      leagueId: 1, syncing: false,
+      picks: [{ pickId: 1, playerId: 1, overallPick: 1, mine: true, teamId: null, price: null, slot: null }],
+    });
+    renderInApp(byeRoom());
+    // "hide taken" starts on and hides mine too, not just opponents' — toggle
+    // it off so Bijan's own row is reachable to prove he isn't self-flagged.
+    fireEvent.click(hideTaken());
+
+    const backupRow = () => within(list()).getByText("Backup Back").closest(".grid") as HTMLElement;
+    await waitFor(() => expect(within(backupRow()).getByLabelText(/bye clash/i)).toBeTruthy());
+    // Ja'Marr Chase is a WR, not an RB — no position match.
+    const chaseRow = within(list()).getByText("Ja'Marr Chase").closest(".grid") as HTMLElement;
+    expect(within(chaseRow).queryByLabelText(/bye clash/i)).toBeNull();
+    // Bijan Robinson is the owned player himself, still listed (mine players
+    // aren't hidden here) — not his own collision.
+    const bijanRow = within(list()).getByText("Bijan Robinson").closest(".grid") as HTMLElement;
+    expect(within(bijanRow).queryByLabelText(/bye clash/i)).toBeNull();
   });
 });

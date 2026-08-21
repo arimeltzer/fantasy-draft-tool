@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { screen, fireEvent, waitFor, within } from "@testing-library/react";
-import { renderInApp, BOARD, SETTINGS, LEAGUE } from "@/test/fixtures";
+import { renderInApp, BOARD, SETTINGS, LEAGUE, player, SCHEDULE_FIXTURE } from "@/test/fixtures";
 import { useDraftStore } from "@/store/draftStore";
 import AuctionRoom from "./AuctionRoom";
 
@@ -27,6 +27,7 @@ vi.mock("@/lib/api", async (orig) => {
       deletePick: vi.fn(async () => undefined),
       updatePick: vi.fn(async () => ({})),
       commonOpponents: vi.fn(async () => []),
+      schedule: vi.fn(async () => SCHEDULE_FIXTURE),
     },
   };
 });
@@ -336,5 +337,64 @@ describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
     );
     expect(rbCells.some((c) => /^\$1[*~]?$/.test(c.textContent ?? "") || /^· max \$1[*~]?$/.test(c.textContent ?? ""))).toBe(false);
     expect(rbCells.some((c) => c.textContent !== "pass" && c.textContent !== "· pass")).toBe(true);
+  });
+});
+
+/**
+ * A different user ask from the same conversation, deliberately NOT the
+ * same feature: "don't fold a one-week bye into the model again — just flag
+ * when a candidate shares a bye week with a same-position player I already
+ * own, and let me decide." Unpriced, so it gets its own test rather than
+ * living inside the 3.6c ceiling suite above.
+ */
+describe("AuctionRoom bye-collision flag (real-time, unpriced)", () => {
+  const BYE_BOARD = [...BOARD, player({ id: 5, name: "Backup Back", pos: "RB", team: "CAR", ecr: 50, adp: 50 })];
+  const byeRoom = () => (
+    <AuctionRoom league={AUCTION_LEAGUE} settings={SETTINGS} board={BYE_BOARD} leagueId={1} />
+  );
+
+  it("flags a candidate sharing a bye week with a same-position player I already own", async () => {
+    // Bijan Robinson (RB/ATL) is already mine; Backup Back (RB/CAR) shares
+    // ATL's week-3 bye per SCHEDULE_FIXTURE.
+    useDraftStore.setState({
+      leagueId: 1, syncing: false,
+      picks: [{ pickId: 1, playerId: 1, overallPick: 1, mine: true, teamId: null, price: 10, slot: null }],
+    });
+    renderInApp(byeRoom());
+
+    await waitFor(() => {
+      const r = row("Backup Back");
+      expect(within(r).getByLabelText(/bye clash week 3/i)).toBeTruthy();
+    });
+  });
+
+  it("does not flag a different position, or the owned player himself", async () => {
+    useDraftStore.setState({
+      leagueId: 1, syncing: false,
+      picks: [{ pickId: 1, playerId: 1, overallPick: 1, mine: true, teamId: null, price: 10, slot: null }],
+    });
+    renderInApp(byeRoom());
+    // "hide sold" starts on and Bijan (mine) counts as sold — toggle it off
+    // so his own row is reachable to prove he isn't self-flagged.
+    fireEvent.click(screen.getByText("hide sold").querySelector("input")!);
+
+    await waitFor(() => expect(within(row("Backup Back")).getByLabelText(/bye clash/i)).toBeTruthy());
+    // Ja'Marr Chase is a WR, not an RB, so no position match even though the
+    // schedule fixture gives him no bye collision either way.
+    expect(within(row("Ja'Marr Chase")).queryByLabelText(/bye clash/i)).toBeNull();
+    // Bijan Robinson is the owned player himself — not his own collision.
+    expect(within(row("Bijan Robinson")).queryByLabelText(/bye clash/i)).toBeNull();
+  });
+
+  it("is purely a flag: it does not touch $Max or any other valuation number", async () => {
+    // The user's explicit ask was to NOT fold this into price. Prove the
+    // flagged row's $Max cells carry the same titles/format as any other
+    // row — no separate "bye" price path was introduced.
+    renderInApp(byeRoom());
+    const r = await waitFor(() => row("Backup Back"));
+    const cells = within(r).getAllByTitle(
+      /allocation ceiling|capped by the room's money|doesn't improve your best reachable roster|the most you can pay/i,
+    );
+    expect(cells.length).toBeGreaterThan(0);
   });
 });

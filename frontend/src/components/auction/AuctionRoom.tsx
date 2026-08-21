@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
-import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock, RotateCcw, Radio, HelpCircle, DollarSign } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock, RotateCcw, Radio, HelpCircle, DollarSign, CalendarX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   auctionValues, applyInflation, maxBid,
@@ -12,6 +12,8 @@ import {
 } from "@/engine/auction-calibration.js";
 import { bidCeiling, remainingStartingSlots } from "@/engine/budget-path.js";
 import { maxUseful } from "@/engine/snake-engine.js";
+import { byeCollisions } from "@/engine/bye-weeks.js";
+import { useByeWeeks } from "@/hooks/useByeWeeks";
 import {
   priceCeilingFor, bindingCeiling, opponentCountsFromPicks,
 } from "@/engine/opponent-capacity.js";
@@ -197,6 +199,34 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     for (const p of minePlayers) m[p.pos] = (m[p.pos] || 0) + 1;
     return m;
   }, [minePlayers]);
+
+  // Real-time bye-week flag on the board (a user's explicit ask: don't fold a
+  // one-week event into price — surface every same-position/same-week
+  // pairing against my OWN roster instead, so I decide in the moment). See
+  // bye-weeks.js byeCollisions for why this is deliberately unpriced and
+  // separate from the small, capped byeClash penalty the snake recommender
+  // already applies. The auction room has no bye-aware valuation at all
+  // today, so this is a display-only addition.
+  const { data: byeByTeam } = useByeWeeks();
+  const myRosterByes = useMemo(() => {
+    if (!byeByTeam) return [];
+    return minePlayers
+      .map((p) => ({ pos: p.pos as string, bye: p.team ? byeByTeam[p.team] ?? null : null, name: p.name }))
+      .filter((p) => p.bye != null) as { pos: string; bye: number; name: string }[];
+  }, [minePlayers, byeByTeam]);
+  const byeWarnByPlayer = useMemo(() => {
+    const m = new Map<number, { week: number; names: string[] }>();
+    if (!byeByTeam) return m;
+    for (const p of board) {
+      if (typeof p.id !== "number" || !p.team) continue;
+      const bye = byeByTeam[p.team];
+      if (bye == null) continue;
+      const collisions = byeCollisions(p.pos, bye, myRosterByes)
+        .filter((c) => c.name !== p.name);
+      if (collisions.length) m.set(p.id, { week: bye, names: collisions.map((c) => c.name) });
+    }
+    return m;
+  }, [board, byeByTeam, myRosterByes]);
 
   const maxVbd = board.length ? Math.max(1, board[0].vbd) : 1;
 
@@ -600,6 +630,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                   : null;
 
                 const nominatedNow = p.id === currentNominationId;
+                const byeWarn = typeof p.id === "number" ? byeWarnByPlayer.get(p.id) : undefined;
 
                 return (
                   <div
@@ -626,6 +657,11 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                         {p.risk >= 0.4 && (
                           <span title={`Elevated risk (${p.risk} of 1) from week-to-week volatility, injury history, or age — expect a wider range of outcomes`}>
                             <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />
+                          </span>
+                        )}
+                        {byeWarn && (
+                          <span title={`Same wk ${byeWarn.week} bye as your ${p.pos}: ${byeWarn.names.join(", ")}. Not priced in — your call.`}>
+                            <CalendarX className="w-3 h-3 text-amber-600" aria-label={`bye clash week ${byeWarn.week}`} />
                           </span>
                         )}
                         {typeof p.id === "number" && <CommonOpponentsPopover playerId={p.id} />}

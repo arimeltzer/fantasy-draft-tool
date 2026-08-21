@@ -132,3 +132,23 @@ export function byeReport(roster = [], starters = {}) {
   }
   return out.sort((a, b) => b.short - a.short || a.week - b.week);
 }
+
+/**
+ * Real-time board flag, not a valuation input — deliberately separate from
+ * `byeClash`. `byeClash` (used inside the snake recommender's `pickScore`)
+ * already folds a clash into a small, capped SCORE penalty, but only once it
+ * actually costs a starter slot; the auction room has no bye-aware valuation
+ * at all. A user explicitly asked for the model NOT to go further than that
+ * — "it's only one week" — and instead wanted every same-position/same-week
+ * pairing surfaced so THEY can decide in the moment, including a pairing
+ * (say a 3rd RB) that isn't costing a start yet and never will show up in
+ * `byeClash`/`byeReport`.
+ *
+ * Given a candidate's position/bye and the roster you already own, returns
+ * every one of YOUR players at the SAME position on the SAME bye week.
+ * `roster`: [{pos, bye, name}]. Unpriced — purely for display.
+ */
+export function byeCollisions(pos, bye, roster = []) {
+  if (bye == null || !pos) return [];
+  return roster.filter((p) => p && p.pos === pos && p.bye === bye && p.name);
+}

@@ -1,7 +1,8 @@
 import { memo, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio, HelpCircle } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio, HelpCircle, CalendarX } from "lucide-react";
 import { myPickNumbers, rankByAdp } from "@/engine/snake-engine.js";
+import { byeCollisions } from "@/engine/bye-weeks.js";
 import { runHotness } from "@/engine/positional-run.js";
 import { roundsFor, currentOwners } from "@/engine/draft-order.js";
 import type { BoardPlayer, SnakeLiveState } from "@/engine/snake-engine.js";
@@ -118,6 +119,32 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
     }
     return out;
   }, [minePlayers, byeByTeam]);
+
+  // Real-time, unpriced board flag (a user's explicit ask: don't fold a
+  // one-week event into another valuation multiplier — pickScore already
+  // applies byeClash's small, capped penalty once a clash actually costs a
+  // starter; this is deliberately looser and separate, surfacing every
+  // same-position/same-week pairing against my OWN roster regardless, so I
+  // decide in the moment). See bye-weeks.js byeCollisions.
+  const myRosterByeNames = useMemo(() => {
+    if (!byeByTeam) return [];
+    return minePlayers
+      .map((p) => ({ pos: p.pos as string, bye: p.team ? byeByTeam[p.team] ?? null : null, name: p.name }))
+      .filter((p) => p.bye != null) as { pos: string; bye: number; name: string }[];
+  }, [minePlayers, byeByTeam]);
+  const byeWarnByPlayer = useMemo(() => {
+    const m = new Map<number, { week: number; names: string[] }>();
+    if (!byeByTeam) return m;
+    for (const p of board) {
+      if (typeof p.id !== "number" || !p.team) continue;
+      const bye = byeByTeam[p.team];
+      if (bye == null) continue;
+      const collisions = byeCollisions(p.pos, bye, myRosterByeNames)
+        .filter((c) => c.name !== p.name);
+      if (collisions.length) m.set(p.id, { week: bye, names: collisions.map((c) => c.name) });
+    }
+    return m;
+  }, [board, byeByTeam, myRosterByeNames]);
 
   // Live draft state consumed by the ported pickScore() recommender.
   const live = useMemo<SnakeLiveState>(() => {
@@ -437,6 +464,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
                   getOnClock={getOnClock}
                   onDraft={draft}
                   onUndo={undo}
+                  byeWarn={byeWarnByPlayer.get(p.id as number)}
                 />
               ))}
               {filtered.length === 0 && (
@@ -480,7 +508,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
  * data really does — so logging a pick now re-renders one row, not the board.
  */
 const PlayerRow = memo(function PlayerRow({
-  p, idx, pick, rank, maxVbd, opponents, getOnClock, onDraft, onUndo,
+  p, idx, pick, rank, maxVbd, opponents, getOnClock, onDraft, onUndo, byeWarn,
 }: {
   p: BoardPlayer;
   idx: number;
@@ -491,6 +519,7 @@ const PlayerRow = memo(function PlayerRow({
   getOnClock: () => string | undefined;
   onDraft: (p: BoardPlayer, mine: boolean, teamId?: number) => void;
   onUndo: (pickId: number) => void;
+  byeWarn: { week: number; names: string[] } | undefined;
 }) {
   const st = posStyle(p.pos);
   const mine = pick?.mine ?? false;
@@ -522,6 +551,11 @@ const PlayerRow = memo(function PlayerRow({
                         {p.risk >= 0.4 && (
                           <span title={`Elevated risk (${p.risk} of 1) from week-to-week volatility, injury history, or age — expect a wider range of outcomes`}>
                             <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />
+                          </span>
+                        )}
+                        {byeWarn && (
+                          <span title={`Same wk ${byeWarn.week} bye as your ${p.pos}: ${byeWarn.names.join(", ")}. Not priced in — your call.`}>
+                            <CalendarX className="w-3 h-3 text-amber-600" aria-label={`bye clash week ${byeWarn.week}`} />
                           </span>
                         )}
                         {typeof p.id === "number" && <CommonOpponentsPopover playerId={p.id} />}

@@ -1,6 +1,6 @@
 /* Node-runnable fixture tests for bye-weeks.js — `node bye-weeks.selftest.mjs`.
  * Mirrors keeper.selftest.mjs convention: pure, deterministic. */
-import { byeByTeam, byeClash, byeReport } from "./bye-weeks.js";
+import { byeByTeam, byeClash, byeReport, byeCollisions } from "./bye-weeks.js";
 
 let pass = 0, fail = 0;
 function eq(got, want, msg) {
@@ -105,6 +105,29 @@ ok(severe.filter((r) => r.pos === "WR").every((r) => r.short === 1),
 
 eq(byeReport([], { RB: 2 }), [], "an empty roster reports nothing");
 eq(byeReport(roster, {}), [], "no starter requirements means nothing to report");
+
+/* ── byeCollisions: real-time unpriced flag, deliberately looser ────── */
+const myRb = [
+  { pos: "RB", bye: 7, name: "Bijan Robinson" },
+  { pos: "RB", bye: 9, name: "Jonathan Taylor" },
+  { pos: "WR", bye: 7, name: "Puka Nacua" },
+];
+eq(byeCollisions("RB", 7, myRb), [{ pos: "RB", bye: 7, name: "Bijan Robinson" }],
+   "flags a same-position, same-week pairing");
+eq(byeCollisions("RB", 9, myRb), [{ pos: "RB", bye: 9, name: "Jonathan Taylor" }],
+   "matches on the actual shared week, not just any bye");
+eq(byeCollisions("WR", 7, myRb), [{ pos: "WR", bye: 7, name: "Puka Nacua" }],
+   "position-scoped: an RB on the same week as a WR is not a match for the WR itself");
+eq(byeCollisions("RB", 3, myRb), [], "no flag when nobody shares that week");
+eq(byeCollisions("RB", null, myRb), [], "no bye on record for the candidate means nothing to flag");
+eq(byeCollisions(null, 7, myRb), [], "no position means nothing to flag");
+eq(byeCollisions("RB", 7, []), [], "an empty roster never flags");
+// Unlike byeClash/byeReport, this fires even when it costs nothing yet — a
+// deliberate, explicit difference: the user wants to see the pairing and
+// decide, not have the model wait until it's already short a starter.
+ok(byeClash(7, [7, 3], 1).mult === 1, "byeClash sees no cost yet: a bye-3 teammate already covers the one starter slot");
+ok(byeCollisions("RB", 7, [{ pos: "RB", bye: 7, name: "Bijan Robinson" }]).length === 1,
+   "byeCollisions flags the same pairing anyway, unpriced");
 
 console.log(`\nbye-weeks.selftest: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

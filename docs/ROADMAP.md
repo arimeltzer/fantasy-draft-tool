@@ -2612,11 +2612,46 @@ never actually blocking the user's stated goal — the depth CAP (stop
 over-valuing a 3rd QB/TE) was the load-bearing piece, and it shipped without
 needing either.
 
-**Status: 3.6c SHIPPED. 3.6a/3.6b SCOPED, NOT STARTED** — real follow-up work,
-lower priority now that the policy that actually motivated this step is live.
-3.6a is buildable with no precondition risk (a measurement-harness question
-to resolve first); 3.6b needs its precondition checked before any kill-gate
-number is set.
+**3.6d Real-time bye-collision flag — DONE, shipped. A second explicit user
+redirect away from 3.6a's valuation-model framing, in the SAME direction as
+3.6c: a policy/display fix, not a new statistical model.** Immediately after
+3.6c shipped: "I don't want to overdo the bye week adjustments - as the model
+found, it's only one week. Can we make the model bye week aware so it will
+flag for me when I have another player at the same position with the same
+bye week? I can then make the decision in real time." That is explicitly
+NOT 3.6a (a priced insurance-credit multiplier) — it is a display-only flag,
+and deliberately looser than the existing `byeClash` penalty: it fires on
+every same-position/same-week pairing against the user's own roster, even
+one `byeClash` scores as `mult: 1` (no cost yet) because enough OTHER bodies
+already cover the week.
+
+Shipped as `bye-weeks.js byeCollisions(pos, bye, roster)` — pure, unpriced,
+roster: `[{pos, bye, name}]` in, matching subset out. Wired into both rooms:
+`AuctionRoom.tsx` and `SnakeRoom.tsx` each derive a `byeWarnByPlayer` map
+(candidate id -> `{week, names}`) from the board + the user's own rostered
+players' byes (`useByeWeeks`, the same schedule-derived hook `RosterPanel`
+already uses), excluding a candidate's match against himself. Rendered as a
+small amber `CalendarX` icon next to the player's name — same slot/style as
+the existing injury and risk badges — with a tooltip naming the week and the
+colliding teammate(s), explicitly stating "Not priced in — your call." Does
+not touch `valuePoints`, `pickScore`, or the auction `$Max` ceiling in any
+way; a dedicated test in both `AuctionRoom.test.tsx` and `SnakeRoom.test.tsx`
+pins that the flagged row's other numbers are unchanged. `bye-weeks
+.selftest.mjs` covers `byeCollisions` directly, including the explicit case
+where `byeClash` reports no cost for a pairing `byeCollisions` still flags.
+
+No kill gate needed — same reasoning as 3.6c: this is not a new predictive
+claim being tested, it is exposing data the app already derives (`byeByTeam`)
+in a new, unpriced way the user asked for directly.
+
+**Status: 3.6c and 3.6d SHIPPED. 3.6a/3.6b SCOPED, NOT STARTED** — real
+follow-up work, now lower priority twice over: 3.6c removed the roster-depth
+problem that originally motivated this whole step, and 3.6d gave the user a
+lighter-weight answer to the bye-specific half of it than a priced model
+would have. 3.6a is buildable with no precondition risk (a
+measurement-harness question to resolve first); 3.6b needs its precondition
+checked before any kill-gate number is set. Neither is blocking anything the
+user has actually asked for at this point.
 
 > **Prompt** — "Check whether draft-sim.mjs's auction simulator can score
 > bye-week-specific lineup completeness (3.6a), and separately run

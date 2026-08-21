@@ -67,6 +67,20 @@ export const SETTINGS: LeagueSettings = {
   opponents: ["Team Two", "Team Three"],
 } as unknown as LeagueSettings;
 
+/** A 4-week schedule fixture for useByeWeeks(): ATL and CAR both miss week 3
+ *  (a shared bye, for bye-collision-badge tests); CIN/BUF/ARI/XX play every
+ *  week in this horizon (no bye) so they don't interfere. XX is DEEP_BOARD's
+ *  shared team in AuctionRoom.test.tsx — kept bye-free so 3.6c's fixture
+ *  stays unaffected by this one. */
+export const SCHEDULE_FIXTURE: Record<string, { week: number; opp: string }[]> = {
+  ATL: [{ week: 1, opp: "X" }, { week: 2, opp: "X" }, { week: 4, opp: "X" }],
+  CAR: [{ week: 1, opp: "X" }, { week: 2, opp: "X" }, { week: 4, opp: "X" }],
+  CIN: [{ week: 1, opp: "X" }, { week: 2, opp: "X" }, { week: 3, opp: "X" }, { week: 4, opp: "X" }],
+  BUF: [{ week: 1, opp: "X" }, { week: 2, opp: "X" }, { week: 3, opp: "X" }, { week: 4, opp: "X" }],
+  ARI: [{ week: 1, opp: "X" }, { week: 2, opp: "X" }, { week: 3, opp: "X" }, { week: 4, opp: "X" }],
+  XX: [{ week: 1, opp: "X" }, { week: 2, opp: "X" }, { week: 3, opp: "X" }, { week: 4, opp: "X" }],
+};
+
 export const LEAGUE: ApiLeague = {
   id: 1,
   name: "Test League",

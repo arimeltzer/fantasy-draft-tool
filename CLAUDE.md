@@ -1038,6 +1038,26 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   asymmetry the user described. No new kill gate needed — reusing an
   already-validated cap in a second consumer, not a new statistical claim.
   See `docs/ROADMAP.md` 3.6c.
+- **Real-time bye-collision flag (shipped, both rooms) — a deliberately
+  UNPRICED alternative to 3.6a, per an explicit user call**: "I don't want to
+  overdo the bye week adjustments... make the model bye week aware so it
+  will flag for me when I have another player at the same position with the
+  same bye week? I can then make the decision in real time." `bye-weeks.js
+  byeCollisions(pos, bye, roster)` returns every one of YOUR OWN players at
+  the SAME position on the SAME bye week as a board candidate — looser than
+  `byeClash`/`byeReport` on purpose: it fires even for a pairing that isn't
+  costing a start yet (a 3rd RB on a bye already covered by a 2nd), which
+  `byeClash` would score as `mult: 1`, no penalty, nothing to see. Wired into
+  both `AuctionRoom.tsx` and `SnakeRoom.tsx` as a small amber `CalendarX`
+  badge next to the player's name (same slot as the injury/risk icons),
+  tooltip naming the week and the teammate(s) it clashes with. Pure display —
+  does not touch `valuePoints`, `$Max`, or `pickScore` in any way; the
+  snake recommender's existing `byeClash` penalty (small, capped, tied to an
+  actual starter shortfall) is unchanged and still the only priced bye
+  signal in the app. `RosterPanel`'s roster-wide "BYE CONFLICTS" summary
+  (via `byeReport`) is also unchanged and answers a different question
+  (which weeks leave a STARTER SLOT short) from this one (which specific
+  candidate on the board shares a week with a player I already have).
 
 ## Gotchas
 
