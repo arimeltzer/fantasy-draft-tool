@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Users, ChevronDown, ChevronRight, Pencil } from "lucide-react";
+import { Users, ChevronDown, ChevronRight, Pencil, AlertTriangle } from "lucide-react";
 import { posStyle } from "@/lib/posStyles";
 import { BoardPlayer } from "@/engine/valuation-engine.js";
 import { LeagueSettings } from "@/lib/api";
@@ -52,6 +52,24 @@ export default function DraftOverview({ picks, board, settings, mode, onEditLog 
   const playerById = useMemo(() => new Map(board.map((p) => [p.id as number, p])), [board]);
   const rows = useMemo(() => buildTeamRows(picks, settings), [picks, settings]);
 
+  // An N-team league has N-1 opponents, so N or more is arithmetically
+  // impossible — not a judgement call. The usual cause is an import where the
+  // user's own team wasn't identified (`report.mine_found` false): nothing is
+  // excluded from `settings.opponents`, so the room renders "You" PLUS every
+  // team including yours, and your own name sits there as a rival that never
+  // drafts anyone. Surfaced here rather than silently corrected because the
+  // fix is a REMOVAL from an index-keyed list — every pick's `teamId` indexes
+  // into it, so dropping an entry silently would re-point other teams' picks.
+  // `DraftOrderBoard` already warns about this on the snake side via
+  // `orderWarnings`; the auction room had no equivalent, which is where it
+  // was actually hit.
+  const extraTeams = useMemo(() => {
+    const opponents = (settings.opponents ?? []).filter(Boolean);
+    return opponents.length >= settings.teams
+      ? opponents.length + 1 - settings.teams
+      : 0;
+  }, [settings.opponents, settings.teams]);
+
   return (
     <div className="rounded-lg border border-gray-200 bg-gray-100 p-3">
       <div className="flex items-center justify-between mb-2">
@@ -69,6 +87,18 @@ export default function DraftOverview({ picks, board, settings, mode, onEditLog 
           <Pencil className="w-3 h-3" /> Edit log
         </button>
       </div>
+
+      {extraTeams > 0 && (
+        <div className="mb-2 flex items-start gap-1.5 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-2xs leading-snug text-amber-800">
+          <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
+          <span>
+            {(settings.opponents ?? []).filter(Boolean).length + 1} teams listed for a{" "}
+            {settings.teams}-team league. Your own team is probably still in the opponent
+            list from the import — it's the one showing no picks. Remove it in League
+            Settings so budgets and $Max count the right {settings.teams - 1} rivals.
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-[16px_1fr_auto_auto] gap-x-2 text-2xs uppercase tracking-wider text-gray-400 px-1 mb-1">
         <span />

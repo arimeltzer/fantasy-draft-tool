@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from .base import NormLeague, NormPlayer, NormTeam, opponent_team_ids
+from .base import NormLeague, NormPlayer, NormTeam, opponent_team_ids, resolve_my_team
 from .matching import build_index, match_player, keeper_candidates
 from . import espn, espn_draft_ws, live, yahoo, yahoo_paste
 from . import fantasypros_aav_paste as aav_paste
@@ -228,6 +228,53 @@ def test_opponent_team_ids():
 
     # No opponents (single-team fixture / everyone unnamed) -> empty, not an error.
     assert opponent_team_ids([NormTeam(name="Me", is_mine=True)]) == ([], {})
+
+
+def test_resolve_my_team():
+    """The tiered "which of these is MY team" match.
+
+    Regression: this used to be exact-only (`key in (id, name.lower())`), so a
+    name typed with different punctuation/spacing — or not typed at all —
+    marked NO team as mine. `opponent_team_ids` then excluded nobody, and a
+    14-team league imported 14 opponents instead of 13; both draft rooms
+    render "You" PLUS all 14, with the user's own team sitting there as a
+    rival that never drafts anyone. Hit in practice.
+    """
+    teams = [
+        NormTeam(name="Team 1", ext_id="1"),
+        NormTeam(name="Ari's Astounding Team", ext_id="8"),
+        NormTeam(name="andrew's Angry Team", ext_id="9"),
+    ]
+
+    # Tier 1 — exact display name, and exact platform id.
+    assert resolve_my_team(teams, "Ari's Astounding Team") == 1
+    assert resolve_my_team(teams, "8") == 1
+    # Case is not significant at any tier.
+    assert resolve_my_team(teams, "ARI'S ASTOUNDING TEAM") == 1
+
+    # Tier 2 — punctuation and spacing folded away. This is the shape that
+    # actually broke: an apostrophe retyped as a different character, or lost.
+    assert resolve_my_team(teams, "Aris Astounding Team") == 1
+    assert resolve_my_team(teams, "  ari's   astounding team  ") == 1
+
+    # Tier 3 — unique substring, either direction.
+    assert resolve_my_team(teams, "Ari's Astounding") == 1
+    assert resolve_my_team(teams, "Ari's Astounding Team 2026") == 1
+
+    # Refusals. Each of these must return None rather than guess — attributing
+    # MY picks to a rival is worse than a visibly wrong team count, which both
+    # rooms now warn about.
+    assert resolve_my_team(teams, "") is None
+    assert resolve_my_team(teams, None) is None
+    assert resolve_my_team(teams, "Nobody's Team") is None
+    # Ambiguous substring: "team" is inside all three names -> give up.
+    assert resolve_my_team(teams, "Team") is None
+
+    # And the whole point: when a team IS resolved, it drops out of opponents.
+    for i, t in enumerate(teams):
+        t.is_mine = (i == 1)
+    names, _ = opponent_team_ids(teams)
+    assert names == ["Team 1", "andrew's Angry Team"], names
 
 
 def test_scoring_diagnostics():
@@ -717,6 +764,7 @@ def main():
     test_espn(); print("✓ espn parse")
     test_espn_draft_picks(); print("✓ espn draft picks (incl. dropped)")
     test_opponent_team_ids(); print("✓ opponent team ids")
+    test_resolve_my_team(); print("✓ resolve my team")
     test_scoring_diagnostics(); print("✓ scoring diagnostics")
     test_keeper_candidates(); print("✓ keeper candidates")
     test_yahoo(); print("✓ yahoo parse")

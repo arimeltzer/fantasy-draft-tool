@@ -340,6 +340,35 @@ describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
   });
 });
 
+describe("AuctionRoom opponent-count guard", () => {
+  // Regression, hit in practice: "it lists me as 'You' but still shows my team
+  // name as having drafted no players (15 total teams listed in a 14 team
+  // draft)". Root cause is upstream in the import (`resolve_my_team` used to
+  // be an exact-only match, so nothing was excluded from settings.opponents),
+  // but an already-imported league keeps the bad list — so the room has to say
+  // so rather than render an impossible roster of teams silently.
+  const BAD_SETTINGS = {
+    ...SETTINGS,
+    teams: 3,
+    opponents: ["Team Two", "Team Three", "My Own Team"],   // 3 opponents in a 3-team league
+  } as unknown as typeof SETTINGS;
+
+  it("warns when the opponent list implies more teams than the league has", () => {
+    renderInApp(
+      <AuctionRoom league={AUCTION_LEAGUE} settings={BAD_SETTINGS} board={BOARD} leagueId={1} />,
+    );
+    expect(screen.getByText(/4 teams listed for a 3-team league/i)).toBeTruthy();
+    expect(screen.getByText(/remove it in league settings/i)).toBeTruthy();
+  });
+
+  it("stays quiet on a correctly-sized opponent list", () => {
+    // SETTINGS is a 10-team league with 2 named opponents — under the cap, so
+    // no warning. Guards against the check firing on every normal league.
+    renderInApp(room());
+    expect(screen.queryByText(/teams listed for a/i)).toBeNull();
+  });
+});
+
 /**
  * A different user ask from the same conversation, deliberately NOT the
  * same feature: "don't fold a one-week bye into the model again — just flag

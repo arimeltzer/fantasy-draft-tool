@@ -162,6 +162,31 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   - **Team names**: `settings.opponents` and each opponent `DraftPick.team_id`
     are populated from the platform's real team display names
     (`integrations/base.py opponent_team_ids()`) — not generic "Team N" labels.
+  - **Which team is MINE is a TIERED match, and has to be** (`base.py
+    resolve_my_team()`). It used to be exact-only (`key in (id,
+    name.lower())`), so a team name typed with different punctuation or
+    spacing — or left blank — matched NOTHING, `is_mine` stayed False for
+    every team, and `opponent_team_ids` excluded nobody: a 14-team league
+    imported **14** opponents instead of 13. Both rooms then render "You"
+    PLUS all 14, with the user's own team sitting there as a rival that never
+    drafts anyone. Hit in practice. Now tiered like `matching.py`: exact
+    id/name → punctuation/case-folded name → UNIQUE substring either
+    direction, **refusing on ambiguity** (attributing MY picks to a rival is
+    worse than a visibly wrong count). Folding punctuation is safe for TEAM
+    names in a way it is NOT for player names — two teams in one league
+    almost never collide under it, and the tie-break refuses when they do.
+    `NormTeam.ext_id` exists solely so the exact tier can match a numeric
+    platform team id. The import report's `mine_found` already surfaced the
+    failure, but only as a one-line note at import time.
+  - **The rooms now also guard the invariant downstream**, because an
+    already-imported league keeps the bad list: `DraftOverview` warns when
+    `opponents.length >= teams` (arithmetically impossible — an N-team league
+    has N-1 opponents) and points at League Settings. Deliberately a WARNING,
+    not a silent auto-fix: `settings.opponents` is index-keyed by
+    `DraftPick.team_id`, so dropping an entry silently would re-point other
+    teams' logged picks. `DraftOrderBoard`/`orderWarnings` already warned
+    about this on the snake side; the auction room, where it was actually
+    hit, had no equivalent.
   - **Scoring**: only points-per-reception is auto-detected (ESPN statId 53,
     Yahoo stat_id 11 — both validated). Full per-stat scoring (pass/rush/rec
     yards+TDs, INTs, fumbles) is NOT auto-mapped from ESPN/Yahoo — their statId

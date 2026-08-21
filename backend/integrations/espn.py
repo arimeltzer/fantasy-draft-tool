@@ -18,7 +18,10 @@ import time
 
 import httpx
 
-from .base import DEFAULT_ROSTER, DraftPickRow, NormLeague, NormPlayer, NormTeam, make_settings
+from .base import (
+    DEFAULT_ROSTER, DraftPickRow, NormLeague, NormPlayer, NormTeam,
+    make_settings, resolve_my_team,
+)
 from .live import LiveDraftState, LivePick, order_picks
 
 READ_HOST = "https://lm-api-reads.fantasy.espn.com"
@@ -440,11 +443,9 @@ def all_waivers(data: dict) -> dict[int, int]:
 def parse_teams(data: dict, my_team: str | None) -> list[NormTeam]:
     draft = _draft_map(data)
     waivers = all_waivers(data)
-    mine_key = (my_team or "").strip().lower()
     out: list[NormTeam] = []
     for t in data.get("teams", []) or []:
         name = _team_name(t)
-        is_mine = bool(mine_key) and mine_key in (str(t.get("id")).lower(), name.lower())
         players: list[NormPlayer] = []
         for entry in (t.get("roster", {}) or {}).get("entries", []) or []:
             pl = (entry.get("playerPoolEntry", {}) or {}).get("player", {}) or {}
@@ -459,7 +460,14 @@ def parse_teams(data: dict, my_team: str | None) -> list[NormTeam]:
                 round=d.get("round"),
                 waiver=waivers.get(pid),
             ))
-        out.append(NormTeam(name=name, is_mine=is_mine, players=players))
+        out.append(NormTeam(name=name, players=players,
+                            ext_id=str(t.get("id")) if t.get("id") is not None else None))
+    # Resolved once over the whole list rather than per-team: the tiered
+    # matcher needs to see every candidate to know whether a weak-tier hit is
+    # UNIQUE, and "unique" is what makes the weak tiers safe to use at all.
+    mine = resolve_my_team(out, my_team)
+    if mine is not None:
+        out[mine].is_mine = True
     return out
 
 

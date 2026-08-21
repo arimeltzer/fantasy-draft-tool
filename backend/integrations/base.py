@@ -44,6 +44,11 @@ class NormTeam:
     name: str
     is_mine: bool = False
     players: list[NormPlayer] = field(default_factory=list)
+    # Platform's own team id, when the adapter has one. Only consumer today is
+    # `resolve_my_team`'s exact tier, so a user who types their numeric ESPN
+    # team id instead of its display name still resolves. Optional by design:
+    # Yahoo identifies "mine" by manager guid, not by anything typed.
+    ext_id: str | None = None
 
 
 @dataclass
@@ -85,6 +90,66 @@ class NormLeague:
     # price calibration learns from. This carries the draft itself, separately,
     # so the two questions are answered from the data that actually fits them.
     draft_picks: list[DraftPickRow] = field(default_factory=list)
+
+
+def _fold_team_key(s: str) -> str:
+    """Casefold and drop everything that isn't alphanumeric.
+
+    Team display names are typed by humans on one platform and re-typed by a
+    human into this app's import form, so they differ in exactly the ways
+    punctuation and spacing differ: "Ari's Astounding Team" vs "Aris Astounding
+    Team" vs "ari's  astounding team". Folding those away is safe here in a way
+    it is NOT safe for PLAYER names (see playerName.ts / name_aliases.py —
+    folding there can merge two real people). Two DIFFERENT teams in one league
+    almost never collide under this fold, and the tiered matcher below refuses
+    to guess when they do.
+    """
+    return "".join(c for c in (s or "").casefold() if c.isalnum())
+
+
+def resolve_my_team(teams: list[NormTeam], my_team: str | None) -> int | None:
+    """Index of the user's own team in `teams`, or None if it can't be told.
+
+    Tiered, weakest-tier-last, and refuses on ambiguity — the same discipline
+    `matching.py` uses for players. Tiers: exact id/name, then punctuation- and
+    case-folded name, then a UNIQUE substring either direction (so "Ari's
+    Astounding" finds "Ari's Astounding Team", and vice versa).
+
+    Why this matters more than it looks: when nothing matches, `is_mine` is
+    False for EVERY team, so `opponent_team_ids` excludes nobody and an N-team
+    league imports N opponents instead of N-1. The draft rooms then render
+    "You" plus all N — the user's own team shown as a rival that never drafts
+    anyone. That was a real, hit-in-practice bug from an exact-only match.
+    """
+    key = (my_team or "").strip()
+    if not key:
+        return None
+    ids = [str(getattr(t, "ext_id", "") or "").strip().casefold() for t in teams]
+    names = [(t.name or "").strip() for t in teams]
+
+    # Tier 1 — exact, on the platform id or the display name.
+    low = key.casefold()
+    for i, (tid, name) in enumerate(zip(ids, names)):
+        if low and (low == tid or low == name.casefold()):
+            return i
+
+    # Tier 2 — punctuation/spacing folded away. Unique match only.
+    folded = _fold_team_key(key)
+    if folded:
+        hits = [i for i, name in enumerate(names) if _fold_team_key(name) == folded]
+        if len(hits) == 1:
+            return hits[0]
+
+    # Tier 3 — unique substring, either direction. Ambiguity gives up rather
+    # than picking one: attributing MY picks to a rival is worse than the
+    # count being visibly wrong, which the rooms already warn about.
+    if folded:
+        hits = [i for i, name in enumerate(names)
+                if (f := _fold_team_key(name)) and (folded in f or f in folded)]
+        if len(hits) == 1:
+            return hits[0]
+
+    return None
 
 
 def opponent_team_ids(teams: list[NormTeam]) -> tuple[list[str], dict[str, int]]:

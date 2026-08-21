@@ -400,6 +400,12 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     const belowMarket = !pass && binding !== "opponents" && ceiling < market;
     return { allocationCeiling, bid: ceiling, binding, room, pass, belowMarket };
   }, [openStartSlots, dpBudget, availDollar, valueOfPlayer, priceOfPlayer,
+      // `haveByPos` drives the maxUseful depth cap above. It is masked today —
+      // `openStartSlots` changes identity on the same trigger (`minePlayers`)
+      // — but that is an accident of how it happens to be memoised, not a
+      // guarantee. Listed explicitly so a future change to openStartSlots
+      // can't silently leave this reading a stale roster.
+      haveByPos,
       oppBudgets, oppOpenSpots, oppCounts, settings.roster, settings.superflex]);
 
   const valueTargets = useMemo(() => {
