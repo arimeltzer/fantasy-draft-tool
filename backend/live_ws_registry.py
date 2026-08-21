@@ -237,16 +237,31 @@ async def _get_or_create_ingest_watcher(league_id: int, ext_id: str, season: int
     watcher = _ingest_watchers.get(league_id)
     if watcher is None:
         teams_by_id, my_team_id = _ingest_context.get(league_id, ({}, None))
+        resolution_error: str | None = None
         if not teams_by_id:
             try:
                 data = await espn.fetch_raw_league(ext_id, season, espn_s2=espn_s2, swid=swid)
                 teams_by_id, my_team_id = espn.resolve_team_ids(data, my_team)
                 _ingest_context[league_id] = (teams_by_id, my_team_id)
-                log.info(f"League {league_id}: ingest resolved {len(teams_by_id)} teams")
+                log.info(f"League {league_id}: ingest resolved {len(teams_by_id)} teams, "
+                        f"my_team_id={my_team_id}")
+                if my_team_id is None:
+                    # fetch_raw_league succeeded and teams_by_id has real
+                    # entries, but `my_team` (typed into the panel) matched
+                    # none of them BY NAME OR NUMERIC ID — every pick will
+                    # come through with is_mine=False and owner=None from
+                    # here on. This used to fail completely silently.
+                    resolution_error = (
+                        f"my_team {my_team!r} matched no team in this league's roster data. "
+                        f"Known teams: {sorted(teams_by_id.values())}"
+                    )
+                    log.warning(f"League {league_id}: {resolution_error}")
             except Exception as exc:  # noqa: BLE001 — team names/is_mine degrade, events don't
+                resolution_error = f"team lookup failed: {type(exc).__name__}: {exc}"
                 log.warning(f"League {league_id}: ingest team resolution failed: {exc}")
         watcher = espn_draft_ws.LiveDraftWatcher(my_team_id=my_team_id, teams_by_id=teams_by_id,
                                                  start_overall=start_overall)
+        watcher.team_resolution_error = resolution_error
         _ingest_watchers[league_id] = watcher
         log.info(f"League {league_id}: ingest watcher created")
 

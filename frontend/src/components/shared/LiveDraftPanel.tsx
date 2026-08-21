@@ -457,6 +457,12 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
                   live channel didn't start, using REST fallback: {res.meta.ws_start_error}
                 </p>
               )}
+              {res.meta.team_resolution_error && (
+                <p className="text-2xs text-rose-600">
+                  Couldn't resolve teams from ESPN — picks will show with no owner and won't be
+                  flagged as yours until this is fixed: {res.meta.team_resolution_error}
+                </p>
+              )}
 
               {res.meta.lookup && res.meta.lookup.lookup_attempted ? (
                 <p className="text-2xs text-gray-400">

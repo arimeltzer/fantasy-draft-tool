@@ -257,6 +257,11 @@ class LiveDraftWatcher:
         self.started = False    # the background task has begun executing at all
         self.connected = False
         self.last_error: str | None = None
+        # Set by the ingest path (live_ws_registry.py) when it couldn't
+        # resolve team names/your team at all — this used to fail silently,
+        # which hid the actual cause of "picks assigned to the wrong team /
+        # not flagged as mine" for a real user until this field existed.
+        self.team_resolution_error: str | None = None
 
     def on_event(self, msg: dict[str, Any]) -> int | None:
         """Feed one parsed message (from `parse_ws_line`) in. Returns the
@@ -297,4 +302,5 @@ class LiveDraftWatcher:
         return LiveDraftState(picks=picks, fmt=fmt, meta={
             "drafted": len(self.events), "resolved": len(picks),
             "started": self.started, "connected": self.connected, "last_error": self.last_error,
+            "team_resolution_error": self.team_resolution_error,
         })

@@ -167,6 +167,14 @@ export interface LiveSyncResult {
      *  made before the live channel connected). */
     backfill_resolved?: number;
     backfill_error?: string;
+    /** Set once, at ingest-watcher creation, if team names / "my team"
+     *  couldn't be resolved from ESPN's league data at all — every pick
+     *  from then on comes through with no owner and is_mine=false. Used to
+     *  fail completely silently; now surfaced so a mismatch or an ESPN
+     *  league-fetch failure (mock drafts in particular don't reliably
+     *  expose team data this way) is visible instead of just showing up as
+     *  "wrong team" on the board with no explanation. */
+    team_resolution_error?: string | null;
   };
   applied: boolean;
 }
