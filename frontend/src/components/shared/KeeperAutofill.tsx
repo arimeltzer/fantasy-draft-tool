@@ -272,6 +272,33 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
             <p className="text-2xs text-emerald-600">Added {added} keeper{added === 1 ? "" : "s"}.</p>
           )}
 
+          {cands && historySeasons > 0 && (
+            <div className="rounded-md border border-line bg-sunken px-2.5 py-1.5 text-2xs">
+              <span className="text-muted">
+                Earlier drafts (calibration only) —{" "}
+              </span>
+              {(() => {
+                const hist = draftMeta?.history as Record<string, string> | undefined;
+                if (draftMeta?.history_error) {
+                  return <span className="text-rose-600">fetch failed: {String(draftMeta.history_error)}</span>;
+                }
+                if (!hist || Object.keys(hist).length === 0) {
+                  return <span className="text-amber-600">no history returned</span>;
+                }
+                const entries = Object.entries(hist).sort((a, b) => Number(b[0]) - Number(a[0]));
+                const ok = entries.filter(([, v]) => v.endsWith(":ok")).length;
+                return (
+                  <span title={entries.map(([y, v]) => `${y}: ${v}`).join("\n")}>
+                    <span className={ok === entries.length ? "text-emerald-600" : "text-amber-600"}>
+                      {ok} of {entries.length} seasons loaded
+                    </span>
+                    {" "}({entries.map(([y]) => y).join(", ")}) — hover for per-season detail
+                  </span>
+                );
+              })()}
+            </div>
+          )}
+
           {cands && (
             <div className="space-y-2">
               {/* where this data came from + whether waiver/FAAB claims arrived */}
