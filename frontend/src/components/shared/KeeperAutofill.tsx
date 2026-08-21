@@ -218,9 +218,9 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
           <label className="block text-2xs text-muted">
             Also read this many EARLIER drafts (auction prices only)
             <input
-              type="number" min={0} max={6}
+              type="number" min={0} max={15}
               value={historySeasons}
-              onChange={(e) => setHistorySeasons(Math.min(6, Math.max(0, Number(e.target.value) || 0)))}
+              onChange={(e) => setHistorySeasons(Math.min(15, Math.max(0, Number(e.target.value) || 0)))}
               className="mt-0.5 w-full rounded-md border border-line bg-sunken px-2 py-1 text-right font-mono text-sm text-ink focus:border-brand focus:outline-none"
             />
             <span className="mt-0.5 block text-faint">

@@ -679,7 +679,7 @@ async def espn_keeper_candidates(
     all_drafts = [(data.season, norm.draft_picks)]
     history_meta: dict = {}
     if data.history_seasons > 0:
-        want = [data.season - i for i in range(1, min(data.history_seasons, 6) + 1)]
+        want = [data.season - i for i in range(1, min(data.history_seasons, 15) + 1)]
         try:
             hist = await espn_provider.fetch_draft_history(
                 data.ext_id, want, espn_s2=data.espn_s2, swid=data.swid)
