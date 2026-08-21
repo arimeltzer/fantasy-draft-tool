@@ -476,6 +476,28 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     path and fixture-tested) and `liveBookmarklet.ts` (the hook that
     actually runs client-side for the live-ingest path) — they must be
     kept in sync since they parse the same wire format independently.
+  - **Live nomination pinning** (auction only, requested after the field-order
+    fix above): the player currently up for auction jumps to the top of
+    `AuctionRoom`'s board automatically, so you don't hunt for them mid-bid.
+    Tracked off `BID`, deliberately NOT `NOMINATION` — `NOMINATION`'s exact
+    wire shape was never verified against a real example the way `SOLD`'s
+    was, and `SOLD`'s field order turned out to be wrong once already (right
+    above), so this avoids trusting another unconfirmed shape. The
+    nominating team's own opening bid registers within a moment of the
+    nomination in ESPN's own auction UI, giving effectively the same timing.
+    `LiveDraftWatcher.current_nomination_id` / `set_current_nomination()`
+    track it (same lookup-flagging pattern as `on_event`); `state()`
+    suppresses a stale value once that lot's `SOLD` has actually landed
+    (`current_nomination_id` only advances on the NEXT bid, so between a
+    sale and the next nomination it would otherwise still point at whoever
+    just sold). Resolved to OUR internal player id in `sync_draft` the same
+    way a drafted pick is (via `match_player`), returned as a top-level
+    `current_nomination` field the frontend can use directly, separate from
+    the raw ESPN-side version still in `meta` for the debug view.
+    `AuctionRoom`'s `filtered` list moves that player to the front WITHOUT
+    overriding an active search/position filter — if they don't match what
+    you're currently looking at, they simply don't show, same as any other
+    player — plus a pulsing "Nominated" badge so it's clear why they moved.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

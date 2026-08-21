@@ -1180,6 +1180,11 @@ class LiveIngestEvent(BaseModel):
     my_team: Optional[str] = None
     start_overall: int = 1
     events: Optional[list[dict]] = None
+    # The player currently up for auction, tracked off BID (not NOMINATION
+    # — see LiveDraftWatcher.current_nomination_id's docstring for why).
+    # None if nobody's currently up (between lots, or a userscript that
+    # predates this feature and never sends it).
+    current_nomination_id: Optional[int] = None
     # Legacy single-event shape — back-compat only, see docstring above.
     nominating_team_id: Optional[int] = None
     player_id: Optional[int] = None
@@ -1220,7 +1225,7 @@ async def live_ingest(league_id: int, data: LiveIngestEvent, db: AsyncSession = 
     if data.events:
         watcher = await live_ws_registry.ingest_sold_events(
             league_id, data.ext_id, data.season, data.my_team, data.espn_s2, data.swid,
-            existing_count + 1, data.events,
+            existing_count + 1, data.events, current_nomination_id=data.current_nomination_id,
         )
     elif data.player_id is not None:
         watcher = await live_ws_registry.ingest_sold_event(
@@ -1348,6 +1353,18 @@ async def sync_draft(
     opponents = settings.get("opponents") or []
     team_id_by_name = {name: i for i, name in enumerate(opponents)}
 
+    # The player currently up for auction (see LiveDraftWatcher
+    # .current_nomination_id's docstring) — resolved to OUR internal player
+    # id the same way a drafted pick is, so the frontend can pin them to
+    # the top of the board without doing its own name matching.
+    current_nomination = None
+    cn = state.meta.get("current_nomination")
+    if cn and cn.get("name"):
+        cn_pid = match_player(index, NormPlayer(name=cn["name"], pos=cn.get("pos", ""), team=cn.get("team", "")))
+        if cn_pid is not None:
+            current_nomination = {"player_id": cn_pid, "name": cn["name"],
+                                  "pos": cn.get("pos", ""), "team": cn.get("team", "")}
+
     added, unmatched, skipped = [], [], 0
     for lp in state.picks:
         pid = match_player(index, NormPlayer(name=lp.name, pos=lp.pos, team=lp.team))
@@ -1404,6 +1421,13 @@ async def sync_draft(
         # Reported, never silently dropped — an unlogged pick would corrupt the
         # board's idea of who is still available.
         "unmatched": unmatched,
+        # The player currently up for auction, resolved to OUR internal
+        # player id — None if nobody's currently up, the provider doesn't
+        # support this (Yahoo/REST paths never set state.meta's version),
+        # or the name didn't match our pool. Separate from the raw
+        # ESPN-side version still visible in meta.current_nomination for
+        # the debug view — this is the one the board should actually use.
+        "current_nomination": current_nomination,
         "meta": state.meta,
         "applied": data.apply,
     }

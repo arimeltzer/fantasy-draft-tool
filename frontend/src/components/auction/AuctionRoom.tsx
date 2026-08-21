@@ -217,12 +217,29 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     }
   };
 
-  const filtered = useMemo(() => inflation.board.filter((p) => {
-    if (hideDrafted && draftedIds.has(p.id as number)) return false;
-    if (posFilter !== "ALL" && p.pos !== posFilter) return false;
-    if (query && !p.name.toLowerCase().includes(query.toLowerCase()) && !p.team.toLowerCase().includes(query.toLowerCase())) return false;
-    return true;
-  }), [inflation.board, hideDrafted, draftedIds, posFilter, query]);
+  // The player currently up for auction in the live ESPN draft room, if
+  // live sync is running — pinned to the top of the board below so you
+  // don't have to search for whoever just got nominated. Tracked off BID,
+  // not NOMINATION, on the backend (see LiveDraftWatcher
+  // .current_nomination_id's docstring for why); null the rest of the time.
+  const currentNominationId = live.lastResult?.current_nomination?.player_id ?? null;
+
+  const filtered = useMemo(() => {
+    const base = inflation.board.filter((p) => {
+      if (hideDrafted && draftedIds.has(p.id as number)) return false;
+      if (posFilter !== "ALL" && p.pos !== posFilter) return false;
+      if (query && !p.name.toLowerCase().includes(query.toLowerCase()) && !p.team.toLowerCase().includes(query.toLowerCase())) return false;
+      return true;
+    });
+    if (currentNominationId == null) return base;
+    // Move the nominated player to the front WITHOUT overriding an active
+    // search/position filter — if they don't match what you're currently
+    // looking at, they simply don't show, same as any other player.
+    const idx = base.findIndex((p) => p.id === currentNominationId);
+    if (idx <= 0) return base;
+    const nominated = base[idx];
+    return [nominated, ...base.slice(0, idx), ...base.slice(idx + 1)];
+  }, [inflation.board, hideDrafted, draftedIds, posFilter, query, currentNominationId]);
 
   // Nomination strategy + value targets (ported model).
   const fractionDone = picks.length / Math.max(1, settings.teams * rosterSize);
@@ -537,10 +554,12 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                   ? Math.round(board.findIndex((b) => b.id === p.id) + 1 - p.ecr)
                   : null;
 
+                const nominatedNow = p.id === currentNominationId;
+
                 return (
                   <div
                     key={p.id}
-                    className={`grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_64px_160px] gap-2 px-3 py-2 items-center text-sm ${sold ? "opacity-40" : "hover:bg-gray-100"}`}
+                    className={`grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_64px_160px] gap-2 px-3 py-2 items-center text-sm ${sold ? "opacity-40" : "hover:bg-gray-100"} ${nominatedNow ? "bg-amber-50 ring-1 ring-inset ring-amber-300" : ""}`}
                   >
                     <span className="flex items-center gap-1 text-xs font-mono">
                       <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
@@ -549,6 +568,11 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
+                        {nominatedNow && (
+                          <span className="flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-2xs font-medium text-amber-800" title="Currently up for auction in your live draft">
+                            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" /> Nominated
+                          </span>
+                        )}
                         {pickEntry?.mine && <Crown className="w-3 h-3 text-amber-400 shrink-0" />}
                         <span className="font-medium truncate">{p.name}</span>
                         <InjuryBadge injury={p.injury} />

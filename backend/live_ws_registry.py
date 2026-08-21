@@ -273,7 +273,8 @@ async def _get_or_create_ingest_watcher(league_id: int, ext_id: str, season: int
 
 async def ingest_sold_events(league_id: int, ext_id: str, season: int, my_team: str | None,
                              espn_s2: str | None, swid: str | None, start_overall: int,
-                             events: list[dict]) -> espn_draft_ws.LiveDraftWatcher:
+                             events: list[dict],
+                             current_nomination_id: int | None = None) -> espn_draft_ws.LiveDraftWatcher:
     """A batch of `SOLD` lines, pushed from the bookmarklet/userscript.
 
     **Why this is a batch, not one event per call — a real bug, not a
@@ -317,6 +318,10 @@ async def ingest_sold_events(league_id: int, ext_id: str, season: int, my_team: 
             })
             if flagged is not None:
                 new_pids.append(flagged)
+
+        nom_flagged = watcher.set_current_nomination(current_nomination_id)
+        if nom_flagged is not None:
+            new_pids.append(nom_flagged)
 
         if new_pids:
             try:

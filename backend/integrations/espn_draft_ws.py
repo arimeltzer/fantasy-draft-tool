@@ -293,6 +293,16 @@ class LiveDraftWatcher:
         # which hid the actual cause of "picks assigned to the wrong team /
         # not flagged as mine" for a real user until this field existed.
         self.team_resolution_error: str | None = None
+        # The player currently up for auction — tracked off BID, not
+        # NOMINATION. NOMINATION's exact wire format was never verified
+        # against a real example the way SOLD's was (and SOLD's field order
+        # turned out to be wrong once already — see CLAUDE.md), so this
+        # avoids trusting another unconfirmed shape. The nominating team's
+        # own opening bid registers within a moment of the nomination in
+        # ESPN's own auction UI, so tracking BID's player_id (same relative
+        # position as SOLD's independently-confirmed player_id field) gets
+        # effectively the same "who's up right now" signal without the risk.
+        self.current_nomination_id: int | None = None
 
     def on_event(self, msg: dict[str, Any]) -> int | None:
         """Feed one parsed message (from `parse_ws_line`) in. Returns the
@@ -321,6 +331,18 @@ class LiveDraftWatcher:
         self._pending.add(pid)
         return pid
 
+    def set_current_nomination(self, player_id: int | None) -> int | None:
+        """Records the player currently up for auction (see the field's own
+        docstring for how this is sourced). Returns the player id that now
+        needs a name lookup, same batching contract as `on_event`, if this
+        introduced one not already known/pending. Passing `None` clears it
+        (nothing currently up — e.g. between lots)."""
+        self.current_nomination_id = player_id
+        if player_id is None or player_id in self.pos_by_id or player_id in self._pending:
+            return None
+        self._pending.add(player_id)
+        return player_id
+
     def add_player_info(self, info: dict[int, dict]) -> None:
         """Merge a `fetch_player_info()` result in, once the caller has
         resolved whatever `on_event` flagged as unresolved."""
@@ -331,10 +353,24 @@ class LiveDraftWatcher:
         picks = order_picks(sold_events_to_picks(
             self.events, self.pos_by_id, self.teams_by_id, self.my_team_id, self.start_overall))
         fmt = "auction" if any(e.price for e in self.events) else "snake"
+
+        # Suppress a stale "currently up" once that lot has actually closed
+        # — `current_nomination_id` only advances on the NEXT bid, so
+        # between a SOLD and the next nomination it would otherwise still
+        # point at the player who just sold.
+        sold_ids = {e.player_id for e in self.events}
+        current_nomination = None
+        if self.current_nomination_id is not None and self.current_nomination_id not in sold_ids:
+            info = self.pos_by_id.get(self.current_nomination_id)
+            if info and info.get("name"):
+                current_nomination = {"player_id": self.current_nomination_id, "name": info["name"],
+                                      "pos": info.get("pos", ""), "team": info.get("team", "")}
+
         return LiveDraftState(picks=picks, fmt=fmt, meta={
             "drafted": len(self.events), "resolved": len(picks),
             "started": self.started, "connected": self.connected, "last_error": self.last_error,
             "team_resolution_error": self.team_resolution_error,
+            "current_nomination": current_nomination,
             # Diagnostic for a wrong-team-assignment report — lets a human
             # (or us, reading the raw response) cross-check "ESPN's room
             # said Team X won this player" against exactly what numeric id

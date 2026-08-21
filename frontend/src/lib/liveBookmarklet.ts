@@ -85,9 +85,13 @@ function bookmarkletBody(cfg: BookmarkletConfig): void {
   // this exists to close.
   const captured: Array<{ nominating_team_id: number; player_id: number;
                           winning_team_id: number; price: number }> = [];
+  // The player currently up for auction — see LiveDraftWatcher
+  // .current_nomination_id's docstring (backend) for why this is tracked
+  // off BID rather than NOMINATION.
+  let currentNominationId: number | null = null;
 
   function postBatch() {
-    if (captured.length === 0) return;
+    if (captured.length === 0 && currentNominationId === null) return;
     const c = JSON.parse(cfgJson);
     fetch(c.apiUrl + "/api/leagues/" + c.leagueId + "/live-ingest", {
       method: "POST",
@@ -96,7 +100,7 @@ function bookmarkletBody(cfg: BookmarkletConfig): void {
         token: c.token, ext_id: c.extId, season: c.season,
         espn_s2: c.espnS2 || null, swid: c.swid || null, my_team: c.myTeam || null,
         start_overall: c.startOverall,
-        events: captured,
+        events: captured, current_nomination_id: currentNominationId,
       }),
     }).catch(function () { /* best-effort — the NEXT send (next pick, or the
                                periodic timer below) resends this exact same
@@ -123,6 +127,19 @@ function bookmarkletBody(cfg: BookmarkletConfig): void {
       if (!isNaN(playerId) && !isNaN(winningTeamId)) {
         captured.push({ nominating_team_id: nominatingTeamId, player_id: playerId,
                         winning_team_id: winningTeamId, price: price });
+        postBatch();
+      }
+      return;
+    }
+    // BID <teamId> <playerId> <amount> <clockMs> [<clockMs2>] — the
+    // nominating team's own opening bid lands within a moment of the
+    // nomination in ESPN's own auction UI, so this is used as "who's up
+    // right now" (see currentNominationId's own comment for why NOMINATION
+    // itself isn't trusted for this).
+    if (parts[0] === "BID" && parts.length >= 4) {
+      const bidPlayerId = parseInt(parts[2], 10);
+      if (!isNaN(bidPlayerId) && bidPlayerId !== currentNominationId) {
+        currentNominationId = bidPlayerId;
         postBatch();
       }
     }

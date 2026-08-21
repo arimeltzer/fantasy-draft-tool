@@ -185,6 +185,12 @@ export interface LiveSyncResult {
     recent_events?: { player_id: number; nominating_team_id: number; winning_team_id: number;
                       price: number; name: string | null }[];
   };
+  /** The player currently up for auction, resolved to OUR internal player
+   *  id — tracked off BID, not NOMINATION (see the backend's
+   *  LiveDraftWatcher.current_nomination_id docstring for why). null when
+   *  nobody's currently up, the provider doesn't support this, or the name
+   *  didn't match the player pool. */
+  current_nomination: { player_id: number; name: string; pos: string; team: string } | null;
   applied: boolean;
 }
 
