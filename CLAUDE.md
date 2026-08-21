@@ -1161,3 +1161,23 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   design (see Integrations) — could be added for real if calibrated against a
   captured live payload cross-checked against the league's own scoring page,
   same evidence-driven approach that resolved the waiver-transactions endpoint.
+- **This is a DRAFT-DAY app — there is no in-season state anywhere in it.**
+  Worth knowing before scoping any Phase 4 (in-season) work: there is no
+  `current_week`, no FAAB budget field, no rest-of-season projection path,
+  and `DraftPick` rows are draft-day only — never updated for in-season adds
+  or drops. `projectPoints()` projects a FULL season from prior-season
+  totals; nothing re-projects from partial in-season data. Any waiver /
+  start-sit / trade feature is an infrastructure build first and a model
+  second, and should be estimated that way. See `docs/ROADMAP.md` 4.1.
+- **FAAB history is already parsed, and is the one Phase 4 precondition that
+  IS cleared** — `espn.all_waivers()` returns `playerId -> winning bid`,
+  merging the league ACTIVITY feed (`messageTypeId` 180, `from` = winning
+  bid) with the `transactions` array's `bidAmount`; Yahoo carries the same
+  via `faab_bid`. Both ship today (they feed the keeper price basis) and
+  `fetch_draft_history`'s `leagueHistory` fallback reaches many seasons of
+  it. That makes roadmap **4.1a** (league FAAB spend calibration, the direct
+  analogue of `auction-calibration.js` — same shrink / recency-decay /
+  per-category leave-one-season-out structure) the one part of 4.1 buildable
+  today. 4.1b (per-claim value) needs the in-season infrastructure above;
+  4.1c (ΔP(title) pricing, the roadmap's literal ask) is blocked on 2.3,
+  which is itself gated on an unrun feasibility probe.

@@ -2674,17 +2674,152 @@ The draft is one day; the season is seventeen weeks, and most championships are
 decided after the draft. Everything here reuses the Phase 2 objective.
 
 - **4.1 Waiver/FAAB valuation** — price a claim in ΔP(title), which is what
-  makes "how much of my budget for this player" answerable.
+  makes "how much of my budget for this player" answerable. **SCOPED, see
+  below; split three ways, only one part is buildable today.**
 - **4.2 Start/sit optimizer** — uses distributions, not means. Correct answers
   here differ from "start the higher projection" when you need variance.
+  **Note: 2.2's closure already forfeited this** — the RESTRUCTURE's adopted
+  consequence #3 moves the Phase 2 unit from player-weeks to team-weeks, and
+  says so explicitly: that "forfeits start/sit (4.2) and bench option value,
+  but NOT P(title)." 4.2 is therefore blocked on a route Phase 2 has already
+  abandoned, not merely un-started.
 - **4.3 Trade evaluator** — ΔP(title) for both sides; a fair trade can raise
   both, and knowing which trades do is a real edge.
 - **4.4 Playoff-aware construction** — as the season progresses the objective
   shifts from "make the playoffs" to "win them", and roster preferences shift
   with it.
 
-> **Prompt** — "Start roadmap Phase 4, step 4.1: FAAB valuation in terms of
-> championship probability."
+### 4.1 Waiver/FAAB valuation — SCOPED, split three ways
+
+**The step as written cannot be built, and the blocker is this file's own
+recorded state, not a new discovery.** "Price a claim in ΔP(title)" needs
+2.3, which is **NOT STARTED** and, per the RESTRUCTURE's adopted consequence
+#2, does not get built until a feasibility probe settles whether its
+calibration gate is measurable at acceptable cost at all. Under that sits
+2.2, **CLOSED**, both attempts rejected. Writing 4.1 against ΔP(title) today
+means either waiting on that chain or quietly inventing an uncalibrated
+title probability — the exact thing 2.3's own gate text calls "worse than
+none, because every downstream decision inherits its bias."
+
+So 4.1 splits the same way RESTRUCTURE split every Phase 3 step: a
+**mechanism** that is Phase-2-free, and an **objective** that is not. Doing
+that here turns up a genuine asymmetry — one part has its precondition
+already cleared by code that ships today, one part is an infrastructure
+project wearing a modeling project's clothes, and one is blocked.
+
+**Two precondition findings, verified by reading the code, not assumed:**
+
+1. **This league's own FAAB history is ALREADY parsed and pullable.**
+   `espn.all_waivers()` returns `playerId -> winning FAAB bid`, merging two
+   independently-discovered sources: the league ACTIVITY feed
+   (`kona_league_communication` topics, `messageTypeId` 180, where `from` is
+   the winning bid) and the `transactions` array's `bidAmount`. Yahoo's
+   adapter carries the same via `faab_bid`. Both are fixture-tested and in
+   production today — they feed the keeper price basis. Better still,
+   `fetch_draft_history`'s `leagueHistory` fallback already pulls *many*
+   seasons (cap raised to 15), so multi-season waiver history is reachable
+   through machinery that exists. **Precondition CLEARED** for a
+   history-calibrated model.
+2. **There is no in-season state in this application at all.** Verified by
+   search: no `current_week`, no rest-of-season projection path, no FAAB
+   budget field, and — the load-bearing one — `DraftPick` rows are
+   **draft-day only** and are never updated for adds or drops. `projectPoints`
+   projects a FULL season from prior-season totals; nothing anywhere
+   re-projects from partial in-season data. **Precondition FAILS** for
+   anything that needs to know what your roster is in week 9.
+
+**4.1a League FAAB spend calibration — the buildable part, PRE-REGISTRATION.**
+
+*What it is*: learn what THIS room actually pays for waiver adds, from its own
+history. Deliberately the direct analogue of `auction-calibration.js`, which
+solved the identical problem one phase earlier — a generic curve is wrong for
+a specific room, and the room's own history is the correction. That prior art
+is not a loose resemblance; it is the same shape of data (per-transaction
+prices, pooled across seasons), so it should reuse the same guards that were
+already argued for and tested there: shrink toward neutral by sample size,
+refuse below a minimum sample, renormalize to spend-neutral, weight older
+seasons by `RECENCY_DECAY ** age` so a departed set of managers cannot
+outvote the current one, and — critically — `assessStability`'s leave-one-
+season-out persistence test, **per category, not globally**, since a
+selftest already caught exactly the bug where a global pass hands confidence
+to a category that has not earned it.
+
+*What it must NOT do*: contaminate what a player is WORTH with what the room
+will PAY. `auction-calibration.js` enforces this by taking no calibration
+argument in `dollarValues` at all, with a selftest asserting it — the same
+separation applies here and for the same reason (collapsing the two destroys
+the bargain signal, which is the entire product).
+
+*Kill gate, pre-registered*: the same test `auction-calibration.js` already
+passes — leave-one-season-out, per category. Predicting each season's FAAB
+spend distribution from the OTHER seasons must beat a generic/flat baseline
+on held-out seasons, per category, or that category is shrunk to neutral
+rather than shipped. A room with one season of history yields stability
+`null` = UNKNOWN, not fine. **This gate is measurable today**, which is
+precisely why 4.1a is the part that is buildable.
+
+*What 4.1a does NOT answer*: whether a given claim is worth making. It prices
+the MARKET, not the player — the waiver equivalent of `marketPrice()`, not of
+`dollarValues()`. That is a real limitation and is the honest boundary of
+what today's data supports.
+
+**4.1b Rest-of-season marginal value — an INFRASTRUCTURE step, mis-scoped as
+a modeling one.**
+
+*The actual question*: what is this claim worth in points above the player he
+would displace in your lineup, over the remaining weeks? That is a marginal-
+starter calculation over a rest-of-season projection — conceptually
+straightforward and Phase-2-free.
+
+*Why it is not startable*: it needs, at minimum, (a) the current week, (b)
+your CURRENT roster rather than your drafted one, and (c) a rest-of-season
+projection. Finding #2 above says none of the three exist. Recognizing this
+as an infrastructure build is the point of writing it down: it is several
+schema and pipeline changes (in-season roster sync, a weekly refresh, a
+partial-season projection path) with a modest model on top, and estimating it
+as a modeling step would badly understate it.
+
+*Kill gate*: deliberately NOT set — the 3.6b precedent. A number invented
+before the infrastructure exists is a guess wearing a kill gate's clothes.
+
+*A specific, already-measured hazard to carry into any future 4.1b work.*
+Waiver claims are drawn overwhelmingly from the DEEP end of the player pool,
+which is exactly the population where this project's own measurement found
+**49.4% of player-weeks score exactly 0** (#32203391598). The RESTRUCTURE
+already flags the caveat that this figure "pools all ADP depths and deep
+players dominate the count" — meaning for the waiver population specifically
+the zero-inflation is likely WORSE than 49.4%, not better. A point estimate
+for a streaming DST or an unstarted handcuff inherits that directly, and a
+mixture (point-mass-at-zero plus a continuous part) is what 2.2 already
+proved one pooled distribution cannot represent. The rank-conditioned
+breakdown RESTRUCTURE says is needed before that 49.4% "means what it appears
+to mean" is therefore not optional background reading for 4.1b — it is a
+prerequisite diagnostic, and running it would also settle an open question
+Phase 2 left behind.
+
+**4.1c ΔP(title) pricing — BLOCKED, and correctly so.**
+
+The roadmap's literal ask. Blocked on 2.3, which is blocked on its own
+feasibility probe. Kept in this document as the target the objective seam
+reaches later — per RESTRUCTURE's adopted consequence #4, "everything
+optimizes ΔP(title)" is no longer a prerequisite, it is a destination. When
+4.1a and/or 4.1b exist, they should take the objective as an injected
+`valueOf(...)`, exactly as Phase 3's mechanisms do, so 4.1c is a swap and not
+a rewrite.
+
+**Status: 4.1 SCOPED, NOT STARTED. 4.1a is buildable now** (precondition
+cleared, gate measurable, strong prior art to reuse). **4.1b is an
+infrastructure project** that should be planned as one. **4.1c is blocked.**
+
+> **Prompt** — "Build roadmap 4.1a only: league FAAB spend calibration from
+> the league's own waiver history, reusing `auction-calibration.js`'s shrink /
+> recency-decay / per-category leave-one-season-out structure. Do not price
+> individual claims (that is 4.1b) and do not touch ΔP(title) (that is 4.1c)."
+
+> **Prompt (alternative, if in-season features are the real goal)** — "Scope
+> the in-season infrastructure 4.1b needs — current week, live roster sync
+> beyond draft day, rest-of-season projections — as its own step with its own
+> gates, before any waiver model is written on top of it."
 
 ---
 
@@ -2696,7 +2831,7 @@ decided after the draft. Everything here reuses the Phase 2 objective.
 | 1 | Weeks | Real, but position-specific | Moderate — 1.1/1.2 done, TE only; 1.3 done, team_change RB/WR only (qb_change/coach_change/pace failed); 1.4 done, not shipped (draft capital ≈ what ADP already knows for rookies) |
 | 2 | Weeks | Largest conceptual | **Highest** — 2.1 done (RB/WR/TE calibrated, QB excluded); 2.2 CLOSED, both attempts rejected; 2.3 not started, pending a feasibility probe |
 | 3 | Weeks | Large, format-specific | Moderate — **no longer depends on Phase 2**; mechanisms build against the current objective behind a seam (see RESTRUCTURE) |
-| 4 | Ongoing | Large over a season | Low technically, wide in scope |
+| 4 | Ongoing | Large over a season | **Re-rated — "low technically" was wrong.** 4.1 scoped: 4.1a buildable now (FAAB history already parsed, gate measurable); 4.1b is an INFRASTRUCTURE build (no in-season state exists anywhere in the app); 4.1c blocked on 2.3; 4.2 blocked on a route 2.2's closure abandoned |
 
 **Do Phase 0 first regardless.** All three steps are done. It was cheap: 0.1
 shipped a real gain (+0.02 to +0.04 Spearman merged, per position), 0.2
