@@ -295,4 +295,46 @@ describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
     expect(cells.some((c) => /^\$\d+~$/.test(c.textContent ?? ""))).toBe(true);
     expect(within(r).queryByText("pass")).toBeNull();
   });
+
+  it("caps $Max at $1 once a position hits maxUseful, but keeps real RB/WR value (roadmap 3.6)", () => {
+    // A user's own stated goal, not an invented scenario: "little value to
+    // carrying more than 2 QB or TE... you want to focus on maximizing
+    // value of WR and RB." maxUseful already encodes this (shipped for the
+    // snake recommender) — this proves it actually reaches the auction
+    // ceiling once starters are full, not just that the engine function
+    // exists somewhere.
+    //
+    // Fill all 7 starting slots (QB1/RB2/WR2/TE1/FLEX1 per SETTINGS.roster)
+    // PLUS a second QB as pure bench depth — that second QB is what pushes
+    // have.QB to 2, maxUseful's cap for a 1-starter, non-superflex league.
+    useDraftStore.setState({
+      leagueId: 1,
+      syncing: false,
+      picks: [1, 5, 2, 6, 10, 3, 7, 4].map((id, i) => ({
+        pickId: i + 1, playerId: id, overallPick: i + 1, mine: true,
+        teamId: null, price: 10, slot: null,
+      })),
+    });
+    renderInApp(deepRoom());
+
+    // P9 is the next undrafted QB (id 9, QB position via i%4) — capped.
+    // "$1" not "pass": still biddable if truly nothing else is left, but
+    // no longer competing with real RB/WR value — belowMarket's own "~"
+    // marker is expected here too (a $1 ceiling is definitionally below a
+    // real QB's market price).
+    const qbRow = row("P9");
+    const qbCells = within(qbRow).getAllByTitle(
+      /allocation ceiling|the most you can pay|doesn't improve your best reachable roster/i,
+    );
+    expect(qbCells.some((c) => /^\$1[*~]?$/.test(c.textContent ?? "") || /^· max \$1[*~]?$/.test(c.textContent ?? ""))).toBe(true);
+
+    // P14 is the next undrafted RB (id 14) — RB is never capped by
+    // maxUseful, so it should show real market-based value, not $1.
+    const rbRow = row("P14");
+    const rbCells = within(rbRow).getAllByTitle(
+      /allocation ceiling|the most you can pay|doesn't improve your best reachable roster/i,
+    );
+    expect(rbCells.some((c) => /^\$1[*~]?$/.test(c.textContent ?? "") || /^· max \$1[*~]?$/.test(c.textContent ?? ""))).toBe(false);
+    expect(rbCells.some((c) => c.textContent !== "pass" && c.textContent !== "· pass")).toBe(true);
+  });
 });

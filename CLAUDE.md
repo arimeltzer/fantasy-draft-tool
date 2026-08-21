@@ -1024,6 +1024,20 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   precondition check first (does nflverse distinguish started vs. inactive at
   the player level), same discipline `injury_probe.py` established for 0.3.
   See `docs/ROADMAP.md` 3.6 for the full pre-registration.
+- **3.6c shipped separately, ahead of 3.6a/3.6b — a policy port, not a new
+  model.** The user's own stated roster-construction rule ("once starters are
+  filled, one backup per position including QB, then maximize WR/RB value;
+  little value past 2 QB/TE or 1 K/DST") turned out to already be validated,
+  shippable logic: it's exactly what `snake-engine.js maxUseful()` caps for
+  the SNAKE recommender (QB/TE `starters+1`, K/DST `starters`, RB/WR
+  bench-bounded). `AuctionRoom.tsx ceilingFor` now reuses it directly — once
+  starters are full AND a position in `{QB,TE,K,DST}` is already at its
+  `maxUseful` depth, `allocationCeiling` floors to `1` instead of `market`;
+  RB/WR are excluded from the check and keep real market-based bench value,
+  matching the "little value past N of these, but always value RB/WR depth"
+  asymmetry the user described. No new kill gate needed — reusing an
+  already-validated cap in a second consumer, not a new statistical claim.
+  See `docs/ROADMAP.md` 3.6c.
 
 ## Gotchas
 

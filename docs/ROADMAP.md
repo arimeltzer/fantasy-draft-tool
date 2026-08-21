@@ -2579,9 +2579,44 @@ this file's discipline exists to prevent. Set once the precondition confirms
 real data exists, and a first pass at the measurement shows its natural scale
 (how many points bench insurance is typically worth, by position).
 
-**Status: SCOPED, NOT STARTED.** 3.6a is buildable now — no precondition risk,
-only a measurement-harness question to resolve. 3.6b is real but should not be
-rushed into a kill gate with invented numbers; its precondition comes first.
+**3.6c Roster-slot-priority policy — DONE, shipped. A user's own explicit
+goal statement redirected this whole step, and it turned out not to need
+3.6a/3.6b's caution at all.** Mid-scoping, the user stated the actual policy
+they wanted directly: "once the starting positions are filled... you need at
+least one backup at each position (including QB) and then you want to focus
+on maximizing value of WR/RB. There is little value to carrying more than 2
+QB or TE or more than one D or K." That is not an insurance-value question —
+it is a roster-slot-ALLOCATION-PRIORITY question, and this codebase already
+had validated machinery for almost exactly it: `maxUseful(pos, roster,
+superflex)`, shipped for the SNAKE recommender off the same real-draft bug
+shape ("Roster discipline in the snake recommender" above) — QB `starters+1`
+(`+2` superflex), TE `starters+1`, K/DST `starters` only, RB/WR uncapped.
+That maps onto the user's stated policy almost verbatim.
+
+Ported into the AUCTION ceiling (`AuctionRoom.tsx ceilingFor`): once starters
+are full, a position in `{QB, TE, K, DST}` that has already reached
+`maxUseful` gets its allocation ceiling floored to $1 (still biddable if truly
+nothing else is left, never "pass") instead of the plain `market` value the
+3.3/3.4 fix above shipped; RB/WR are excluded from the check entirely (their
+own `maxUseful` is bench-bounded, i.e. effectively uncapped, matching "focus
+on maximizing value of WR and RB"). No new kill gate needed — this is not a
+new statistical claim being tested, it's reusing an ALREADY-validated policy
+(proven via the real mock draft that surfaced the snake-side bug in the first
+place) in a second consumer. `AuctionRoom.test.tsx` pins both directions on a
+fixture with starters filled and a 2nd bench QB already rostered: a 3rd QB
+shows `$1~`, a same-position-tier RB still shows its real market-based number.
+
+This also reframes the OPEN half of this step: 3.6a/3.6b's bye-coverage and
+injury-replacement credit are still real, still un-started, but they were
+never actually blocking the user's stated goal — the depth CAP (stop
+over-valuing a 3rd QB/TE) was the load-bearing piece, and it shipped without
+needing either.
+
+**Status: 3.6c SHIPPED. 3.6a/3.6b SCOPED, NOT STARTED** — real follow-up work,
+lower priority now that the policy that actually motivated this step is live.
+3.6a is buildable with no precondition risk (a measurement-harness question
+to resolve first); 3.6b needs its precondition checked before any kill-gate
+number is set.
 
 > **Prompt** — "Check whether draft-sim.mjs's auction simulator can score
 > bye-week-specific lineup completeness (3.6a), and separately run

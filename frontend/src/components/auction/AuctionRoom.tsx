@@ -11,6 +11,7 @@ import {
   calibrateAuction, picksFromKeeperImport, noCalibration, describeCalibration,
 } from "@/engine/auction-calibration.js";
 import { bidCeiling, remainingStartingSlots } from "@/engine/budget-path.js";
+import { maxUseful } from "@/engine/snake-engine.js";
 import {
   priceCeilingFor, bindingCeiling, opponentCountsFromPicks,
 } from "@/engine/opponent-capacity.js";
@@ -182,6 +183,21 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   const myOpenSpots = rosterSize - minePicks.length;
   const myMax = maxBid(myBudgetLeft, Math.max(1, myOpenSpots));
 
+  // Roster-slot-priority policy for the bench phase (roadmap 3.6, "goal to
+  // build around" per a user's own explicit statement — not the bye/injury
+  // insurance framing 3.6 first scoped toward). FLEX + BENCH are
+  // interchangeable for RB/WR/TE; once starters are filled you want ONE
+  // backup at every position (QB included), essentially no value past that
+  // at QB/TE/K/DST, and unbounded value stacking RB/WR. `maxUseful` already
+  // encodes exactly this — shipped and validated for the SNAKE recommender
+  // (same real-draft bug it was built to stop: a third QB outscoring
+  // startable skill players) — reused here rather than re-derived.
+  const haveByPos = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const p of minePlayers) m[p.pos] = (m[p.pos] || 0) + 1;
+    return m;
+  }, [minePlayers]);
+
   const maxVbd = board.length ? Math.max(1, board[0].vbd) : 1;
 
   const buy = useCallback((p: BoardPlayer, mine: boolean, teamId?: number) => {
@@ -305,12 +321,21 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     // by room capacity below, same as ever), a $20 player still on the
     // board post-starters shows as the real stash he'd be, and the two are
     // finally distinguishable again.
+    // Once starters are full, a bench candidate's ceiling is his market
+    // value UNLESS this position has already reached "useful" depth
+    // (`maxUseful` — one backup at QB/TE, none needed at K/DST, RB/WR
+    // effectively uncapped) — see the roster-slot-priority note above. A
+    // position already at its cap gets floored to $1: still biddable if
+    // truly nothing else is available, but no longer competing with real
+    // RB/WR value for your remaining budget.
+    const atCap = ["QB", "TE", "K", "DST"].includes(p.pos)
+      && (haveByPos[p.pos] || 0) >= maxUseful(p.pos, settings.roster as unknown as Record<string, number>, !!settings.superflex);
     const allocationCeiling = openStartSlots.length
       ? bidCeiling({
           player: p, slots: openStartSlots, budget: dpBudget,
           pool: availDollar, valueOf: valueOfPlayer, priceOf: priceOfPlayer,
         })
-      : market;
+      : atCap ? 1 : market;
     // roadmap 3.4 — and the room's ability to pay. Position-aware (3.4a):
     // only opponents who still need THIS position count, so a rich team
     // stacked at running back stops holding up every back's ceiling.
