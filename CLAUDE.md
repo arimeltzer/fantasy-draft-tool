@@ -1010,6 +1010,20 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   flagged as real follow-up work, not shipped as a guess. The user offered
   multi-year draft data for their league, useful for this AND for
   `auction-calibration.js`'s existing spend-share model.
+- **Scoped as roadmap 3.6** (bye coverage + injury-replacement credit, two
+  separate kill gates). Checked first: whether this could build on Phase 2's
+  outcome distributions, the textbook-correct foundation for insurance value —
+  it can't. 2.2's WEEKLY distributions (the actual prerequisite) are CLOSED,
+  both the base fit and the player-season form-factor follow-up REJECTED
+  (weekly draws understated season variance 3-4x; the form factor explained
+  under 12% of the missing variance at every position — the gap is
+  game-script/matchup-level correlation, not something a form factor patches).
+  3.6a (bye coverage) reuses `byeClash` directly, no precondition risk. 3.6b
+  (injury-replacement) sidesteps the closed distributions entirely by using a
+  DIRECT historical accounting instead of a predictive one — needs its own
+  precondition check first (does nflverse distinguish started vs. inactive at
+  the player level), same discipline `injury_probe.py` established for 0.3.
+  See `docs/ROADMAP.md` 3.6 for the full pre-registration.
 
 ## Gotchas
 

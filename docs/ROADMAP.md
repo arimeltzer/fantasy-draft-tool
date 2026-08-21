@@ -2490,6 +2490,104 @@ box, a preview-then-apply flow, and a clear button — "updatable to reflect
 changing conditions" means removing a stale paste has to be as easy as
 adding one.
 
+### 3.6 Auction: bench-slot value beyond market price — bye coverage + injury-replacement credit
+
+**Motivation, from a real user observation, not a roadmap-invented itch.** After
+the 3.3/3.4 ceiling fix (`allocationCeiling = market` once starters fill — see
+CLAUDE.md's "`$Max` once starters are filled"), a user flagged directly: "bench
+slots are important too — they will be starters in bye weeks and replace
+injured players." Independently confirmed in the same conversation: starter-
+phase recommendations were good all draft; the gap is specifically bench-filling.
+
+**Scope is deliberately two SEPARATE, independently-testable credits, not one
+model** — they have different risk profiles and should not share a kill gate.
+
+1. **Bye coverage** — deterministic, known in August, reuses ALREADY-SHIPPED,
+   ALREADY-VALIDATED machinery (`bye-weeks.js byeClash`, currently a COLLISION
+   PENALTY in the snake recommender only). Low risk: turning an existing
+   penalty into a matching credit for a second consumer.
+2. **Injury-replacement** — genuinely probabilistic, and nothing in this
+   codebase currently prices it. The harder half.
+
+**Why this does NOT reuse Phase 2's outcome distributions, stated explicitly
+rather than left implicit.** The textbook-correct way to price "how much does
+bench depth reduce my downside" is exactly what Phase 2 exists for — but 2.1's
+season distributions are wired into nothing (QB fails its own gate), and 2.2's
+WEEKLY distributions — the actual prerequisite a per-week insurance value
+needs — are **CLOSED**: both the base fit and the player-season form-factor
+follow-up were REJECTED. Weekly draws understated season variance by 3-4x, and
+the fix explained under 12% of the missing variance at every position — the
+correlation gap is mostly game-script/matchup-level, not season-level, so no
+form factor built on that construction was ever going to close it. Building
+bench-insurance value on top of that closed door would either wait indefinitely
+or quietly reinvent the same rejected model. This step is scoped to not need it.
+
+**3.6a Bye coverage credit — the low-risk half, PRE-REGISTRATION.**
+
+*What changes*: once starters are full (the `market`-ceiling regime above), a
+bench candidate whose bye week is NOT already covered by another rostered
+player at that position gets a ceiling bump over plain `market`; a candidate
+who'd be the Nth body stacked on an already-covered bye does not. This is
+`byeClash`'s existing collision arithmetic read in the OPPOSITE direction — a
+position with zero coverage for a given week is a real gap `byeReport` already
+surfaces; filling it has value in the SAME units `byeClash`'s `mult` already
+uses elsewhere on the snake side.
+
+*Precondition*: none needed. `byeByTeam`/`byeClash`/`byeReport` are shipped,
+tested (32 assertions, `bye-weeks.selftest.mjs`), fed by real schedule data
+with no gaps. This wires a validated signal into a second consumer — it is not
+new modeling.
+
+*Kill gate*: not fully set yet — one design decision has to resolve first, not
+guessed at. Unlike 0.1-1.3's "beats ADP on rank correlation," bye-coverage
+value has no obvious existing backtest population. The natural harness is 3.5's
+auction simulator (`draft-sim.mjs`'s auction side), scored on realized
+BYE-WEEK lineup completeness specifically — not season points overall, which
+would dilute a signal that only pays off in specific weeks. Whether 3.5's
+simulator can even score that granularity needs checking before a number goes
+in this gate; if it can't yet, that's the actual next step, not the credit
+itself.
+
+**3.6b Injury-replacement credit — the hard half, precondition not yet checked.**
+
+*The real question, stated precisely*: across many realized rosters, how much
+value did a team's bench ACTUALLY salvage via spot starts forced by a starter's
+injury/inactive week, relative to that bench player's draft-time price? A
+DIRECT empirical question — "what happened," not "what does a fitted
+distribution imply" — which is exactly how it sidesteps 2.2's closed weekly
+machinery: it needs a historical accounting, not a predictive distribution.
+
+*Precondition, to check FIRST — same discipline `injury_probe.py` established
+for 0.3, and genuinely unanswered, not assumed*: does nflverse's weekly data
+reliably distinguish "started" from "inactive/did not play" at the PLAYER
+level (not just team box scores), for enough seasons to build a real sample?
+`injury_probe.py` verified the INJURIES endpoint carries real dated status — a
+different, already-answered question from "did player X's own team start him
+or a bench replacement in week W."
+
+*If the precondition holds*, the measurement: for each rostered-but-bench
+player-week (drafted, not a starter per ADP/positional depth at draft time),
+was the starter ahead of him inactive that week, and if so what did the bench
+player score relative to replacement level? Aggregated by position, this
+yields an empirical bench-insurance value in points — the same unit
+`valueOf`/VBD already uses — without any predictive distribution, closed or
+otherwise.
+
+*Kill gate*: deliberately not set. A number invented before the precondition
+is checked is a guess wearing a kill gate's clothes, the exact failure mode
+this file's discipline exists to prevent. Set once the precondition confirms
+real data exists, and a first pass at the measurement shows its natural scale
+(how many points bench insurance is typically worth, by position).
+
+**Status: SCOPED, NOT STARTED.** 3.6a is buildable now — no precondition risk,
+only a measurement-harness question to resolve. 3.6b is real but should not be
+rushed into a kill gate with invented numbers; its precondition comes first.
+
+> **Prompt** — "Check whether draft-sim.mjs's auction simulator can score
+> bye-week-specific lineup completeness (3.6a), and separately run
+> injury_probe-style verification of nflverse's player-level started/inactive
+> data before touching 3.6b at all."
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.
