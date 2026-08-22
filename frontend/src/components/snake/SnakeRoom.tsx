@@ -46,6 +46,9 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
 
   const [query, setQuery] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
+  // Rookies-only view — see AuctionRoom for the reasoning; same control, same
+  // late-draft use case (upside over an equally-valued veteran).
+  const [rookiesOnly, setRookiesOnly] = useState(false);
   const [hideTaken, setHideTaken] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
   const [showKeepers, setShowKeepers] = useState(false);
@@ -233,9 +236,16 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   const filtered = useMemo(() => board.filter((p) => {
     if (hideTaken && draftedIds.has(p.id as number)) return false;
     if (posFilter !== "ALL" && p.pos !== posFilter) return false;
+    if (rookiesOnly && !p.rookie) return false;
     if (query && !p.name.toLowerCase().includes(query.toLowerCase()) && !p.team.toLowerCase().includes(query.toLowerCase())) return false;
     return true;
-  }), [board, hideTaken, draftedIds, posFilter, query]);
+  }), [board, hideTaken, draftedIds, posFilter, rookiesOnly, query]);
+
+  /** Rookies still undrafted — the count shown on the toggle. */
+  const rookieCount = useMemo(
+    () => board.filter((p) => p.rookie && !draftedIds.has(p.id as number)).length,
+    [board, draftedIds],
+  );
 
   // Per-row lookups, built once per change instead of scanned per row. The
   // previous `picks.find()` + `board.findIndex()` inside the row map were both
@@ -425,6 +435,8 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
             posFilter={posFilter} onPos={setPosFilter}
             hideLabel="hide taken" hideChecked={hideTaken} onHide={setHideTaken}
             accentColor="accent-emerald-500"
+            rookiesOnly={rookiesOnly} onRookiesOnly={setRookiesOnly}
+            rookieCount={rookieCount}
           />
 
           <div className="rounded-lg border border-gray-200 overflow-hidden">

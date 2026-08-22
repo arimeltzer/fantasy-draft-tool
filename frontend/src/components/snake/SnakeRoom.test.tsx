@@ -223,3 +223,23 @@ describe("SnakeRoom bye-collision flag (real-time, unpriced)", () => {
     expect(within(bijanRow).queryByLabelText(/bye clash/i)).toBeNull();
   });
 });
+
+describe("SnakeRoom rookies-only filter", () => {
+  const ROOKIE_BOARD = [...BOARD, player({
+    id: 6, name: "Rookie Runner", pos: "RB", team: "CAR", vbd: 20, ecr: 60, adp: 60, rookie: true,
+  })];
+  const rookieRoom = () => (
+    <SnakeRoom league={LEAGUE} settings={SETTINGS} board={ROOKIE_BOARD} leagueId={1} />
+  );
+
+  it("narrows to rookies only, and back, on click", () => {
+    renderInApp(rookieRoom());
+    fireEvent.click(screen.getByRole("button", { name: /rookies/i }));
+
+    expect(within(list()).queryByText("Rookie Runner")).toBeTruthy();
+    expect(within(list()).queryByText("Bijan Robinson")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /rookies/i }));
+    expect(within(list()).queryByText("Bijan Robinson")).toBeTruthy();
+  });
+});

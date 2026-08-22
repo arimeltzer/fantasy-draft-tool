@@ -55,6 +55,10 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
 
   const [query, setQuery] = useState("");
   const [posFilter, setPosFilter] = useState("ALL");
+  // Rookies-only view. A late-draft ask: an unproven rookie's upside can beat
+  // an equally-priced veteran's known ceiling, and they were previously only
+  // findable by scrolling or knowing the name.
+  const [rookiesOnly, setRookiesOnly] = useState(false);
   const [hideDrafted, setHideDrafted] = useState(true);
   const [prices, setPrices] = useState<Record<number, number>>({});
   const [showSettings, setShowSettings] = useState(false);
@@ -274,6 +278,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     const base = inflation.board.filter((p) => {
       if (hideDrafted && draftedIds.has(p.id as number)) return false;
       if (posFilter !== "ALL" && p.pos !== posFilter) return false;
+      if (rookiesOnly && !p.rookie) return false;
       if (query && !p.name.toLowerCase().includes(query.toLowerCase()) && !p.team.toLowerCase().includes(query.toLowerCase())) return false;
       return true;
     });
@@ -285,7 +290,13 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     if (idx <= 0) return base;
     const nominated = base[idx];
     return [nominated, ...base.slice(0, idx), ...base.slice(idx + 1)];
-  }, [inflation.board, hideDrafted, draftedIds, posFilter, query, currentNominationId]);
+  }, [inflation.board, hideDrafted, draftedIds, posFilter, rookiesOnly, query, currentNominationId]);
+
+  /** Rookies still available — the count shown on the toggle. */
+  const rookieCount = useMemo(
+    () => inflation.board.filter((p) => p.rookie && !draftedIds.has(p.id as number)).length,
+    [inflation.board, draftedIds],
+  );
 
   // Nomination strategy + value targets (ported model).
   const fractionDone = picks.length / Math.max(1, settings.teams * rosterSize);
@@ -602,6 +613,8 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
             posFilter={posFilter} onPos={setPosFilter}
             hideLabel="hide sold" hideChecked={hideDrafted} onHide={setHideDrafted}
             accentColor="accent-amber-500"
+            rookiesOnly={rookiesOnly} onRookiesOnly={setRookiesOnly}
+            rookieCount={rookieCount}
           />
 
           <div className="rounded-lg border border-gray-200 overflow-hidden">

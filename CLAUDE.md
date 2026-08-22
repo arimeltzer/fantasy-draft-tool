@@ -924,6 +924,26 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   the repo as a documented negative result, same treatment every other
   killed idea in this file gets. See `docs/ROADMAP.md` 1.4 for the full table.
 
+## Rookies-only board filter (shipped, both rooms) — NOT the same idea as 1.4
+
+- **Different question from the one above.** 1.4 asked "can we PROJECT
+  rookies better"; this is "can the user FIND rookies on the board" — a
+  user's own observation that "especially near the end of the draft it's
+  worth drafting a rookie with upside over an equal veteran." No new
+  modeling: `BoardPlayer.rookie` already exists on every row (set by
+  `projectPoints()`'s rookie branch) and this is a pure filter over it.
+- `BoardControls` gains a `rookies` toggle (both rooms already share this
+  component) that composes with — does not override — search and the
+  position filter, same as `hideDrafted`/`hideTaken` already do. Shows a
+  live count of rookies still undrafted, so the button also answers "is
+  there anyone left to find" before it's clicked.
+- Explicitly NOT a ranking model or a separate "top rookies" list — the
+  board's existing sort (VBD/value) already ranks rookies against
+  everyone else; this only narrows WHICH rows show, using the exact
+  projection the rest of the board already trusts (the ADP/ECR curve
+  1.4 tried and failed to beat). A tooltip says so, so the numbers
+  aren't mistaken for a stats-based measurement they can't be.
+
 ## Outcome distributions (built + validated, roadmap 2.1 — NOT wired in)
 
 - `data-pipeline/outcome_distribution.py`. A player's predictive distribution

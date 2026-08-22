@@ -401,6 +401,45 @@ describe("AuctionRoom never bids above my own remaining money", () => {
   });
 });
 
+describe("AuctionRoom rookies-only filter", () => {
+  // "Sometimes it's worth drafting a rookie with upside over an equal
+  // veteran" — a toggle to find them without scrolling or knowing names.
+  const ROOKIE_BOARD = [...BOARD, player({
+    id: 6, name: "Rookie Runner", pos: "RB", team: "CAR", vbd: 20, ecr: 60, adp: 60, rookie: true,
+  })];
+  const rookieRoom = () => (
+    <AuctionRoom league={AUCTION_LEAGUE} settings={SETTINGS} board={ROOKIE_BOARD} leagueId={1} />
+  );
+
+  it("shows every player until the toggle is clicked", () => {
+    renderInApp(rookieRoom());
+    expect(within(list()).queryByText("Rookie Runner")).toBeTruthy();
+    expect(within(list()).queryByText("Bijan Robinson")).toBeTruthy();
+  });
+
+  it("narrows to rookies only, and back, on click", () => {
+    renderInApp(rookieRoom());
+    fireEvent.click(screen.getByRole("button", { name: /rookies/i }));
+
+    expect(within(list()).queryByText("Rookie Runner")).toBeTruthy();
+    expect(within(list()).queryByText("Bijan Robinson")).toBeNull();
+    expect(within(list()).queryByText("Ja'Marr Chase")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /rookies/i }));
+    expect(within(list()).queryByText("Bijan Robinson")).toBeTruthy();
+  });
+
+  it("composes with the position filter rather than overriding it", () => {
+    renderInApp(rookieRoom());
+    fireEvent.click(screen.getByRole("button", { name: /rookies/i }));
+    fireEvent.click(screen.getByRole("button", { name: "WR" }));
+    // The one rookie on the board is an RB, not a WR — both filters active
+    // at once should show nobody, not fall back to just one of them.
+    expect(within(list()).queryByText("Rookie Runner")).toBeNull();
+    expect(screen.getByText(/no players match/i)).toBeTruthy();
+  });
+});
+
 describe("AuctionRoom opponent-count guard", () => {
   // Regression, hit in practice: "it lists me as 'You' but still shows my team
   // name as having drafted no players (15 total teams listed in a 14 team
