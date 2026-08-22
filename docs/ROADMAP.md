@@ -2896,63 +2896,142 @@ from a flat $1 to something that reflects what a WORTHWHILE bench slot
 actually costs.
 
 **Scoped as a smarter SCALAR reserve, deliberately NOT a DP extension.**
-Two shapes were on the table; the second is rejected here, not silently
-preferred:
-  - (a) A per-slot reserve that distinguishes MEANINGFUL bench slots (a
-    first backup at QB/RB/WR — up to 3 of them, reusing `maxUseful`'s own
-    cap to know which slots still lack one) from FILLER slots (K/DST,
-    2nd+ QB/TE, deep RB/WR past typical rotation) — real expected market
-    price for the former, $1 for the latter. Reuses `firstBackupBoost`'s own
-    "which slot is the meaningful one" logic (3.6e) rather than inventing a
-    second copy of it.
-  - (b) Literally adding bench slots as DP dimensions — the exact expansion
-    `budget-path.js`'s header already declined for cost reasons. Revisiting
-    that decision isn't ruled out forever, but the state-space cost it was
-    declined for hasn't changed, and (a) captures the same differentiated-
-    value insight at a fraction of the computational cost. Start with (a).
+Adding bench slots as DP dimensions is the exact expansion `budget-path.js`'s
+header already declined for state-space cost, and that cost hasn't changed —
+rejected again here rather than silently reconsidered. A per-slot reserve
+that distinguishes MEANINGFUL bench slots (a first backup at QB/RB/WR — up
+to 3 of them, reusing `maxUseful`'s own cap to know which slots still lack
+one) from FILLER slots (K/DST, 2nd+ QB/TE) captures the same differentiated-
+value insight at a fraction of the cost. That much is unchanged from the
+first pass at this scoping.
 
-**Precondition: none needed for the CORE mechanic.** `maxUseful` and
-`firstBackupBoost` are shipped and validated; reusing them to size a reserve
-is the same category of reuse 3.6c/3.6e already are, not a new statistical
-claim.
+**What DID change: what price anchors a "meaningful" slot's reserve — caught
+by a user before any code was written, not after a bad result.** The first
+pass anchored it to `marketPrice()`'s CURRENT, live number. That has a real,
+predictable bias, and the user's own framing states it precisely: "most
+bidders overspend early... the price for a decent bench player falls
+quickly. I wouldn't want to hold back on a starter in early rounds based on
+bench values that will tank." Live market price early in a draft has no
+information yet about whether THIS room's people are early-round
+overspenders — `applyInflation`'s own factor is mathematically neutral at
+draft start, by construction, precisely because no evidence has accumulated
+yet. Anchoring the reserve to it would systematically OVER-protect budget
+early (against a bench cost that's going to evaporate on its own) and
+underbid on starters that deserved the aggression. **Rejected, recorded so
+it isn't silently reproposed**: reserve = live `market(pos)` for a
+meaningful slot.
 
-**But the AVAILABLE kill gate can only validate HALF of what motivated this
-— stated up front, not discovered after a misleading result.** The natural
-harness is `auction-sim.mjs`'s `pairedCompareAuction`, upgraded to score on
-`realizedWeeklyPoints` (real byes, real per-week outcomes — the same
-upgrade 2.4 already proved out, applied to the auction side for the first
-time) rather than its current `bestLineupPoints` (season-total hindsight,
-blind to byes entirely). That harness can score whether protecting more
-budget for bench pays off in weeks a bye leaves a hole — but per
-`realizedWeeklyPoints`' OWN stated limitation, an injured/inactive starter
-is still started and scores his real 0; the lineup is never re-optimized
-around real-time injury status. So this gate, as buildable today, measures
-the BYE-COVERAGE half of "is it worth reserving more for bench" and is
-BLIND to the INJURY-INSURANCE half — precisely the half the user named as
-priority: "having at least one backup... solves for byes and the
-unpredictability of injuries." A result from this gate should be read as a
-LOWER BOUND on the value of smarter reservation, not the whole answer.
-Closing that gap needs the same precondition 3.6b already flagged and left
-unchecked — does nflverse distinguish started vs. inactive at the player
-level — so this step and 3.6b now share a dependency, not by coincidence.
+**Replacement design: anchor the reserve to THIS ROOM's own historical
+bench-tier price, not today's live number** — the same instinct behind
+`auction-calibration.js`'s positional shares, extended to price TIMING
+rather than just position SPLIT. Checked, not assumed, that the data
+supports it: `picksFromKeeperImport`'s `draftPicks` currently keeps only
+`{pos, price, season}` — no sequence — but its SOURCE, ESPN's
+`parse_draft_picks`, appends in the array order of `draftDetail.picks`,
+which is real chronological nomination order (the same array
+`parse_live_draft` reads `overallPickNumber` from). That order is not
+currently threaded through to the frontend cache; it would need to be.
 
-**Kill gate, pre-registered on the half that's measurable today**: paired
-auction simulation, common random numbers, upgraded scorer. Agent A uses
-today's flat-$1 `reserveSpots`; Agent B uses the (a)-shape value-weighted
-reserve. Score both on `realizedWeeklyPoints` over many replayed seasons.
-Bar: mean/SE > 2 on realized points, same discipline every other gate in
-this document uses — a result inside that bar ships nothing, and a result
-outside it is reported honestly as a bye-coverage-only finding until 3.6b's
-precondition is checked and the gate can be re-run with injury substitution
-included.
+*Mechanism*: for QB/RB/WR, find the pick(s) at that position landing near
+rank `starters[pos] + 1` (a small WINDOW of 2-3 ranks around the
+first-backup threshold, not the single point — see sample-size guard below)
+in each of the room's stored historical drafts, in nomination order. Pool
+their RAW prices (not a ratio to historical par) across seasons, with the
+same `RECENCY_DECAY` weighting `auction-calibration.js` already uses. Use
+that pooled number as the reserve for a meaningful slot instead of live
+`market()`; filler slots stay $1 exactly as today.
 
-**Status: SCOPED, NOT STARTED.**
+*Raw price, not a par-ratio — a stated simplification, not an oversight.*
+Normalizing to a ratio (this room's bench-tier price relative to that
+SEASON's own par value) would be more transferable across years where the
+player pool shifts, and is how `auction-calibration.js` itself treats
+positional shares. It was considered and set aside here: computing a
+historical PAR value needs that season's own player-level VBD, which the
+client does not carry for any season but the current one — the historical
+cache literally does not have per-season `teams`/`budget` recorded either,
+so even a budget-only normalization isn't available today. Raw historical
+price is used instead, under a stated assumption: the room's total budget
+has not changed across the pooled seasons. Most leagues are stable on this,
+but a league that changed its budget mid-history would get a skewed number
+— a real, accepted limitation, not a hidden one. A ratio-based version
+stays a documented follow-on, not this step.
 
-> **Prompt** — "Build roadmap 3.7's (a)-shape value-weighted bench reserve
-> in budget-path.js, upgrade auction-sim.mjs's scorer to
-> realizedWeeklyPoints, and run the pre-registered gate — report the result
-> explicitly as bye-coverage-only per the stated harness limitation, not as
-> a full validation of the reservation question."
+*The sample-size problem this signal has, that positional-share calibration
+does not.* `auction-calibration.js` pools ~20-30 priced picks per position
+per SEASON. This pools roughly 2-3 (the rank window) per position per
+SEASON — an order of magnitude sparser. `SHRINK_K0`/`MIN_PICKS` as tuned for
+the existing calibration do not transfer numerically; this needs its OWN
+minimum-seasons threshold, sized for how few observations a season
+contributes, with heavy shrinkage toward the $1 fallback below it. Stated
+plainly so a null result on a specific league isn't later misread as the
+idea failing: **most leagues import only 1-2 seasons of history today**
+(`history_seasons` was raised to 15 for one user who specifically wanted
+10 years; that is not the typical case), so this will likely be INERT —
+correctly falling back to $1 — for most users in practice. That is the
+correct, honest behaviour under "missing data skips the effect," not a
+defect to design around.
+
+**Precondition to check FIRST, before any modeling — same discipline
+`injury_probe.py`/`adp_probe.py` established, not assumed from reading the
+parser.** Confirm `draftDetail.picks`' array order really is genuine
+nomination order against a REAL captured multi-season pull, the way every
+other "verified against real data" claim in this document was checked
+before being relied on. If it isn't reliably ordered for older seasons (the
+`leagueHistory` fallback path is a different host and was not built with
+sequence-preservation as a goal), the whole mechanism needs a different
+foundation before it's worth building.
+
+**Kill gate, pre-registered on the half that's measurable today — the
+AVAILABLE gate can only validate HALF of what motivated this, stated up
+front, not discovered after a misleading result — and now STRATIFIED
+rather than a single pooled number, since the design change itself demands
+it.** A single aggregate mean/SE could hide exactly the failure
+mode under discussion: if the historical-anchor version helps in calm
+rooms and hurts in early-overspend rooms, or vice versa, those could
+average out to a result that looks fine while being wrong in the specific
+scenario this whole step exists for. So the gate reports at least two
+scenario buckets, using `auction-sim.mjs`'s existing `botWTPMultiplier`/
+`botNoise` knobs to construct them, not new machinery:
+  - **calm** — bots priced close to `botWTPMultiplier`'s baseline, low noise.
+  - **early-overspend** — bots weighted toward front-loaded aggression, the
+    scenario the user named directly.
+
+Paired auction simulation, common random numbers, `auction-sim.mjs`'s
+scorer upgraded to `realizedWeeklyPoints` (real byes, real per-week
+outcomes — the same upgrade 2.4 already proved out, applied to the auction
+side for the first time; today's `bestLineupPoints` is season-total
+hindsight, blind to byes entirely). Per `realizedWeeklyPoints`' own stated
+limitation, an injured/inactive starter is still started and scores his
+real 0 — the lineup is never re-optimized around real-time injury status.
+So this gate, as buildable today, measures the BYE-COVERAGE half of "is it
+worth reserving more for bench" and is BLIND to the INJURY-INSURANCE half —
+precisely the half the user named as priority: "having at least one
+backup... solves for byes and the unpredictability of injuries." A result
+from this gate should be read as a LOWER BOUND on the value of smarter
+reservation, not the whole answer. Closing that gap needs the same
+precondition 3.6b already flagged and left unchecked — does nflverse
+distinguish started vs. inactive at the player level — so this step and
+3.6b now share a dependency, not by coincidence.
+
+Agent A uses today's flat-$1 `reserveSpots`; Agent B uses the
+historical-anchor reserve. Bar: mean/SE > 2 on realized points IN EACH
+BUCKET separately, same discipline every other gate in this document uses
+— a result inside that bar in either bucket ships nothing FOR THAT
+SCENARIO, and the two buckets are reported side by side rather than
+collapsed into one number that could hide a real early-overspend-specific
+loss.
+
+**Status: SCOPED, NOT STARTED. Precondition check (draft order verification)
+is the actual next action — not the modeling, and not the gate.**
+
+> **Prompt** — "First, verify draftDetail.picks' array order is genuine
+> nomination order against a real multi-season pull (roadmap 3.7's
+> precondition). Only if that holds: build the historical-anchor bench
+> reserve in budget-path.js, upgrade auction-sim.mjs's scorer to
+> realizedWeeklyPoints, and run the pre-registered gate STRATIFIED by calm
+> vs. early-overspend scenarios — report both buckets, and report the
+> result as bye-coverage-only per the stated harness limitation, not as a
+> full validation of the reservation question."
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
