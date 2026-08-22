@@ -44,6 +44,15 @@ export interface SnakeLiveState {
   byeByTeam?: Record<string, number | null>;
   /** Byes of the players already on MY roster, grouped by position. */
   rosterByesByPos?: Record<string, (number | null)[]>;
+  /** Roadmap 2.4, gate-cleared (mean/SE 2.83 deployment, 4.23 isolation over
+   *  1,800 replayed drafts — see docs/ROADMAP.md 2.4). When present, REPLACES
+   *  the byeClash step entirely rather than adding to it: a deterministic
+   *  week-by-week lineup value multiplier (bye-lineup-value.js
+   *  byeLineupMult), scored on REALIZED outcomes in the gate that validated
+   *  it, in place of byeClash's collision heuristic. Absent = byeClash runs
+   *  as before, so a caller that hasn't wired real roster data through this
+   *  degrades to the prior, still-correct behaviour rather than guessing. */
+  byeLineupMultFor?: (player: BoardPlayer) => number;
   /** roadmap 3.1 — the overall pick number I next get to act on. Absent
    *  disables the survival margin entirely (opt-in by presence). */
   nextPick?: number;

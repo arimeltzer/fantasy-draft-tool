@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio, HelpCircle, CalendarX } from "lucide-react";
 import { myPickNumbers, rankByAdp } from "@/engine/snake-engine.js";
 import { byeCollisions } from "@/engine/bye-weeks.js";
+import { byeLineupMult } from "@/engine/bye-lineup-value.js";
 import { runHotness } from "@/engine/positional-run.js";
 import { roundsFor, currentOwners } from "@/engine/draft-order.js";
 import type { BoardPlayer, SnakeLiveState } from "@/engine/snake-engine.js";
@@ -189,6 +190,20 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
       poolSize: avail.length,
       byeByTeam,
       rosterByesByPos,
+      // Roadmap 2.4, gate-cleared (mean/SE 2.83 deployment over 1,800
+      // replayed drafts scored on REALIZED weekly points — docs/ROADMAP.md
+      // 2.4) — replaces byeClash's collision heuristic with the validated
+      // deterministic lineup-value multiplier once real bye data is loaded.
+      // Undefined while loading, same "missing data skips the effect"
+      // treatment every other bye-aware field here already gets; pickScore
+      // falls back to byeClash automatically when this key is absent.
+      byeLineupMultFor: byeByTeam
+        ? (p: BoardPlayer) => byeLineupMult(p, minePlayers, {
+            pointsOf: (q: BoardPlayer) => q.valuePoints ?? q.vbd ?? 0,
+            byeOf: (q: BoardPlayer) => (q.team ? byeByTeam[q.team] ?? null : null),
+            rosterCfg: settings.roster as unknown as Record<string, number>,
+          })
+        : undefined,
       // roadmap 3.1 — the overall pick number I next get to act on. Absence
       // (e.g. no picks made yet and slot unknown) disables the margin
       // entirely rather than guessing, same "missing data skips the effect"

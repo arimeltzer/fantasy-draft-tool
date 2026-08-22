@@ -172,6 +172,56 @@ check("a non-10-team league also uses it",
           < pickScore(rb, state({ ...adpRound, rosterByesByPos: { RB: [4] } })).score);
 }
 
+// ── roadmap 2.4: byeLineupMultFor REPLACES byeClash when present ─────────
+// Gate-cleared (mean/SE 2.83 deployment over 1,800 replayed drafts scored
+// on realized weekly points — docs/ROADMAP.md 2.4) and shipped as
+// SnakeRoom.tsx's default. Pinned at the pickScore level, not just via the
+// component render tests, since this is the literal mechanism the gate
+// measured.
+{
+  const rb = player("RB", 100, { team: "BUF" });
+  const byeByTeam = { BUF: 9, KC: 9 };
+  const rosterByesByPos = { RB: [9] };   // would trigger byeClash if it ran
+
+  check("present: byeLineupMultFor's multiplier drives the score, not byeClash",
+        (() => {
+          const withHook = state({
+            byeByTeam, rosterByesByPos, byeLineupMultFor: () => 0.5,
+          });
+          const withoutHook = state({ byeByTeam, rosterByesByPos });
+          // 0.5 is a much harsher cut than byeClash's own capped penalty
+          // (byeClashMax), so if the hook is truly driving the score this
+          // must score lower than the plain byeClash path above it.
+          return pickScore(rb, withHook).score < pickScore(rb, withoutHook).score;
+        })());
+
+  check("a >1 multiplier from the hook is a CREDIT, unlike byeClash which only penalises",
+        (() => {
+          const boosted = state({ byeByTeam, rosterByesByPos, byeLineupMultFor: () => 1.2 });
+          const plain = state({ byeByTeam: {}, rosterByesByPos: {} });
+          return pickScore(rb, boosted).score > pickScore(rb, plain).score;
+        })());
+
+  check("a 1x (neutral) result from the hook changes nothing and adds no reason",
+        (() => {
+          const neutral = state({ byeByTeam, rosterByesByPos, byeLineupMultFor: () => 1 });
+          const plain = state({ byeByTeam: {}, rosterByesByPos: {} });
+          return pickScore(rb, neutral).score === pickScore(rb, plain).score
+            && !pickScore(rb, neutral).reasons.some((r) => r.includes("bye lineup"));
+        })());
+
+  check("the multiplier is explained in the reasons, distinctly from byeClash's wording",
+        pickScore(rb, state({ byeByTeam, rosterByesByPos, byeLineupMultFor: () => 0.8 }))
+          .reasons.some((r) => r.includes("bye lineup cost")));
+
+  check("absent hook: falls back to byeClash exactly as before (no regression)",
+        (() => {
+          const noHook = state({ byeByTeam, rosterByesByPos });
+          const explicitlyUndefined = state({ byeByTeam, rosterByesByPos, byeLineupMultFor: undefined });
+          return pickScore(rb, noHook).score === pickScore(rb, explicitlyUndefined).score;
+        })());
+}
+
 // ── survival margin (roadmap 3.1 — SIMPLIFIED) ────────────────────────────
 // margin_rounds = (adpRank - nextPick) / teams. adpRank approximates the
 // overall pick the market expects him gone at, so a LARGE adpRank relative

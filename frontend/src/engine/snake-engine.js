@@ -263,12 +263,15 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
   // see byeClash() for why "already have enough bodies" costs nothing.
   const bye = s.byeByTeam && player.team ? s.byeByTeam[player.team] : null;
   if (s.byeLineupMultFor) {
-    // Roadmap 2.4, OPT-IN and used only by the gate runner: replace the
-    // heuristic collision penalty with a multiplier derived from an actual
-    // week-by-week lineup calculation. Absent — which is every shipped code
-    // path today — this branch does not exist and byeClash below is
-    // unchanged, so the experiment cannot leak into the app before it has
-    // cleared its gate.
+    // Roadmap 2.4, GATE-CLEARED and shipped as the default in SnakeRoom.tsx
+    // (mean/SE 2.83 deployment, 4.23 isolation, over 1,800 replayed drafts
+    // scored on REALIZED weekly points — docs/ROADMAP.md 2.4): replaces the
+    // byeClash collision heuristic below with a multiplier derived from an
+    // actual week-by-week lineup calculation. Presence-gated rather than a
+    // hard swap so a caller that hasn't wired real roster/bye data through
+    // this hook (draft-sim.mjs's OTHER agents, or a room mid-load) degrades
+    // to byeClash — the same "missing data skips the effect" contract every
+    // bye-aware field in this engine already follows — instead of guessing.
     const m = s.byeLineupMultFor(player);
     if (Number.isFinite(m) && m !== 1) {
       base *= m;

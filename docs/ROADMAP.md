@@ -1554,17 +1554,52 @@ non-circular distinction the isolation arm's significance supports.
 
 **User's call on how to proceed, having seen this exact result: run a bigger
 gate before deciding**, rather than ship early on a promising-but-not-yet-
-significant number or discard a real isolation-arm signal. A larger run
-(more seeds and/or slots, sized to plausibly clear mean/SE > 2 if the true
-effect sits near the observed mean) is queued as the next action on this
-step. Kill gate is UNCHANGED: still mean/SE > 2 on the deployment arm,
-still scored on realized weekly points, still ships nothing on a result
-inside that bar even if the new run reads as "closer."
+significant number or discard a real isolation-arm signal. Kill gate stated
+as UNCHANGED going in: still mean/SE > 2 on the deployment arm, still scored
+on realized weekly points, still nothing shipped on a result inside that bar
+even if the new run reads as "closer."
 
-> **Prompt** — "Run a larger roadmap 2.4 gate (more seeds and/or slots) to
-> shrink the deployment arm's standard error, then re-apply the same
-> pre-registered mean/SE > 2 bar — do not lower the bar to fit a promising
-> but still-inconclusive result."
+**Second gate run — 9 seasons, 5 slots (1,3,5,7,9), 40 seeds, 1,800 drafts
+per arm (~4.2x the first run's sample):**
+
+| arm | mean | SE | mean/SE | verdict |
+|---|---|---|---|---|
+| deployment (2.4 vs shipped `byeClash`) | +4.67 pts | 1.65 | **2.83** | significant |
+| isolation (bye-aware vs bye-blind) | +5.95 pts | 1.41 | **4.23** | significant |
+
+**CLEARS THE PRE-REGISTERED BAR on both arms**, and the pattern that made the
+first run read as underpowered rather than null held up: the point estimates
+(4.67, 5.95) landed close to the first run's (4.55, 7.46) — this was always a
+real, modest-sized effect, and the first run simply didn't have enough drafts
+to separate it from noise. Per-season signs are also consistent across both
+runs (2017/2021 strongly positive both times, 2019/2020/2022/2023 negative or
+flat both times) — the same underlying effect, not a different one appearing
+under more samples.
+
+**Shipped**: `snake-engine.js pickScore` step 8 now uses
+`bye-lineup-value.js`'s `byeLineupMult` as the DEFAULT bye treatment,
+replacing `byeClash` — this is the literal thing the gate measured, so no
+further extrapolation is needed to ship it here. `byeClash` itself is kept
+(still exported, still tested) as the fallback when `byeByTeam` data isn't
+available, and as the documented prior baseline.
+
+**NOT extended to the auction `$Max` ceiling in the same commit — a
+deliberate boundary, not an oversight.** The gate validated a SNAKE drafting
+decision (which player `pickScore` picks next, replayed to realized weekly
+points). It did not test `byeLineupMult` as a DOLLAR multiplier inside
+`bidCeiling`/`ceilingFor` — a different selection mechanism (competitive
+bidding under a budget, not greedy sequential picking). Reusing the same
+validated VALUE FUNCTION as a price multiplier there is a smaller
+extrapolation than inventing a new model (same category of reuse as 3.6c's
+`maxUseful` and 3.6e's `firstBackupBoost` in a second consumer) — but it is
+still an extrapolation past what this specific gate measured, worth a
+separate explicit decision rather than folding it in silently alongside a
+result that WAS directly measured.
+
+> **Prompt** — "Wire `byeLineupMult` into the auction `$Max` ceiling
+> (`AuctionRoom.tsx ceilingFor`) as a bench-phase multiplier on `market`,
+> the same pattern `firstBackupBoost` already uses — reusing the
+> gate-cleared value function in a second consumer, not a new kill gate."
 
 ---
 
