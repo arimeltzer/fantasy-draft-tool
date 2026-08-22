@@ -2865,7 +2865,7 @@ Neither is blocking anything the user has actually asked for at this point.
 > injury_probe-style verification of nflverse's player-level started/inactive
 > data before touching 3.6b at all."
 
-### 3.7 Auction: value-weighted bench reservation — PRE-REGISTRATION, not yet built
+### 3.7 Auction: value-weighted bench reservation (tried — NOT shipped)
 
 **The question, asked directly, and it's a real gap 3.3 named on its own
 first day rather than a newly-discovered one.** "How much weight is `$Max`
@@ -3033,19 +3033,59 @@ SCENARIO, and the two buckets are reported side by side rather than
 collapsed into one number that could hide a real early-overspend-specific
 loss.
 
-**Status: PRECONDITION CONFIRMED (4/4 seasons PASS, see above). Modeling
-NOT STARTED.** The draft-order check only clears the way to build; the
-historical-anchor mechanism itself, the `auction-sim.mjs` scorer upgrade,
-and the stratified gate are all still unbuilt.
+**RESULT: BUILT AND RUN — REJECTED IN BOTH BUCKETS, decisively.**
+`historicalBenchReserve()`/`benchReserveDollars()` shipped in
+`budget-path.js` (44 selftest assertions), `auction-sim.mjs` gained the
+`"treatment-hist"` agent mode and a presence-gated `realizedWeeklyPoints`
+scorer, and `auction-bench-test.mjs` ran the full pre-registered gate on
+real 2017-2025 data (`export_draft_seasons.py`, FantasyPros ADP,
+GitHub Actions run
+[32572522356](https://github.com/arimeltzer/fantasy-draft-tool/actions/runs/32572522356)),
+8 seeds × slots {1,4,7,10} × up to 5 pooled prior in-dataset seasons per
+reserve:
 
-> **Prompt** — "Roadmap 3.7's precondition (draftDetail.picks array order)
-> is already confirmed — see docs/ROADMAP.md 3.7. Build the
-> historical-anchor bench reserve in budget-path.js, upgrade
-> auction-sim.mjs's scorer to realizedWeeklyPoints, and run the
-> pre-registered gate STRATIFIED by calm vs. early-overspend scenarios —
-> report both buckets, and report the result as bye-coverage-only per the
-> stated harness limitation, not as a full validation of the reservation
-> question."
+| bucket | n | mean diff | SE | mean/SE | wins |
+|---|---|---|---|---|---|
+| calm | 256 | **-31.65 pts** | 7.08 | **-4.47** | 70/256 |
+| early-overspend | 256 | **-41.03 pts** | 8.48 | **-4.84** | 87/256 |
+
+Both clear the pre-registered `|mean/SE| > 2` bar for significance —
+**in the WORSE direction**, in both scenarios, not just one. This is not
+the "inside the bar, ships nothing" outcome the pre-registration
+anticipated as the null case; it is a confident, measured loss.
+
+**Why, read from the run's own diagnostics.** The reserve engaged
+substantially — QB stayed near $1-2 (its threshold, `teams × 1`, rarely
+sees a well-populated ranks-11-13 window even pooling 5 seasons of
+simulated history), but RB/WR reserves ran **$4-8**, a real multiple of the
+$1 baseline, across nearly every eval season. That is exactly the
+differentiated signal the mechanism was built to produce. The problem is
+what spending it costs: pulling $4-8 away from the starter-phase DP at
+RB/WR — the two positions with the deepest starter demand and the most
+competitive bidding — measurably starved bids on STARTERS to protect
+bench dollars that, per 3.6c/3.6e/2.4, were never worth that much relative
+to a stud. This is the **same failure mode already caught and rejected for
+the live-market-anchor design** (over-protecting budget against a bench
+cost), just surviving under a different anchor source: sourcing the
+reserve from history instead of a live price didn't fix the underlying
+issue — a non-trivial reserve pulled from DP budget during the starter
+phase is a bad trade at the dollar amounts this room's historical data
+actually produced, not merely at the live-price amounts the first design
+would have used.
+
+**Not shipped in any form.** `remainingStartingSlots`'s flat $1/slot
+reserve is unchanged and remains the default; `historicalBenchReserve`/
+`benchReserveDollars`/`"treatment-hist"` stay in the repo, selftested, as
+a documented negative result — the same treatment 1.4's rookie draft
+capital and 2.2's weekly-distribution model got. Nothing was wired into
+`AuctionRoom.tsx`, League Settings, or the league import page; the
+question the user raised ("build this into the league import page and
+then league settings, not Keepers") is moot for this specific mechanism —
+there is no calibration result worth surfacing to a user once the gate
+rejects it. A future differently-shaped attempt (e.g. a smaller reserve,
+or one applied only to the SPECIFIC missing-backup slot's own price rather
+than uniformly to QB/RB/WR) would need its own pre-registration and gate,
+not a reuse of this one's numbers.
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
