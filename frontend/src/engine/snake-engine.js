@@ -262,7 +262,19 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
   // Only bites when the roster genuinely cannot cover the position that week;
   // see byeClash() for why "already have enough bodies" costs nothing.
   const bye = s.byeByTeam && player.team ? s.byeByTeam[player.team] : null;
-  if (bye) {
+  if (s.byeLineupMultFor) {
+    // Roadmap 2.4, OPT-IN and used only by the gate runner: replace the
+    // heuristic collision penalty with a multiplier derived from an actual
+    // week-by-week lineup calculation. Absent — which is every shipped code
+    // path today — this branch does not exist and byeClash below is
+    // unchanged, so the experiment cannot leak into the app before it has
+    // cleared its gate.
+    const m = s.byeLineupMultFor(player);
+    if (Number.isFinite(m) && m !== 1) {
+      base *= m;
+      reasons.push(`bye lineup ${m < 1 ? "cost" : "cover"} (x${m.toFixed(2)})`);
+    }
+  } else if (bye) {
     const clash = byeClash(
       bye,
       (s.rosterByesByPos && s.rosterByesByPos[pos]) || [],

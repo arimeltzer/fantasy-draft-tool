@@ -33,6 +33,7 @@
  */
 import { pickScore, maxUseful, DEFAULT_SNAKE_PARAMS } from "./snake-engine.js";
 import { rankByAdp } from "./engine-core.js";
+import { byeLineupMult } from "./bye-lineup-value.js";
 import { nextPickNumber } from "./survival.js";
 import { runHotness } from "./positional-run.js";
 
@@ -107,6 +108,12 @@ export function botPick(avail, ranks, counts, roster, rng, temperature = 4) {
 export function simulateDraft({
   board, teams = 10, rounds = 15, roster, agents = {},
   seed = 1, P = DEFAULT_SNAKE_PARAMS, temperature = 4,
+  // Bye schedule for the season being replayed. Optional, but WITHOUT it
+  // `pickScore`'s step-8 `byeClash` penalty cannot fire at all — it guards on
+  // `s.byeByTeam` — so the simulated "shipped" agent was quietly a version of
+  // the app with bye handling switched off. Found while building 2.4's gate,
+  // where it made the bye-aware and bye-blind control arms identical.
+  byeByTeam = null,
 }) {
   const rng = mulberry32(seed);
   const ranks = rankByAdp(board);
@@ -145,6 +152,19 @@ export function simulateDraft({
         poolSize: avail.length,
       };
 
+      // Byes, as the shipped room supplies them (SnakeRoom builds exactly
+      // these two). Only when a schedule was given — otherwise byeClash stays
+      // inert, which is the pre-2.4 behaviour every existing caller expects.
+      if (byeByTeam) {
+        live.byeByTeam = byeByTeam;
+        const rb = {};
+        for (const q of rosters[team]) {
+          if (!q.pos) continue;
+          (rb[q.pos] ||= []).push(q.team ? byeByTeam[q.team] ?? null : null);
+        }
+        live.rosterByesByPos = rb;
+      }
+
       // Survival margin (roadmap 3.1 — SIMPLIFIED), opt-in per agent so the
       // paired comparison can run identical leagues with this as the ONLY
       // difference. Just the next pick number; pickScore does the rest with
@@ -158,6 +178,19 @@ export function simulateDraft({
       // window matters; runHotness itself slices to `teams`.
       if (cfg.positionalRun) {
         live.runHotByPos = runHotness(pickLog, teams);
+      }
+      // Roadmap 2.4, opt-in per agent so the paired comparison can run
+      // identical leagues with the bye valuation as the ONLY difference.
+      // Closes over the roster AS IT STANDS AT THIS PICK — the marginal value
+      // of a bye-covering body depends entirely on who is already on it.
+      if (cfg.byeLineup) {
+        const mine = rosters[team];
+        live.byeLineupMultFor = (p) => byeLineupMult(p, mine, {
+          pointsOf: (q) => q.valuePoints ?? q.vbd ?? 0,
+          byeOf: (q) => (q.team ? cfg.byeLineup.byeByTeam[q.team] ?? null : null),
+          rosterCfg: roster,
+          weeks: cfg.byeLineup.weeks || 17,
+        }, cfg.byeLineup.clamp || {});
       }
       let best = -Infinity;
       for (const p of avail) {
@@ -208,6 +241,70 @@ export function bestLineupPoints(rosterPlayers, pointsById, roster) {
     .filter((p) => !used.has(p.id))
     .sort((a, b) => pts(b) - pts(a));
   for (const p of flexPool.slice(0, roster.FLEX || 0)) total += pts(p);
+  return +total.toFixed(1);
+}
+
+/**
+ * REALIZED weekly-lineup points — roadmap 2.4's scorer.
+ *
+ * `bestLineupPoints` above scores one hindsight-optimal lineup on SEASON
+ * totals, which cannot see byes at all and so cannot measure a bye-aware
+ * agent. This walks the season week by week instead.
+ *
+ * THE LINEUP IS SET BY PROJECTION AND SCORED ON REALITY, and that split is
+ * the whole point. Setting it by hindsight would reward roster depth
+ * mechanically — with perfect foresight another body can only ever help —
+ * and would flatter any agent that drafts more players, which is exactly the
+ * behaviour under test. Setting by projection is also what a manager
+ * actually does on Sunday morning.
+ *
+ * KNOWN LIMITATION, stated because it bounds what the gate can conclude: the
+ * only unavailability modelled is a BYE. A player who was injured or inactive
+ * is still started and simply scores his real 0. That understates the value
+ * of bench depth in general — but it applies identically to both arms, so it
+ * does not bias the comparison, only its magnitude.
+ *
+ * @param rosterPlayers drafted roster, each {id, pos, team}
+ * @param projById      projected SEASON points, for setting the lineup
+ * @param weeklyActual  {id: {week: realized points}} — absent week = real 0
+ * @param byeByTeam     {TEAM: bye week | null}
+ * @param roster        slot config
+ * @param weeks         weeks to score (default 17)
+ */
+export function realizedWeeklyPoints(
+  rosterPlayers, projById, weeklyActual, byeByTeam, roster, weeks = 17,
+) {
+  const byeOf = (p) => (p.team && byeByTeam ? byeByTeam[p.team] ?? null : null);
+  // Per-week PROJECTION drives the start/sit decision. Divide by weeks
+  // actually played so a bye doesn't quietly shrink the player himself.
+  const projWk = new Map();
+  for (const p of rosterPlayers) {
+    const played = Math.max(1, weeks - (byeOf(p) ? 1 : 0));
+    projWk.set(p.id, (projById[p.id] ?? 0) / played);
+  }
+  const realWk = (p, week) => (weeklyActual[p.id]?.[week] ?? 0);
+
+  let total = 0;
+  for (let week = 1; week <= weeks; week++) {
+    const avail = rosterPlayers.filter((p) => byeOf(p) !== week);
+    const byPos = {};
+    for (const p of avail) (byPos[p.pos] ||= []).push(p);
+    // Sorted by PROJECTION — never by what actually happened.
+    for (const k of Object.keys(byPos)) {
+      byPos[k].sort((a, b) => (projWk.get(b.id) || 0) - (projWk.get(a.id) || 0));
+    }
+    const used = new Set();
+    for (const pos of ["QB", "RB", "WR", "TE", "K", "DST"]) {
+      for (const p of (byPos[pos] || []).slice(0, roster[pos] || 0)) {
+        total += realWk(p, week); used.add(p.id);
+      }
+    }
+    const flex = ["RB", "WR", "TE"]
+      .flatMap((pos) => byPos[pos] || [])
+      .filter((p) => !used.has(p.id))
+      .sort((a, b) => (projWk.get(b.id) || 0) - (projWk.get(a.id) || 0));
+    for (const p of flex.slice(0, roster.FLEX || 0)) total += realWk(p, week);
+  }
   return +total.toFixed(1);
 }
 

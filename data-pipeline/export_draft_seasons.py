@@ -33,7 +33,8 @@ import os
 import time
 
 from projection_backtest import (
-    COMP, VOLUME, build_players, load_ages, load_seasons, season_line,
+    COMP, VOLUME, build_players, load_ages, load_seasons, load_team_weeks,
+    load_weeks, season_line,
 )
 from projection_model import default_scoring, points
 
@@ -68,6 +69,31 @@ def main() -> None:
     ages = load_ages(test_years)
     sc = default_scoring(PPR)
 
+    # Roadmap 2.4 needs the season's outcome resolved BY WEEK, not just as a
+    # total, plus the real bye schedule — a bye-aware model that scored against
+    # season totals would be marking its own homework, since the whole claim is
+    # about which weeks a player could actually be started.
+    print("Loading weekly outcomes + bye schedules…")
+    weeks_df = load_weeks(test_years)
+    team_weeks = load_team_weeks(test_years)
+    weekly_by_year: dict[int, dict] = {}
+    for r in weeks_df.itertuples():
+        weekly_by_year.setdefault(int(r.season), {}).setdefault(r.player_id, {})[
+            int(r.week)] = round(points(season_line(r), sc), 2)
+
+    # A bye is a week missing from a team's own schedule — the same derivation
+    # `bye-weeks.js byeByTeam` and `ingest_nflverse.build_schedule` use, so the
+    # backtest and the shipped app cannot disagree about what a bye is. A team
+    # with anything other than exactly one gap is left null rather than guessed
+    # at; the Node side treats null as "no bye information" and skips it.
+    byes_by_year: dict[int, dict] = {}
+    for (season, team), sched in team_weeks.items():
+        if season not in test_years:
+            continue
+        horizon = max(sched) if sched else 0
+        missing = [w for w in range(1, horizon + 1) if w not in sched]
+        byes_by_year.setdefault(season, {})[team] = missing[0] if len(missing) == 1 else None
+
     out = {}
     for year in test_years:
         players = build_players(data, ages, year)
@@ -81,10 +107,17 @@ def main() -> None:
         # fetch_adp) is the second, and this loop used to have neither.
         adp = fetch_adp(year, rank_type="ADP") or fetch_adp(year, rank_type="DRAFT") or {}
         time.sleep(RATE_LIMIT_PAUSE)
-        rows, actual, adp_by_id = [], {}, {}
+        wk_src = weekly_by_year.get(year, {})
+        rows, actual, adp_by_id, weekly = [], {}, {}, {}
         for i, p in enumerate(players):
             pid = i + 1                       # dense ids; the sim only needs identity
             rank = adp.get((fp_norm(p["name"]), p["pos"]))
+            # Re-key the realized weekly line onto the same dense id the board
+            # uses. Absent = the player recorded no stats that week, which the
+            # Node side scores as a real 0 rather than as missing data.
+            wk = wk_src.get(p["player_id"])
+            if wk:
+                weekly[pid] = wk
             rows.append({
                 "id": pid,
                 "name": p["name"],
@@ -99,8 +132,13 @@ def main() -> None:
             if rank:
                 adp_by_id[pid] = rank
 
-        out[year] = {"players": rows, "actual": actual}
-        print(f"  {year}: {len(rows)} players, {len(adp_by_id)} with ADP")
+        out[year] = {
+            "players": rows, "actual": actual,
+            "weekly": weekly, "byes": byes_by_year.get(year, {}),
+        }
+        nbye = sum(1 for v in byes_by_year.get(year, {}).values() if v)
+        print(f"  {year}: {len(rows)} players, {len(adp_by_id)} with ADP, "
+              f"{len(weekly)} with weekly lines, {nbye} teams with a resolved bye")
 
     os.makedirs(args.out, exist_ok=True)
     path = f"{args.out}/draft_seasons.json"
