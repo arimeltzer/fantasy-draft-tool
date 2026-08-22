@@ -1,0 +1,76 @@
+name: Auction bonus-slot gate (roadmap 3.8)
+
+# Manual. Asks whether jointly valuing "the last starter at a 2+-starter
+# position" together with "the bench slot that follows it"
+# ("treatment-bonus") drafts better rosters than pricing that last starter
+# alone ("treatment", the shipped 3.3 DP unaugmented). STRATIFIED into the
+# same calm / early-overspend buckets 3.7's gate used, for consistency.
+#
+# Scored on REALIZED weekly lineups (bye-coverage half only).
+#
+# Needs FANTASYPROS_API_KEY: the opponent bots draft by that season's real
+# ADP. Without it they draft by our own model and both arms face a
+# strawman that shares our biases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      first:
+        description: "First season"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated drafts per slot per season per scenario"
+        required: false
+        default: "10"
+        type: string
+      slots:
+        description: "Draft slots to test (comma-separated)"
+        required: false
+        default: "1,4,7,10"
+        type: string
+
+jobs:
+  auction-bonus-slot-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      - name: budget-path selftest (3.8's withBonusBackupSlots)
+        run: node frontend/src/engine/budget-path.selftest.mjs
+      - name: auction-sim selftest (treatment-bonus mode)
+        run: node frontend/src/engine/auction-sim.selftest.mjs
+      - name: draft-sim selftest (realizedWeeklyPoints itself)
+        run: node frontend/src/engine/draft-sim.selftest.mjs
+
+      - name: Export boards + realized weekly outcomes + byes
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Run the 3.8 gate
+        run: |
+          node frontend/src/engine/auction-bonus-slot-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --seeds ${{ inputs.seeds }} \
+            --slots ${{ inputs.slots }} | tee data-pipeline/results/auction_bonus_slot_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: auction-bonus-slot-test
+          path: data-pipeline/results/auction_bonus_slot_test.txt

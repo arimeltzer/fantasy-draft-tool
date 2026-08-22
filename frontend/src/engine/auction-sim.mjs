@@ -28,16 +28,21 @@
  *     budget-path.js) and the shipped UI never runs `bidCeiling` for them
  *     either, so the treatment arm falls back to the SAME control bid there
  *     — a scope limit carried over, not a new gap invented for this file.
- *   - "treatment-hist" — roadmap 3.7. IDENTICAL to "treatment" except the
- *     starter-phase reserve (`dpBudget`) is computed via
+ *   - "treatment-hist" — roadmap 3.7 (REJECTED — see docs/ROADMAP.md 3.7;
+ *     kept only so its own selftest coverage keeps exercising real code,
+ *     never wired into the shipped app). IDENTICAL to "treatment" except
+ *     the starter-phase reserve (`dpBudget`) is computed via
  *     `benchReserveDollars(roster, myPlayers, reserveSpots, benchReserve)`
- *     instead of a flat $1/slot — the caller supplies `benchReserve` (this
- *     room's historical-anchor prices, `historicalBenchReserve`'s output).
- *     Isolates the ONE thing 3.7 changes: everything else (allocation DP,
- *     room ceiling, bot behavior) is identical to "treatment", so a
- *     treatment vs treatment-hist comparison measures the reserve change
- *     alone, not a bundle of unrelated differences.
- *   A third mode, "passive" (never bids), exists only for the selftest's
+ *     instead of a flat $1/slot.
+ *   - "treatment-bonus" — roadmap 3.8. IDENTICAL to "treatment" except
+ *     `bidCeiling` receives `withBonusBackupSlots(openStartSlots, roster,
+ *     myPlayers)` in place of the true `openStartSlots` — a REAL,
+ *     position-locked DP slot added for the SAME shared budget (not a
+ *     dollar subtraction like 3.7), so the DP can jointly value "the last
+ *     starter at a 2+-starter position" together with "the bench slot that
+ *     follows it" and prefer a cheaper starter when the combined value
+ *     wins. Isolates that ONE change; everything else matches "treatment".
+ *   A fourth mode, "passive" (never bids), exists only for the selftest's
  *   crippled-agent check and is not a real strategy.
  *
  * CIRCULARITY MITIGATION, DELIBERATELY DIFFERENT FROM 3.1's. Both arms
@@ -82,7 +87,7 @@ import {
 } from "./auction-engine.js";
 import {
   DP_POSITIONS, FLEX_ELIGIBLE, remainingStartingSlots, bidCeiling,
-  benchReserveDollars,
+  benchReserveDollars, withBonusBackupSlots,
 } from "./budget-path.js";
 import {
   SINGLETON_POSITIONS, priceCeilingFor, bindingCeiling,
@@ -236,8 +241,14 @@ export function simulateAuction({
           ? benchReserveDollars(roster, t.players, reserveSpots, benchReserve)
           : reserveSpots;
         const dpBudget = Math.max(0, t.budget - reserveDollars);
+        // roadmap 3.8 — "treatment-bonus" augments the DP's slots with a
+        // joint last-starter+bench slot; every other mode (including plain
+        // "treatment") uses the true open starting slots, unaugmented.
+        const dpSlots = agentMode === "treatment-bonus"
+          ? withBonusBackupSlots(openStartSlots, roster, t.players)
+          : openStartSlots;
         const allocationCeiling = openStartSlots.length
-          ? bidCeiling({ player, slots: openStartSlots, budget: dpBudget, pool: available, valueOf, priceOf, minBid })
+          ? bidCeiling({ player, slots: dpSlots, budget: dpBudget, pool: available, valueOf, priceOf, minBid })
           : undefined;
 
         const oppBudgets = [], oppOpenSpots = [], oppCounts = [];

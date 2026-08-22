@@ -253,5 +253,35 @@ check("botWTPMultiplier is not opponentDemand's shape",
           !== JSON.stringify(withWeekly.rows.map((r) => r.diff)));
 }
 
+// ── roadmap 3.8: treatment-bonus mode ──────────────────────────────────────
+{
+  const board = makeBoard();
+  const pointsById = Object.fromEntries(board.map((p) => [p.id, p.vbd]));
+
+  // A roster with no 2+-starter position has no bonus positions at all
+  // (bonusBackupPositions([]) empty) — treatment-bonus must behave exactly
+  // like plain treatment, same zero-diff discipline as the identical-arms
+  // checks above.
+  const ONE_STARTER_ROSTER = { QB: 1, RB: 1, WR: 1, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 6 };
+  const noQualifying = pairedCompareAuction({
+    board, pointsById, roster: ONE_STARTER_ROSTER, teams: 10, agentTeam: 4,
+    modeA: "treatment", modeB: "treatment-bonus", seeds: [1, 2, 3],
+  });
+  check("treatment-bonus with no 2+-starter position behaves exactly like treatment",
+        noQualifying.meanDiff === 0 && noQualifying.rows.every((r) => r.diff === 0),
+        JSON.stringify(noQualifying.rows.map((r) => r.diff)));
+
+  // With RB/WR at 2 starters (the mechanism's actual scope), treatment-bonus
+  // must produce SOME divergence from plain treatment across enough seeds —
+  // not asserting direction/size, just that the knob does something.
+  const qualifying = pairedCompareAuction({
+    board, pointsById, roster: ROSTER, teams: 10, agentTeam: 4,
+    modeA: "treatment", modeB: "treatment-bonus", seeds: [1, 2, 3, 4, 5],
+  });
+  check("treatment-bonus actually moves off plain treatment when RB/WR qualify",
+        qualifying.rows.some((r) => r.diff !== 0),
+        JSON.stringify(qualifying.rows.map((r) => r.diff)));
+}
+
 console.log(`\n${pass} passed, ${fails.length} failed`);
 if (fails.length) process.exit(1);

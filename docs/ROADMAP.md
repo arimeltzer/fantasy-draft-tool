@@ -3087,6 +3087,89 @@ or one applied only to the SPECIFIC missing-backup slot's own price rather
 than uniformly to QB/RB/WR) would need its own pre-registration and gate,
 not a reuse of this one's numbers.
 
+### 3.8 Auction: joint valuation of the last starter + first bench slot — PRE-REGISTRATION, not yet built
+
+**The idea, proposed directly after 3.7's rejection, and importantly a
+DIFFERENT mechanism from it, not a retry.** "Don't account for the bench
+when drafting the first player at a position but take it into account for
+subsequent ones. So if RB2 is $34 but I have multiple options for $32 that
+would get a strong bench RB as well, pass on the player costing $34." RB1
+is bid exactly as today, zero bench-awareness. RB2 — a SECOND starter at a
+position, still inside 3.3's DP scope — should be chosen by the COMBINED
+value of (RB2 + the bench RB that choice leaves affordable), not RB2 alone.
+
+**Why this does not repeat 3.7's failure, traced precisely.** 3.7's
+`benchReserveDollars` fired whenever `have[pos] === starters[pos]` and
+subtracted a flat dollar amount from the SHARED starter-phase `dpBudget` —
+which, because `openStartSlots` spans every position at once, quietly
+taxed bids on OTHER positions' still-open starters (QB, WR) too, any time
+ANY position reached "at cap, no backup yet" while other starters were
+still being fought over. That was a blind subtraction, unconditional on
+whether the trade was actually good, and the gate confirmed it cost real
+points at both scenario buckets (mean/SE -4.47 calm, -4.84
+early-overspend — see 3.7 above). This idea is not a subtraction at all:
+it adds a real, position-locked SLOT to the SAME DP that already prices
+every open starter, competing for the identical shared budget. The DP can
+only prefer the cheaper RB2 when the JOINT value of (RB2 + bench RB)
+actually beats the alternative — never blindly, because `reachableRoster`
+is an exact knapsack over real value, not an off-budget reservation.
+
+**Mechanism, and it needs almost no new code.** `budget-path.js`'s DP
+already treats multiple slots of the same position symmetrically (the
+count-dimension knapsack, `want[pos]`) — so "jointly optimize RB2 + a
+bonus bench RB" is just `slots` carrying `"RB"` TWICE instead of once,
+which `reachableRoster` already knows how to solve exactly. New,
+narrowly-scoped helper: `bonusBackupPositions(roster)` returns positions
+with `roster[pos] >= 2` (2+-starter positions only — a 1-starter position
+like QB has no "last starter" state distinct from its very next pick,
+which is already the backup and already governed by
+`firstBackupBoost`/the flat-market bench branch, so it is out of scope
+here by construction, not by omission). `withBonusBackupSlots(slots,
+roster, myPlayers)` appends one bonus slot for each qualifying position
+where `have[pos] === 1` exactly (drafted the FIRST player, not yet the
+second — `have[pos] === 0` is deliberately untouched, matching "don't
+account for the bench on the first pick"; `have[pos] >= roster[pos]`
+means starters are already full and the real bench-shopping phase
+governs instead, unchanged). `AuctionRoom.tsx`'s `ceilingFor` would pass
+this augmented array to `bidCeiling` in place of the true
+`openStartSlots` — while `openStartSlots.length` itself (unaugmented)
+keeps deciding the DP-vs-bench-market phase switch, so nothing here moves
+that boundary.
+
+**The one real risk, checked by reasoning about the DP's own mechanics
+before building, same as 3.7's live-anchor risk was checked before
+building.** Does treating the bonus slot as a HARD requirement (the exact-k
+knapsack format) force the DP to overpay elsewhere to guarantee affording
+it, even when a good bench RB isn't actually available? Reasoned to be
+close to costless in practice: `TOP_K_PER_POS`'s candidate pool always
+includes near-$1 fillers at RB/WR (positions rarely exhausted), so
+"satisfying" the bonus slot's hard requirement is nearly free UNLESS a
+genuinely valuable cheap option exists — in which case correctly
+recognizing that combined value is the entire point. Reasoning alone is
+exactly what made 3.7's design look safe before the gate caught the real
+cross-position leak, so this is checked by the GATE below, not assumed
+from this paragraph.
+
+**Kill gate, same discipline as 3.7 — stratified into the same calm /
+early-overspend buckets** (not because a directional bias is specifically
+predicted here the way it was for 3.7, but for consistency with the
+sibling step and because the harness already supports it at no extra
+cost). Scoring: `realizedWeeklyPoints`, the same bye-coverage-only
+yardstick every gate in this phase now uses. Agent A: `"treatment"`,
+today's shipped DP (unaugmented `openStartSlots`). Agent B:
+`"treatment-bonus"`, identical except `bidCeiling` receives
+`withBonusBackupSlots(openStartSlots, roster, myPlayers)`. Bar: mean/SE
+> 2 on realized points, IN EACH BUCKET separately — a result inside that
+bar in either bucket ships nothing for that scenario, exactly 3.7's bar.
+
+**Status: SCOPED, NOT BUILT.**
+
+> **Prompt** — "Build roadmap 3.8: `bonusBackupPositions`/
+> `withBonusBackupSlots` in budget-path.js, a `\"treatment-bonus\"` mode in
+> auction-sim.mjs, and run the pre-registered gate STRATIFIED by calm vs.
+> early-overspend scenarios exactly like 3.7's. Report both buckets. Only
+> wire into AuctionRoom.tsx if it clears the bar."
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.

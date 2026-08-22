@@ -21,6 +21,7 @@ import {
   FLEX_ELIGIBLE, TOP_K_PER_POS,
   historicalBenchReserve, benchReserveDollars,
   BENCH_WINDOW, BENCH_RESERVE_MIN_PICKS,
+  bonusBackupPositions, withBonusBackupSlots,
 } from "./budget-path.js";
 
 let pass = 0;
@@ -394,6 +395,72 @@ check("flexDistributions(1) is one per eligible position",
 
   check("never reserves more than the slots actually available",
         benchReserveDollars(ROSTER, [], 0, { QB: 50, RB: 50, WR: 50 }) === 0);
+}
+
+/* ------------------------------------------------- roadmap 3.8 --------- */
+{
+  const ROSTER = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 6 };
+
+  check("bonusBackupPositions is exactly the 2+-starter positions",
+        JSON.stringify(bonusBackupPositions(ROSTER).sort()) === JSON.stringify(["RB", "WR"]));
+  check("a roster with no 2+-starter position has no bonus positions at all",
+        bonusBackupPositions({ QB: 1, RB: 1, WR: 1, TE: 1 }).length === 0);
+  check("superflex-style QB:2 makes QB eligible too — derived from roster, not hardcoded",
+        bonusBackupPositions({ QB: 2, RB: 1 }).includes("QB"));
+
+  const openSlots = ["RB", "WR"];   // e.g. last RB starter + last WR starter still open
+
+  check("have[pos]===0 (drafting the FIRST player): untouched, no bonus slot",
+        JSON.stringify(withBonusBackupSlots(openSlots, ROSTER, [])) === JSON.stringify(openSlots));
+
+  check("have[RB]===1 (about to buy the LAST RB starter): one bonus RB slot added",
+        withBonusBackupSlots(openSlots, ROSTER, [{ pos: "RB" }])
+          .filter((s) => s === "RB").length === 2);
+
+  check("have[RB]===1 does not add a bonus slot for WR (a position it didn't trigger)",
+        withBonusBackupSlots(openSlots, ROSTER, [{ pos: "RB" }])
+          .filter((s) => s === "WR").length === 1);
+
+  check("have[RB]>=roster[RB] (starters already full): no bonus — real bench phase governs",
+        withBonusBackupSlots(openSlots, ROSTER, [{ pos: "RB" }, { pos: "RB" }])
+          .filter((s) => s === "RB").length === 1);
+
+  check("both RB and WR at have===1 simultaneously: a bonus slot for each",
+        JSON.stringify(withBonusBackupSlots(openSlots, ROSTER, [{ pos: "RB" }, { pos: "WR" }]).sort())
+        === JSON.stringify(["RB", "RB", "WR", "WR"].sort()));
+
+  check("a 1-starter position (QB) never gets a bonus slot regardless of have",
+        withBonusBackupSlots(["QB"], ROSTER, [{ pos: "QB" }]).filter((s) => s === "QB").length === 1);
+
+  check("the input slots array is never mutated in place",
+        (() => { const s = ["RB"]; withBonusBackupSlots(s, ROSTER, [{ pos: "RB" }]); return s.length === 1; })());
+
+  // The point of the mechanism: with a bonus RB slot in play, the DP should
+  // be able to prefer a cheaper RB2 that ALSO affords a strong bench RB
+  // over a pricier RB2 alone, when the combined value wins.
+  {
+    const pool = [
+      { id: 1, pos: "RB", value: 20, price: 34 },   // pricier RB2 candidate, alone
+      { id: 2, pos: "RB", value: 18, price: 32 },   // slightly cheaper RB2 candidate
+      { id: 3, pos: "RB", value: 12, price: 8 },    // a strong, affordable bench RB
+      { id: 4, pos: "WR", value: 5, price: 3 },
+    ];
+    const valueOf = (p) => p.value;
+    const priceOf = (p) => p.price;
+
+    const withoutBonus = reachableRoster({ slots: ["RB"], budget: 40, pool, valueOf, priceOf });
+    const withBonus = reachableRoster({
+      slots: withBonusBackupSlots(["RB"], { RB: 2 }, [{ pos: "RB" }]),
+      budget: 40, pool, valueOf, priceOf,
+    });
+    check("without the bonus slot, the DP takes the single best RB alone (id 1, $34)",
+          withoutBonus.picks.length === 1 && withoutBonus.picks[0].id === 1);
+    check("with the bonus slot, the DP finds the cheaper RB2 + bench RB combo beats RB2 alone",
+          withBonus.picks.map((p) => p.id).sort().join() === "2,3",
+          JSON.stringify(withBonus.picks.map((p) => p.id)));
+    check("...and that combo's total value (18+12=30) beats the single pricier RB alone (20)",
+          withBonus.value === 30 && withBonus.value > withoutBonus.value);
+  }
 }
 
 console.log();

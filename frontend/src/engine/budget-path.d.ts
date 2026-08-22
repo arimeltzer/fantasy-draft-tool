@@ -67,6 +67,20 @@ export declare function benchReserveDollars(
   historical?: Record<string, number>,
 ): number;
 
+/** Roadmap 3.8 — positions eligible for the joint last-starter + bench
+ *  slot (2+-starter positions only, derived from `roster`). */
+export declare function bonusBackupPositions(roster?: Record<string, number>): string[];
+
+/** Roadmap 3.8 — appends one bonus, position-locked slot per qualifying
+ *  position exactly while `have[pos] === 1` (about to buy the LAST
+ *  starter). Pass the result to `bidCeiling`'s `slots`; keep using the
+ *  true `openStartSlots.length` for the DP-vs-bench phase switch. */
+export declare function withBonusBackupSlots(
+  slots: string[],
+  roster?: Record<string, number>,
+  myPlayers?: { pos?: string }[],
+): string[];
+
 export declare function reachableRoster<T = BoardPlayer>(args: {
   slots: string[];
   budget: number;

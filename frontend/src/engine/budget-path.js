@@ -369,6 +369,65 @@ export function benchReserveDollars(roster = {}, myPlayers = [], reserveSpots = 
   return reserveSpots + extra;
 }
 
+/* =====================================================================
+   JOINT LAST-STARTER + BENCH SLOT VALUATION — roadmap 3.8. See
+   docs/ROADMAP.md 3.8 for the full pre-registration. Proposed directly
+   after 3.7's rejection, and a DIFFERENT mechanism from it: "don't account
+   for the bench when drafting the FIRST player at a position, but take it
+   into account for SUBSEQUENT ones — if RB2 is $34 but I have multiple
+   options for $32 that would ALSO get a strong bench RB, pass on the $34
+   player." 3.7 subtracted a flat dollar reserve from the shared
+   starter-phase budget (and, traced precisely, quietly taxed OTHER
+   positions' bids too) — a blind subtraction, unconditional on whether the
+   trade was worth it. This instead adds a REAL, position-locked slot to
+   the SAME DP that already prices every open starter, competing for the
+   identical shared budget: the DP can only prefer the cheaper RB2 when the
+   JOINT value of (RB2 + bench RB) actually wins, never blindly.
+   ===================================================================== */
+
+/**
+ * Positions eligible for the roadmap 3.8 bonus slot: 2+-starter positions
+ * only, derived from the league's OWN roster shape (never hardcoded to
+ * RB/WR, even though that is the common case). A 1-starter position (QB
+ * under most settings) has no "last starter, about to buy the bench" state
+ * distinct from its very next pick — that pick already IS the backup, and
+ * is already governed by `firstBackupBoost`/the flat-market bench branch —
+ * so it is out of scope here by construction, not by omission.
+ */
+export function bonusBackupPositions(roster = {}) {
+  return DP_POSITIONS.filter((pos) => (roster[pos] || 0) >= 2);
+}
+
+/**
+ * Augments TRUE open starting slots with one bonus, position-locked slot
+ * per qualifying position (see `bonusBackupPositions`), exactly while that
+ * position has drafted its FIRST player and not yet its second — i.e., is
+ * about to buy its LAST starter. `reachableRoster`'s exact-k knapsack
+ * already treats repeated same-position slot entries symmetrically, so
+ * this needs no new DP code: `slots` simply carries `"RB"` twice instead
+ * of once, and the DP jointly optimizes both from the one shared budget.
+ *
+ * `have[pos] === 0` (drafting the FIRST player at this position): no bonus
+ * slot added — "don't account for the bench when drafting the first
+ * player." `have[pos] >= roster[pos]` (starters already full): no bonus
+ * either — the real bench-shopping phase (flat market + firstBackupBoost)
+ * governs from here, unchanged by this function.
+ *
+ * Callers pass the RESULT to `bidCeiling`'s `slots` argument, while
+ * continuing to use the TRUE, unaugmented `openStartSlots.length` to
+ * decide the DP-vs-bench-market phase switch — this function never moves
+ * that boundary, only what the DP considers while it's still active.
+ */
+export function withBonusBackupSlots(slots, roster = {}, myPlayers = []) {
+  const have = {};
+  for (const p of myPlayers) if (p && p.pos) have[p.pos] = (have[p.pos] || 0) + 1;
+  const out = (slots || []).slice();
+  for (const pos of bonusBackupPositions(roster)) {
+    if ((have[pos] || 0) === 1) out.push(pos);
+  }
+  return out;
+}
+
 /**
  * The best roster still reachable.
  *
