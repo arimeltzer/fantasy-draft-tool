@@ -20,7 +20,7 @@ import httpx
 
 from .base import (
     DEFAULT_ROSTER, DraftPickRow, NormLeague, NormPlayer, NormTeam,
-    make_settings, resolve_my_team,
+    make_settings, resolve_my_team, resolve_my_team_index,
 )
 from .live import LiveDraftState, LivePick, order_picks
 
@@ -486,12 +486,15 @@ def parse_live_draft(data: dict, my_team: str | None = None,
     resolved by neither is still skipped — the next poll, or the next top-up,
     gets it — never guessed at.
     """
-    teams_by_id = {t.get("id"): _team_name(t) for t in data.get("teams", []) or []}
-    mine_key = (my_team or "").strip().lower()
-    mine_ids = {
-        t.get("id") for t in data.get("teams", []) or []
-        if mine_key and mine_key in (str(t.get("id")).lower(), _team_name(t).lower())
-    }
+    raw_teams = data.get("teams", []) or []
+    teams_by_id = {t.get("id"): _team_name(t) for t in raw_teams}
+    # Same tiered resolver the IMPORT path uses (`parse_teams`). This used to
+    # be its own exact-only copy, which is the identical bug in a second
+    # place: a name typed with different punctuation/spacing matched nothing,
+    # `mine_ids` stayed empty, and every live pick came back `is_mine=False`
+    # — reported as "trouble assigning teams" on a real mock draft.
+    _mine = resolve_my_team_index([(str(t.get("id")), _team_name(t)) for t in raw_teams], my_team)
+    mine_ids = {raw_teams[_mine].get("id")} if _mine is not None else set()
 
     players: dict[int, dict] = {}
     for t in data.get("teams", []) or []:
@@ -728,6 +731,20 @@ async def fetch_league(league_id: str, season: int, espn_s2: str | None = None,
         resp = await client.get(league_url(league_id, season))
         if resp.status_code in (401, 403):
             raise PermissionError("ESPN league is private — espn_s2 and SWID cookies required.")
+        if resp.status_code == 404:
+            # Raised as a typed, actionable error rather than letting httpx's
+            # "Client error '404' for url <120 chars of query string>" reach
+            # the user. A 404 here has a small, knowable set of causes and the
+            # season is the one people miss — the keeper screen defaults to
+            # LAST season, so a league that didn't exist then 404s even though
+            # the id is perfectly correct for this year.
+            raise LookupError(
+                f"ESPN has no league {league_id} for the {season} season. "
+                f"Either the league id is wrong, or it didn't exist in {season} — "
+                "a league created since, or an ESPN mock draft (mock leagues "
+                "aren't in the season league API at all, in any year). If you "
+                "meant this year's league, change the season."
+            )
         resp.raise_for_status()
         data = resp.json()
         if isinstance(data, list):  # ESPN sometimes wraps a single league in a list

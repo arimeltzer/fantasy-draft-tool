@@ -198,6 +198,19 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     `NormTeam.ext_id` exists solely so the exact tier can match a numeric
     platform team id. The import report's `mine_found` already surfaced the
     failure, but only as a one-line note at import time.
+    **`parse_live_draft` had the SAME exact-only copy** and was missed on the
+    first pass — fixed separately after a mock draft reported "trouble
+    assigning teams"; both now share `resolve_my_team_index()` (raw
+    `(id, name)` pairs, so the live path's payload dicts and the import
+    path's `NormTeam`s use one implementation).
+  - **A 404 from `fetch_league` is now a typed `LookupError`** with a human
+    message, mapped to HTTP 404 at all three routes, instead of httpx's raw
+    `Client error '404' for url <the whole query string>`. The cause people
+    actually hit is the SEASON, not the id: the keeper screen defaults to
+    `CURRENT_SEASON - 1`, so a league that didn't exist last year 404s while
+    the id is perfectly correct for this year. **ESPN mock drafts 404 here in
+    any season** — mock leagues are not in the season league API at all, which
+    is the same root cause as the REST backfill returning zero picks for them.
   - **The rooms now also guard the invariant downstream**, because an
     already-imported league keeps the bad list: `DraftOverview` warns when
     `opponents.length >= teams` (arithmetically impossible — an N-team league

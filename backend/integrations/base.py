@@ -107,8 +107,9 @@ def _fold_team_key(s: str) -> str:
     return "".join(c for c in (s or "").casefold() if c.isalnum())
 
 
-def resolve_my_team(teams: list[NormTeam], my_team: str | None) -> int | None:
-    """Index of the user's own team in `teams`, or None if it can't be told.
+def resolve_my_team_index(pairs: list[tuple[str | None, str]],
+                          my_team: str | None) -> int | None:
+    """Index of the user's own team among `(platform_id, display_name)` pairs.
 
     Tiered, weakest-tier-last, and refuses on ambiguity — the same discipline
     `matching.py` uses for players. Tiers: exact id/name, then punctuation- and
@@ -120,12 +121,18 @@ def resolve_my_team(teams: list[NormTeam], my_team: str | None) -> int | None:
     league imports N opponents instead of N-1. The draft rooms then render
     "You" plus all N — the user's own team shown as a rival that never drafts
     anyone. That was a real, hit-in-practice bug from an exact-only match.
+
+    Takes raw pairs rather than `NormTeam` so the LIVE draft path can share it:
+    `parse_live_draft` works on raw payload dicts and had its own copy of the
+    exact-only match, which is the same bug in a second place (a mock draft
+    reported picks landing on the wrong team). `resolve_my_team` below is the
+    `NormTeam` wrapper.
     """
     key = (my_team or "").strip()
     if not key:
         return None
-    ids = [str(getattr(t, "ext_id", "") or "").strip().casefold() for t in teams]
-    names = [(t.name or "").strip() for t in teams]
+    ids = [str(pid or "").strip().casefold() for pid, _ in pairs]
+    names = [(name or "").strip() for _, name in pairs]
 
     # Tier 1 — exact, on the platform id or the display name.
     low = key.casefold()
@@ -150,6 +157,11 @@ def resolve_my_team(teams: list[NormTeam], my_team: str | None) -> int | None:
             return hits[0]
 
     return None
+
+
+def resolve_my_team(teams: list[NormTeam], my_team: str | None) -> int | None:
+    """`resolve_my_team_index` over a list of NormTeam. See it for the tiers."""
+    return resolve_my_team_index([(t.ext_id, t.name) for t in teams], my_team)
 
 
 def opponent_team_ids(teams: list[NormTeam]) -> tuple[list[str], dict[str, int]]:

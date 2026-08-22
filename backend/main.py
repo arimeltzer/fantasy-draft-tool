@@ -494,6 +494,8 @@ async def import_league(
         raise HTTPException(status_code=403, detail=str(e))
     except PermissionError as e:
         raise HTTPException(status_code=401, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001 — surface provider errors cleanly
@@ -663,6 +665,9 @@ async def espn_keeper_candidates(
             espn_s2=data.espn_s2, swid=data.swid, my_team=data.my_team)
     except PermissionError as e:
         raise HTTPException(status_code=401, detail=str(e))
+    except LookupError as e:
+        # No such league/season — already phrased for a human by fetch_league.
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:  # noqa: BLE001 — surface provider errors cleanly
         raise HTTPException(status_code=502, detail=f"espn fetch failed: {e}")
 
@@ -1322,6 +1327,8 @@ async def sync_draft(
         raise HTTPException(status_code=403, detail=str(e))
     except PermissionError as e:
         raise HTTPException(status_code=401, detail=str(e))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001 — surface provider errors cleanly

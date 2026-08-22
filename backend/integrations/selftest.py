@@ -592,6 +592,19 @@ def test_live_draft():
     # Two contiguous picks are in, so pick 3 is on the clock.
     assert st.complete_through == 2
 
+    # The LIVE path resolves "my team" through the same tiered matcher the
+    # import path uses. It used to keep its own exact-only copy, so a name
+    # typed with different punctuation or spacing matched nothing, `mine_ids`
+    # stayed empty, and EVERY pick came back is_mine=False — reported from a
+    # real mock draft as "trouble assigning teams".
+    for typed in ("team ari", "  Team   Ari ", "Team Ari's", "Ari"):
+        loose = espn.parse_live_draft(espn_data, my_team=typed)
+        assert loose.picks[1].is_mine is True, f"live my-team match failed for {typed!r}"
+        assert loose.picks[0].is_mine is False, f"live match over-claimed for {typed!r}"
+    # Still refuses rather than guessing: no match, and an ambiguous one.
+    assert espn.parse_live_draft(espn_data, my_team="Nobody").picks[1].is_mine is False
+    assert espn.parse_live_draft(espn_data, my_team=None).picks[1].is_mine is False
+
     # A kona_player_info top-up (pos_by_id) resolves picks the roster view
     # hasn't caught up to — verified against a real in-progress draft where
     # the roster view had resolved NONE of the picks already made, not just
