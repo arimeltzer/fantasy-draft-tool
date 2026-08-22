@@ -2852,16 +2852,107 @@ real follow-up work, now lower priority three times over: 3.6c removed the
 over-depth problem, 3.6d gave a lighter-weight answer to the bye-specific
 half, and 3.6e covers the under-depth half priority #2 asked for directly.
 Priority #1 from the same message — bye-sensitive SEASON points — is
-tracked separately as roadmap 2.4, whose gate result (deployment arm not yet
-significant; see 2.4's own status) is why it is not yet wired into $Max.
-3.6a is buildable with no precondition risk; 3.6b needs its precondition
-checked before any kill-gate number is set. Neither is blocking anything the
-user has actually asked for at this point.
+tracked separately as roadmap 2.4, whose second gate CLEARED the bar
+(deployment mean/SE 2.83) and shipped as the default in the SNAKE room —
+but deliberately NOT wired into auction `$Max`, since the gate validated a
+greedy-pick selection mechanism, not competitive bidding; see 2.4's own
+status for the reasoning. 3.6a is buildable with no precondition risk;
+3.6b needs its precondition checked before any kill-gate number is set.
+Neither is blocking anything the user has actually asked for at this point.
 
 > **Prompt** — "Check whether draft-sim.mjs's auction simulator can score
 > bye-week-specific lineup completeness (3.6a), and separately run
 > injury_probe-style verification of nflverse's player-level started/inactive
 > data before touching 3.6b at all."
+
+### 3.7 Auction: value-weighted bench reservation — PRE-REGISTRATION, not yet built
+
+**The question, asked directly, and it's a real gap 3.3 named on its own
+first day rather than a newly-discovered one.** "How much weight is `$Max`
+placing on saving money for bench players, and how does it decide whether to
+spend more to acquire a starter?" Traced to the code: **a flat $1 per
+remaining bench/K/DST slot, in both phases** — `remainingStartingSlots`'
+`reserveSpots` during the starter-filling DP, and `maxMax`'s identical
+arithmetic once bench-shopping starts. `budget-path.js`'s own header calls
+this out as a stated approximation, not an oversight: "Bench slots are $1
+filler and are NOT in the DP... modelling them would multiply the state
+space to agonize over a decision nobody agonizes over." That was a
+reasonable call when it was made — **but it assumed bench slots ARE roughly
+interchangeable filler, and 3.6e and 2.4 have since established that they
+are not**: a first backup at QB/RB/WR is worth 1.15x market (3.6e); a
+bye-covering body can be worth real credit above market (2.4, snake-only
+today). Once bench value is differentiated, reserving for it as if it
+weren't is the mismatch.
+
+**The two-phase structure is NOT what changes, confirmed against the user's
+own framing.** "It seems like we still have a two phase question. initially
+- how much to reserve to build the bench we want. then we still would
+switch to bench mode once starter spots are full." Correct, and this step
+does not touch the phase switch itself — `openStartSlots.length === 0`
+still flips from `bidCeiling`'s DP to the market-priced bench branch exactly
+as it does today. What changes is only the SIZE of the number
+`reserveSpots` subtracts per remaining bench slot during the starter phase,
+from a flat $1 to something that reflects what a WORTHWHILE bench slot
+actually costs.
+
+**Scoped as a smarter SCALAR reserve, deliberately NOT a DP extension.**
+Two shapes were on the table; the second is rejected here, not silently
+preferred:
+  - (a) A per-slot reserve that distinguishes MEANINGFUL bench slots (a
+    first backup at QB/RB/WR — up to 3 of them, reusing `maxUseful`'s own
+    cap to know which slots still lack one) from FILLER slots (K/DST,
+    2nd+ QB/TE, deep RB/WR past typical rotation) — real expected market
+    price for the former, $1 for the latter. Reuses `firstBackupBoost`'s own
+    "which slot is the meaningful one" logic (3.6e) rather than inventing a
+    second copy of it.
+  - (b) Literally adding bench slots as DP dimensions — the exact expansion
+    `budget-path.js`'s header already declined for cost reasons. Revisiting
+    that decision isn't ruled out forever, but the state-space cost it was
+    declined for hasn't changed, and (a) captures the same differentiated-
+    value insight at a fraction of the computational cost. Start with (a).
+
+**Precondition: none needed for the CORE mechanic.** `maxUseful` and
+`firstBackupBoost` are shipped and validated; reusing them to size a reserve
+is the same category of reuse 3.6c/3.6e already are, not a new statistical
+claim.
+
+**But the AVAILABLE kill gate can only validate HALF of what motivated this
+— stated up front, not discovered after a misleading result.** The natural
+harness is `auction-sim.mjs`'s `pairedCompareAuction`, upgraded to score on
+`realizedWeeklyPoints` (real byes, real per-week outcomes — the same
+upgrade 2.4 already proved out, applied to the auction side for the first
+time) rather than its current `bestLineupPoints` (season-total hindsight,
+blind to byes entirely). That harness can score whether protecting more
+budget for bench pays off in weeks a bye leaves a hole — but per
+`realizedWeeklyPoints`' OWN stated limitation, an injured/inactive starter
+is still started and scores his real 0; the lineup is never re-optimized
+around real-time injury status. So this gate, as buildable today, measures
+the BYE-COVERAGE half of "is it worth reserving more for bench" and is
+BLIND to the INJURY-INSURANCE half — precisely the half the user named as
+priority: "having at least one backup... solves for byes and the
+unpredictability of injuries." A result from this gate should be read as a
+LOWER BOUND on the value of smarter reservation, not the whole answer.
+Closing that gap needs the same precondition 3.6b already flagged and left
+unchecked — does nflverse distinguish started vs. inactive at the player
+level — so this step and 3.6b now share a dependency, not by coincidence.
+
+**Kill gate, pre-registered on the half that's measurable today**: paired
+auction simulation, common random numbers, upgraded scorer. Agent A uses
+today's flat-$1 `reserveSpots`; Agent B uses the (a)-shape value-weighted
+reserve. Score both on `realizedWeeklyPoints` over many replayed seasons.
+Bar: mean/SE > 2 on realized points, same discipline every other gate in
+this document uses — a result inside that bar ships nothing, and a result
+outside it is reported honestly as a bye-coverage-only finding until 3.6b's
+precondition is checked and the gate can be re-run with injury substitution
+included.
+
+**Status: SCOPED, NOT STARTED.**
+
+> **Prompt** — "Build roadmap 3.7's (a)-shape value-weighted bench reserve
+> in budget-path.js, upgrade auction-sim.mjs's scorer to
+> realizedWeeklyPoints, and run the pre-registered gate — report the result
+> explicitly as bye-coverage-only per the stated harness limitation, not as
+> a full validation of the reservation question."
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
