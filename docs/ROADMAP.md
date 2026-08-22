@@ -1448,6 +1448,90 @@ where the endpoint was verified genuine before 0.3 was built on it.
 > distributions with interval-calibration validation. Do not wire them into
 > anything until the calibration check passes."
 
+### 2.4 Deterministic bye-aware lineup value — PRE-REGISTRATION, not yet built
+
+**Proposed by the user while revisiting 2.3**: "a model that assumes the
+maximum lineup each week of the season accounting for byes. That will
+appropriately build in the need for bench depth without putting too much
+weight on a single week."
+
+**This is not 2.3 and should not be filed as it.** It produces no championship
+probability and needs no calibration gate on a probability. It produces a
+deterministic roster-quality number: for each week, the best startable lineup
+given who is structurally available, summed over the season. Filed here rather
+than under 3.6a because it is a season-level valuation, but it IS the honest
+version of 3.6a's bye-coverage credit — computed over a real lineup instead of
+as a per-candidate heuristic.
+
+**Why 2.2's closure does not block it, quoted rather than argued.** 2.2a's own
+pre-registration already drew exactly this line:
+
+> a **bye is deterministic and known ex ante**. It is not a bad outcome that
+> might happen; it is a week the player structurally cannot score, visible on
+> the schedule in August. Byes are therefore EXCLUDED from the ratio fit and
+> handled structurally in the simulator (no lineup slot, no draw).
+
+2.2 died on the STOCHASTIC half — weekly draws understated season variance 3-4x
+and the form factor explained under 12% of the gap. The bye half was never
+distribution-dependent; the plan of record was always to handle it structurally
+with **no draw at all**. So this step keeps the half that never needed a
+distribution and discards the half that failed. Nothing measured in 2.2a or
+2.2b argues against it.
+
+**What it consumes, all of which already exists**: `engine/lineup-optimizer.js`
+(built and selftested under 2.2b, currently UNWIRED — this is what it was for),
+`bye-weeks.js byeByTeam` (shipped, schedule-derived), and the live board's own
+season projections put on a per-week basis. No new data, no migration, no fit.
+
+**What it deliberately does NOT capture, stated so it can't be oversold**:
+1. **Injury-replacement value.** Nobody is ever unavailable except on a bye, so
+   a bench player's only job here is bye coverage. That remains 3.6b, and
+   remains gated on its own precondition check.
+2. **Volatility option value** — "sometimes your WR3 outscores your WR1." That
+   was 2.2's actual thesis ("option value is paid out of week-to-week
+   volatility") and it stays closed. A deterministic model prices none of it.
+3. **Streaming.** K/DST and deep bench are treated as fixed assets. `maxUseful`
+   already caps K/DST depth, so this mostly cancels, but it means the model
+   will slightly over-value a backup kicker if that cap is ever relaxed.
+
+**Expected magnitude, estimated BEFORE building so the result can disappoint.**
+Byes fall in roughly weeks 5-14, with ~4-6 of 32 NFL teams out per week, so
+about 1-1.5 of ~9 starters are unavailable in a typical bye-season week.
+Replacing a starter with the best bench body costs on the order of a few points.
+Total bye cost is therefore ~40-60 points of ~1500 — but the number that matters
+is not that, it is the DIFFERENCE between a well-constructed and a
+badly-constructed bench, which is smaller: plausibly 10-25 points a season. That
+is a real edge in a league decided weekly by single digits, and it is also small
+enough that a null result is entirely possible. Recording the estimate up front
+so "it only moved a little" cannot be retold afterwards as success.
+
+**Kill gate, pre-registered — and the trap it has to avoid.** The obvious gate
+(does the bye-aware agent score higher bye-aware lineup points?) is circular:
+the agent optimizes that metric, so it wins by construction. The gate must score
+REALIZED outcomes, not projected ones:
+
+> Over N simulated drafts replayed on historical seasons with common random
+> numbers, an agent whose bench valuation uses bye-aware lineup value must beat
+> the current agent on **realized** weekly-lineup points — lineups set week by
+> week from the ACTUAL bye schedule and scored from ACTUAL per-week results
+> (`fantasy_player_logs` already carries `(season, player_id, week, fp)`) — by a
+> margin exceeding 2 standard errors. Ship nothing on a within-noise result.
+
+This is measurable with what is in the repo today: `draft-sim.mjs` supplies the
+replay harness and common random numbers, `fantasy_player_logs` supplies the
+realized weekly scores, and the schedule supplies the real byes. Unlike 2.3's
+gate — which needs many independent league-seasons with known champions and may
+not be measurable at acceptable cost at all — this one needs only per-week
+player scores the database already holds.
+
+**Status: SCOPED, NOT STARTED.** The build is small because every component
+exists; the gate run is the actual work.
+
+> **Prompt** — "Build roadmap 2.4: wire `lineup-optimizer.js` to deterministic
+> per-week projections with real byes, produce a season bye-aware lineup value,
+> and run its pre-registered gate against realized `fantasy_player_logs` scores
+> before wiring it into any valuation."
+
 ---
 
 ## RESTRUCTURE — written after 2.2 closed, before Phase 3 began
@@ -2548,6 +2632,14 @@ simulator can even score that granularity needs checking before a number goes
 in this gate; if it can't yet, that's the actual next step, not the credit
 itself.
 
+**SUPERSEDED IN APPROACH by 2.4.** The open question above — what harness can
+score bye-specific lineup completeness — is answered there: score REALIZED
+weekly lineups from `fantasy_player_logs` against the real bye schedule.
+2.4 also replaces this step's per-candidate heuristic bump with an actual
+season-long lineup calculation, which is the same signal computed properly.
+Build 2.4; if it clears its gate, 3.6a is delivered by it rather than
+separately.
+
 **3.6b Injury-replacement credit — the hard half, precondition not yet checked.**
 
 *The real question, stated precisely*: across many realized rosters, how much
@@ -2829,7 +2921,7 @@ infrastructure project** that should be planned as one. **4.1c is blocked.**
 |---|---|---|---|
 | 0 | Days | Moderate, near-certain | Low — 0.1, 0.2 and 0.3 are all done; see their results above |
 | 1 | Weeks | Real, but position-specific | Moderate — 1.1/1.2 done, TE only; 1.3 done, team_change RB/WR only (qb_change/coach_change/pace failed); 1.4 done, not shipped (draft capital ≈ what ADP already knows for rookies) |
-| 2 | Weeks | Largest conceptual | **Highest** — 2.1 done (RB/WR/TE calibrated, QB excluded); 2.2 CLOSED, both attempts rejected; 2.3 not started, pending a feasibility probe |
+| 2 | Weeks | Largest conceptual | **Highest — except 2.4** — 2.1 done (RB/WR/TE calibrated, QB excluded); 2.2 CLOSED, both attempts rejected; 2.3 not started, pending a feasibility probe; **2.4 scoped and LOW risk** (deterministic, no distribution, every component already built) |
 | 3 | Weeks | Large, format-specific | Moderate — **no longer depends on Phase 2**; mechanisms build against the current objective behind a seam (see RESTRUCTURE) |
 | 4 | Ongoing | Large over a season | **Re-rated — "low technically" was wrong.** 4.1 scoped: 4.1a buildable now (FAAB history already parsed, gate measurable); 4.1b is an INFRASTRUCTURE build (no in-season state exists anywhere in the app); 4.1c blocked on 2.3; 4.2 blocked on a route 2.2's closure abandoned |
 
