@@ -1,0 +1,44 @@
+name: ESPN draft-order probe (roadmap 3.7 precondition)
+
+# Manual. Answers whether draftDetail.picks' array order is real chronological
+# nomination order — the precondition roadmap 3.7's historical bench-price
+# anchor needs, checked before any modeling code is written on top of it.
+# Self-contained: checks ESPN's own overallPickNumber field against array
+# position, no external ground truth needed. See the script header.
+#
+# No FANTASYPROS_API_KEY needed — this only talks to ESPN. Public leagues
+# need no secrets at all. A PRIVATE league needs ESPN_S2/ESPN_SWID added as
+# repo secrets (Settings -> Secrets and variables -> Actions) — add them
+# there directly rather than pasting the values anywhere they'd be readable
+# back, same as this project's existing FANTASYPROS_API_KEY/DATABASE_PUBLIC_URL
+# secrets. GitHub masks secret values in logs automatically.
+
+on:
+  workflow_dispatch:
+    inputs:
+      league_id:
+        description: "ESPN league id"
+        required: true
+        type: string
+      seasons:
+        description: "Seasons to probe (space separated)"
+        required: false
+        default: "2024 2023 2022"
+        type: string
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install httpx
+      - name: Probe draft-order precondition
+        working-directory: data-pipeline
+        env:
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          ESPN_SWID: ${{ secrets.ESPN_SWID }}
+        run: python espn_draft_order_probe.py --league-id "${{ inputs.league_id }}" --seasons ${{ inputs.seasons }}
