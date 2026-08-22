@@ -2971,15 +2971,27 @@ correctly falling back to $1 — for most users in practice. That is the
 correct, honest behaviour under "missing data skips the effect," not a
 defect to design around.
 
-**Precondition to check FIRST, before any modeling — same discipline
-`injury_probe.py`/`adp_probe.py` established, not assumed from reading the
-parser.** Confirm `draftDetail.picks`' array order really is genuine
-nomination order against a REAL captured multi-season pull, the way every
-other "verified against real data" claim in this document was checked
-before being relied on. If it isn't reliably ordered for older seasons (the
-`leagueHistory` fallback path is a different host and was not built with
-sequence-preservation as a goal), the whole mechanism needs a different
-foundation before it's worth building.
+**Precondition — CHECKED, PASSED.** Same discipline `injury_probe.py`/
+`adp_probe.py` established: don't rely on the parser's own assumption about
+`draftDetail.picks`' array order without confirming it against a REAL
+captured multi-season pull. `data-pipeline/espn_draft_order_probe.py`
+(run via `.github/workflows/espn-draft-order-probe.yml`, since this
+sandbox's own proxy blocks ESPN outright — same GitHub-Actions-for-real-
+egress pattern the 2.4 gate used) checks ESPN's own `overallPickNumber`
+field for strict monotonicity against array position — self-contained, no
+external ground truth needed. Run against a real private league (cookies
+supplied as masked `ESPN_S2`/`ESPN_SWID` repo secrets, never typed
+anywhere readable back) across 4 seasons on the `current` (non-history)
+path: **2024 (196 picks), 2023 (196), 2022 (224), 2021 (192) — all 4
+PASS**, every pick in every season carrying a present, strictly increasing
+`overallPickNumber`. Array order IS real nomination order, at least on the
+`current` league-API path. The `leagueHistory` fallback host (older
+seasons that 404 on `current`) was NOT separately verified — same
+`current`-path-only scope this check was honest about needing up front —
+so a room whose usable history reaches back far enough to hit that
+fallback should re-check before leaning on it; most rooms' 1-2 seasons of
+typical history won't reach it. Precondition cleared for the common case;
+modeling has not started.
 
 **Kill gate, pre-registered on the half that's measurable today — the
 AVAILABLE gate can only validate HALF of what motivated this, stated up
@@ -3021,17 +3033,19 @@ SCENARIO, and the two buckets are reported side by side rather than
 collapsed into one number that could hide a real early-overspend-specific
 loss.
 
-**Status: SCOPED, NOT STARTED. Precondition check (draft order verification)
-is the actual next action — not the modeling, and not the gate.**
+**Status: PRECONDITION CONFIRMED (4/4 seasons PASS, see above). Modeling
+NOT STARTED.** The draft-order check only clears the way to build; the
+historical-anchor mechanism itself, the `auction-sim.mjs` scorer upgrade,
+and the stratified gate are all still unbuilt.
 
-> **Prompt** — "First, verify draftDetail.picks' array order is genuine
-> nomination order against a real multi-season pull (roadmap 3.7's
-> precondition). Only if that holds: build the historical-anchor bench
-> reserve in budget-path.js, upgrade auction-sim.mjs's scorer to
-> realizedWeeklyPoints, and run the pre-registered gate STRATIFIED by calm
-> vs. early-overspend scenarios — report both buckets, and report the
-> result as bye-coverage-only per the stated harness limitation, not as a
-> full validation of the reservation question."
+> **Prompt** — "Roadmap 3.7's precondition (draftDetail.picks array order)
+> is already confirmed — see docs/ROADMAP.md 3.7. Build the
+> historical-anchor bench reserve in budget-path.js, upgrade
+> auction-sim.mjs's scorer to realizedWeeklyPoints, and run the
+> pre-registered gate STRATIFIED by calm vs. early-overspend scenarios —
+> report both buckets, and report the result as bye-coverage-only per the
+> stated harness limitation, not as a full validation of the reservation
+> question."
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
