@@ -53,12 +53,27 @@ export interface NominationResult {
 }
 
 export interface InflationResult {
+  /** The multiplier actually applied to every $Live price, bounded by
+   *  INFLATION_CLAMP. */
   factor: number;
   board: BoardPlayer[];
   spent: number;
   remainingMoney: number;
   remainingSpots: number;
+  /** The unbounded ratio, kept as a diagnostic — late in a draft it runs to
+   *  hundreds as its denominator collapses. Never use it to price. */
+  raw: number;
+  /** `factor !== raw`: the bound bit. */
+  clamped: boolean;
+  /** False once too little priced value is left on the board for the ratio to
+   *  estimate anything. */
+  reliable: boolean;
+  /** Share of the board's ORIGINAL above-$1 par value still undrafted. */
+  coverage: number;
 }
+
+export declare const INFLATION_CLAMP: { min: number; max: number };
+export declare const INFLATION_MIN_COVERAGE: number;
 
 export declare const DEFAULT_AUCTION_PARAMS: AuctionParams;
 

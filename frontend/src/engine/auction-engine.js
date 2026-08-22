@@ -72,6 +72,30 @@ export function auctionValues(board, auctionLeague, P = DEFAULT_AUCTION_PARAMS) 
  * draftedPrices = [{ id, price }]  actual winning bids observed so far
  * Returns { factor, board: [...with adjValue], spent, remainingMoney, remainingSpots }
  * ------------------------------------------------------------------ */
+/* Bounds on the live inflation multiplier.
+ *
+ * WHY A CLAMP IS NEEDED AT ALL, from a real report: "at the end of the draft
+ * when most people are paying $1-2 for good players inflation is showing as
+ * through the roof." It was — a simulated 12-team draft reached **x1088**.
+ * The ratio's DENOMINATOR is the par value still on the board above $1, and
+ * late in a draft essentially every remaining player is a $1 player, so it
+ * collapses toward zero while the numerator (money still in the room) stays
+ * large. The `|| 1` guard then stops it being a division by zero and instead
+ * makes the "multiplier" literally equal the leftover dollars — 1088 was not
+ * 108,800% inflation, it was $1088.
+ *
+ * Bounds are STATED, not fitted — the same discipline as `byeClashStep` and
+ * `opponent-capacity`'s allowances, and the same shape as
+ * `auction-calibration.js`'s own [0.6, 1.6] clamp. 2.0 is deliberately
+ * generous: a room that genuinely underspent early really can leave the last
+ * useful players going for double par. */
+export const INFLATION_CLAMP = { min: 0.5, max: 2.0 };
+/* Below this share of the board's ORIGINAL discretionary par still
+ * undrafted, the ratio is dominated by whatever scraps remain and is not a
+ * meaningful estimate of anything. Reported as unreliable rather than
+ * silently shown as a number. */
+export const INFLATION_MIN_COVERAGE = 0.05;
+
 export function applyInflation(boardWithPar, draftedPrices, auctionLeague, P = DEFAULT_AUCTION_PARAMS) {
   const { teams, budget, rosterSize } = auctionLeague;
   const min = P.auction.minBid;
@@ -89,7 +113,17 @@ export function applyInflation(boardWithPar, draftedPrices, auctionLeague, P = D
   const undrafted = boardWithPar.filter((p) => !paidById.has(p.id) && p.parValue > min);
   const remainingParDiscretionary = undrafted.reduce((s, p) => s + (p.parValue - min), 0) || 1;
 
-  const factor = +(remainingDiscretionary / remainingParDiscretionary).toFixed(3);
+  // How much of the board's priced-above-$1 value is still out there. The
+  // ratio only means something while there is something left to buy.
+  const allParDiscretionary = boardWithPar
+    .reduce((s, p) => s + Math.max(0, (p.parValue || min) - min), 0) || 1;
+  const coverage = remainingParDiscretionary / allParDiscretionary;
+  const reliable = coverage >= INFLATION_MIN_COVERAGE;
+
+  const raw = +(remainingDiscretionary / remainingParDiscretionary).toFixed(3);
+  const factor = +Math.min(INFLATION_CLAMP.max,
+    Math.max(INFLATION_CLAMP.min, raw)).toFixed(3);
+  const clamped = factor !== raw;
 
   const board = boardWithPar.map((p) => {
     if (paidById.has(p.id)) return { ...p, paid: paidById.get(p.id), adjValue: null };
@@ -99,7 +133,12 @@ export function applyInflation(boardWithPar, draftedPrices, auctionLeague, P = D
     return { ...p, paid: null, adjValue: adj };
   });
 
-  return { factor, board, spent, remainingMoney, remainingSpots };
+  return {
+    factor, board, spent, remainingMoney, remainingSpots,
+    // `raw` is kept so the unclamped number stays inspectable rather than
+    // being silently discarded — it is the diagnostic, `factor` is the price.
+    raw, clamped, reliable, coverage: +coverage.toFixed(3),
+  };
 }
 
 /** Most you can bid and still fill your remaining roster spots at $1 each. */

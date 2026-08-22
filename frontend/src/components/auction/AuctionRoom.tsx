@@ -486,7 +486,12 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2 text-xs">
-            <InflationBadge factor={inflation.factor} />
+            <InflationBadge
+              factor={inflation.factor}
+              reliable={inflation.reliable}
+              clamped={inflation.clamped}
+              raw={inflation.raw}
+            />
             <CalibrationBadge cal={calibration} />
             <button
               onClick={() => setShowLive(true)}
