@@ -278,12 +278,20 @@ def parse_draft_picks(data: dict, pos_by_id: dict[int, dict] | None = None) -> l
             }
 
     team_names = {t.get("id"): _team_name(t) for t in (data.get("teams", []) or [])}
+    size = int((data.get("settings", {}) or {}).get("size") or 0)
     out: list[DraftPickRow] = []
     for p in (data.get("draftDetail", {}) or {}).get("picks", []) or []:
         pid = p.get("playerId")
         if pid is None:
             continue
         meta = roster_meta.get(pid) or (pos_by_id or {}).get(pid) or {}
+        # Same overall-pick derivation `parse_live_draft` uses: prefer the
+        # explicit field, fall back to round/size arithmetic when it's absent
+        # (verified real nomination order on the `current` path — see
+        # espn_draft_order_probe.py / docs/ROADMAP.md 3.7).
+        overall = p.get("overallPickNumber")
+        if not overall and size and p.get("roundId") and p.get("roundPickNumber"):
+            overall = (int(p["roundId"]) - 1) * size + int(p["roundPickNumber"])
         out.append(DraftPickRow(
             ext_id=str(pid),
             name=meta.get("name", "") or "",
@@ -291,6 +299,7 @@ def parse_draft_picks(data: dict, pos_by_id: dict[int, dict] | None = None) -> l
             team=meta.get("team", "") or "",
             bid=int(p["bidAmount"]) if p.get("bidAmount") is not None else None,
             round=int(p["roundId"]) if p.get("roundId") is not None else None,
+            overall=int(overall) if overall else None,
             # Who drafted him, which is NOT who ended up rostering him.
             owner=team_names.get(p.get("teamId"), "") or "",
             resolved=bool(meta.get("pos")),

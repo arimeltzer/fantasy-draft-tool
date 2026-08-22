@@ -67,6 +67,13 @@ class DraftPickRow:
     team: str = ""
     bid: int | None = None
     round: int | None = None
+    # Overall pick number (nomination order for an auction), when the platform
+    # supplies one — ESPN's `overallPickNumber`, with the same `roundId`/
+    # `roundPickNumber` fallback `parse_live_draft` already uses when it's
+    # absent. Confirmed real nomination order against a live multi-season pull
+    # (data-pipeline/espn_draft_order_probe.py, see docs/ROADMAP.md 3.7) before
+    # any caller relies on array/overall order meaning "who was bid on when".
+    overall: int | None = None
     owner: str = ""
     resolved: bool = False
 

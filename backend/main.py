@@ -706,7 +706,7 @@ async def espn_keeper_candidates(
         # each question is answered from the data that fits it.
         "draft_picks": [
             {"ext_id": p.ext_id, "name": p.name, "pos": p.pos, "team": p.team,
-             "bid": p.bid, "round": p.round, "owner": p.owner,
+             "bid": p.bid, "round": p.round, "overall": p.overall, "owner": p.owner,
              "resolved": p.resolved, "season": season}
             for season, rows in all_drafts
             for p in rows

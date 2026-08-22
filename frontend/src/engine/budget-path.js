@@ -204,6 +204,171 @@ export function firstBackupBoost(pos, have, roster = {}) {
   return starters > 0 && (have || 0) === starters ? BACKUP_BOOST_MULT : 1;
 }
 
+/* =====================================================================
+   HISTORICAL-ANCHOR BENCH RESERVE — roadmap 3.7. See docs/ROADMAP.md 3.7
+   for the full pre-registration; this is the "replacement design" recorded
+   there after the FIRST design (anchoring a meaningful bench slot's reserve
+   to marketPrice()'s LIVE number) was caught and rejected before any code
+   shipped: "most bidders overspend early... the price for a decent bench
+   player falls quickly. I wouldn't want to hold back on a starter in early
+   rounds based on bench values that will tank." Live price early in a draft
+   carries no information yet about whether THIS room's people overspend
+   early, so anchoring to it would systematically over-protect budget in the
+   starter phase. Anchoring to THIS ROOM's own historical bench-tier price
+   instead sidesteps that bias entirely — it is a property of the room's
+   past behavior, not of a single moment mid-draft.
+
+   MECHANISM. For QB/RB/WR — the same three positions `firstBackupBoost`
+   already prioritizes a first backup at (roadmap 3.6e) — the league-wide
+   "first backup tier" in one historical draft is the small window of picks
+   at that position landing just past the league's total STARTER demand
+   (`teams * roster[pos]`), read in NOMINATION ORDER (`overall`, confirmed
+   real order by roadmap 3.7's precondition —
+   data-pipeline/espn_draft_order_probe.py). Their raw prices are pooled
+   across seasons, RECENCY_DECAY-weighted the same way
+   auction-calibration.js weights positional shares, then shrunk hard toward
+   the flat $1 fallback by sample size.
+
+   RAW PRICE, NOT A PAR-RATIO — a stated simplification, not an oversight.
+   A ratio to that season's own par value would transfer better across
+   player-pool shifts, but the client does not carry per-season VBD or even
+   per-season teams/budget for historical drafts, so there is nothing to
+   ratio against. This assumes the room's total budget hasn't changed across
+   the pooled seasons — most leagues are stable on this; one that changed
+   budget mid-history gets a skewed number, a real accepted limitation.
+
+   SPARSER THAN POSITIONAL-SHARE CALIBRATION, ON PURPOSE, AND SHRUNK
+   ACCORDINGLY. `calibrateAuction` pools ~20-30 priced picks per position per
+   SEASON; this pools only the WINDOW (a few) per position per season — an
+   order of magnitude sparser. Its MIN_PICKS/SHRINK_K0 do not transfer
+   numerically, so this uses its own, more conservative constants. Most
+   leagues import only 1-2 seasons of history today, so this will typically
+   land below MIN_PICKS and correctly fall back to $1 — the honest behavior,
+   not a defect.
+   ===================================================================== */
+
+/** Ranks past the league's starter-demand threshold pooled per season —
+ *  the "first backup tier" window, not a single point (more picks per
+ *  season without reaching into what's clearly second- or third-string). */
+export const BENCH_WINDOW = 3;
+
+/** Below this many pooled (RECENCY_DECAY-weighted) window picks at a
+ *  position, there isn't enough signal to move off the $1 fallback at all —
+ *  roughly 2 seasons' worth, given ~BENCH_WINDOW picks/season. */
+export const BENCH_RESERVE_MIN_PICKS = 6;
+
+/** Shrink prior strength, in units of pooled window picks. Deliberately a
+ *  SEPARATE constant from auction-calibration.js's SHRINK_K0 (40) — that
+ *  constant was tuned against a pool an order of magnitude denser than this
+ *  one, so reusing it numerically would under-shrink a much noisier signal. */
+export const BENCH_RESERVE_SHRINK_K0 = 12;
+
+/** Same recency weighting auction-calibration.js uses for positional
+ *  shares — a league's turnover in WHO sets prices applies here too. */
+const BENCH_RESERVE_DECAY = 0.8;
+
+/**
+ * This room's historical bench-tier price per position, from stored prior
+ * drafts. `draftPicks` — [{ pos, bid, overall, season }], the same shape
+ * `settings.keeperImport.draftPicks` already carries (ESPN only; Yahoo/paste
+ * import supply no nomination order and are excluded from this signal,
+ * though they still feed `auction-calibration.js`'s position-share model,
+ * which doesn't need order).
+ *
+ * @returns { reserve, usable, sample, notes } — `reserve[pos]` is a dollar
+ *          amount, `usable` false means every position fell back to $1 (the
+ *          normal case for a league with little imported history).
+ */
+export function historicalBenchReserve(draftPicks, { teams, roster } = {}) {
+  const fallback = {};
+  for (const pos of BACKUP_BOOST_POSITIONS) fallback[pos] = 1;
+  if (!teams || !roster || !Array.isArray(draftPicks) || !draftPicks.length) {
+    return { reserve: fallback, usable: false, sample: {}, notes: ["no prior-draft history"] };
+  }
+
+  // Group by season; a pick with no `overall` cannot be ranked in nomination
+  // order and is dropped from THIS signal only (it still counts for
+  // auction-calibration.js's position-share model, which needs no order).
+  const bySeason = {};
+  for (const p of draftPicks) {
+    if (!p || !Number.isFinite(p.overall) || !Number.isFinite(p.bid) || p.bid <= 0) continue;
+    const season = Number.isFinite(p.season) ? p.season : 0;
+    (bySeason[season] ||= []).push(p);
+  }
+  const seasons = Object.keys(bySeason).map(Number).sort((a, b) => b - a);
+  if (!seasons.length) {
+    return { reserve: fallback, usable: false, sample: {},
+             notes: ["no ordered prior-draft picks (overall pick number missing)"] };
+  }
+  const newest = seasons[0];
+
+  const reserve = {};
+  const sample = {};
+  for (const pos of BACKUP_BOOST_POSITIONS) {
+    const threshold = teams * (roster[pos] || 0);
+    if (threshold <= 0) { reserve[pos] = 1; sample[pos] = 0; continue; }
+
+    let wSum = 0, priceSum = 0, n = 0;
+    for (const season of seasons) {
+      const picks = bySeason[season]
+        .filter((p) => p.pos === pos)
+        .sort((a, b) => a.overall - b.overall);
+      const windowPicks = picks.slice(threshold, threshold + BENCH_WINDOW);
+      if (!windowPicks.length) continue;
+      const w = Math.pow(BENCH_RESERVE_DECAY, newest - season);
+      for (const p of windowPicks) { wSum += w; priceSum += w * p.bid; n++; }
+    }
+    sample[pos] = n;
+    if (n < BENCH_RESERVE_MIN_PICKS || wSum <= 0) { reserve[pos] = 1; continue; }
+
+    const observed = priceSum / wSum;
+    // Same empirical-Bayes shrink-toward-fallback shape auction-calibration.js
+    // uses for positional shares (there toward 1x neutral; here toward $1).
+    const shrunk = 1 + (observed - 1) * (n / (n + BENCH_RESERVE_SHRINK_K0));
+    reserve[pos] = Math.max(1, Math.round(shrunk));
+  }
+
+  const usable = BACKUP_BOOST_POSITIONS.some((pos) => (sample[pos] || 0) >= BENCH_RESERVE_MIN_PICKS);
+  const notes = usable ? [] : [
+    `fewer than ${BENCH_RESERVE_MIN_PICKS} ordered window picks at any position ` +
+    "(most leagues' 1-2 imported seasons land here) — reserve stays $1 filler",
+  ];
+  return { reserve, usable, sample, notes };
+}
+
+/**
+ * The starter-phase reserve in real dollars: today's flat $1-per-slot
+ * baseline, with the FIRST still-missing backup at each of QB/RB/WR
+ * (`firstBackupBoost`'s own zero-to-one condition, reused rather than
+ * re-derived) upgraded from $1 to this room's historical bench-tier price —
+ * capped by however many bench/K/DST slots are actually left to spend it on.
+ *
+ * Deliberately NOT a DP dimension — see the module header's stated
+ * approximation. This differentiates the SCALAR `reserveSpots` already
+ * subtracts from budget, nothing more.
+ */
+export function benchReserveDollars(roster = {}, myPlayers = [], reserveSpots = 0, historical = {}) {
+  if (!reserveSpots) return 0;
+  const have = {};
+  for (const p of myPlayers) if (p && p.pos) have[p.pos] = (have[p.pos] || 0) + 1;
+
+  let extra = 0;
+  let slotsLeft = reserveSpots;
+  for (const pos of BACKUP_BOOST_POSITIONS) {
+    if (slotsLeft <= 0) break;
+    const starters = roster[pos] || 0;
+    // Same exact-equality condition firstBackupBoost uses: zero backups yet,
+    // not "under-filled" — a starter shortfall at this position isn't a
+    // bench question at all.
+    if (starters <= 0 || (have[pos] || 0) !== starters) continue;
+    const anchor = Math.max(1, Math.round(historical[pos] ?? 1));
+    if (anchor <= 1) continue;   // no differentiated signal -> stays flat $1
+    extra += anchor - 1;
+    slotsLeft -= 1;
+  }
+  return reserveSpots + extra;
+}
+
 /**
  * The best roster still reachable.
  *

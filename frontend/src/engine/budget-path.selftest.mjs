@@ -19,6 +19,8 @@ import {
   reachableRoster, bidCeiling, flexDistributions, remainingStartingSlots,
   firstBackupBoost, BACKUP_BOOST_MULT,
   FLEX_ELIGIBLE, TOP_K_PER_POS,
+  historicalBenchReserve, benchReserveDollars,
+  BENCH_WINDOW, BENCH_RESERVE_MIN_PICKS,
 } from "./budget-path.js";
 
 let pass = 0;
@@ -329,6 +331,69 @@ check("flexDistributions(1) is one per eligible position",
   check("never negative-backups from an under-filled roster; never below 1",
         firstBackupBoost("RB", 0, ROSTER) === 1
         && firstBackupBoost("QB", 0, {}) === 1);
+}
+
+/* ------------------------------------------ historicalBenchReserve (3.7) */
+{
+  const TEAMS = 10;
+  const ROSTER = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 5 };
+  // threshold = teams * roster[pos] = 10 for QB. Ranks 1-10 are "starters",
+  // the window (BENCH_WINDOW=3) picked up starts at rank 11.
+  const qbSeason = (season, windowPrices) => {
+    const picks = [];
+    for (let i = 0; i < TEAMS; i++) picks.push({ pos: "QB", bid: 50, overall: i + 1, season });
+    windowPrices.forEach((price, i) => picks.push({ pos: "QB", bid: price, overall: TEAMS + i + 1, season }));
+    return picks;
+  };
+
+  const threeSeasons = [
+    ...qbSeason(2023, [6, 5, 4]),
+    ...qbSeason(2024, [6, 5, 4]),
+    ...qbSeason(2025, [6, 5, 4]),
+  ];
+  const rich = historicalBenchReserve(threeSeasons, { teams: TEAMS, roster: ROSTER });
+  check("enough pooled window picks (9 >= MIN_PICKS) makes the signal usable",
+        rich.usable && rich.sample.QB === 9);
+  check("shrinks the observed $5 average toward the $1 fallback, doesn't just pass it through",
+        rich.reserve.QB > 1 && rich.reserve.QB < 5,
+        `got ${rich.reserve.QB}`);
+  check("a position never drafted (no threshold) stays the $1 fallback",
+        rich.reserve.RB === 1 && rich.reserve.WR === 1);
+
+  const oneSeasonOnly = historicalBenchReserve(qbSeason(2025, [6, 5, 4]), { teams: TEAMS, roster: ROSTER });
+  check(`below BENCH_RESERVE_MIN_PICKS (${BENCH_RESERVE_MIN_PICKS}) stays $1 — most leagues' 1-2 imported seasons`,
+        !oneSeasonOnly.usable && oneSeasonOnly.reserve.QB === 1 && oneSeasonOnly.sample.QB === BENCH_WINDOW);
+
+  check("no history at all is a clean $1 fallback, not a crash",
+        historicalBenchReserve(null, { teams: TEAMS, roster: ROSTER }).usable === false
+        && historicalBenchReserve([], { teams: TEAMS, roster: ROSTER }).reserve.QB === 1);
+
+  check("picks with no overall (Yahoo/paste import) are excluded from this signal, not treated as rank 0",
+        historicalBenchReserve(
+          [{ pos: "QB", bid: 5, season: 2025 }, { pos: "QB", bid: 4, season: 2025 }],
+          { teams: TEAMS, roster: ROSTER },
+        ).reserve.QB === 1);
+}
+
+/* ------------------------------------------------ benchReserveDollars --- */
+{
+  const ROSTER = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 5 };
+  const historical = { QB: 3, RB: 1, WR: 1 };   // only QB carries a differentiated signal
+
+  check("upgrades exactly the missing QB backup slot from $1 to its historical anchor",
+        benchReserveDollars(ROSTER, [{ pos: "QB" }], 5, historical) === 5 + (3 - 1));
+
+  check("no upgrade once the QB backup already exists",
+        benchReserveDollars(ROSTER, [{ pos: "QB" }, { pos: "QB" }], 5, historical) === 5);
+
+  check("RB/WR with no differentiated signal (anchor=1) stay flat, even with zero backups",
+        benchReserveDollars(ROSTER, [{ pos: "RB" }, { pos: "RB" }], 5, historical) === 5);
+
+  check("zero reserve slots is a no-op regardless of missing backups",
+        benchReserveDollars(ROSTER, [{ pos: "QB" }], 0, historical) === 0);
+
+  check("never reserves more than the slots actually available",
+        benchReserveDollars(ROSTER, [], 0, { QB: 50, RB: 50, WR: 50 }) === 0);
 }
 
 console.log();

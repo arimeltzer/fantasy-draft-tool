@@ -28,6 +28,15 @@
  *     budget-path.js) and the shipped UI never runs `bidCeiling` for them
  *     either, so the treatment arm falls back to the SAME control bid there
  *     — a scope limit carried over, not a new gap invented for this file.
+ *   - "treatment-hist" — roadmap 3.7. IDENTICAL to "treatment" except the
+ *     starter-phase reserve (`dpBudget`) is computed via
+ *     `benchReserveDollars(roster, myPlayers, reserveSpots, benchReserve)`
+ *     instead of a flat $1/slot — the caller supplies `benchReserve` (this
+ *     room's historical-anchor prices, `historicalBenchReserve`'s output).
+ *     Isolates the ONE thing 3.7 changes: everything else (allocation DP,
+ *     room ceiling, bot behavior) is identical to "treatment", so a
+ *     treatment vs treatment-hist comparison measures the reserve change
+ *     alone, not a bundle of unrelated differences.
  *   A third mode, "passive" (never bids), exists only for the selftest's
  *   crippled-agent check and is not a real strategy.
  *
@@ -58,6 +67,13 @@
  * — the identical yardstick the snake harness already uses. This is NOT
  * title share; see the pre-registration for why that substitution is
  * consistency with 0.2 rather than a fresh dodge.
+ *
+ * ROADMAP 3.7 UPGRADE, PRESENCE-GATED. `pairedCompareAuction` can score on
+ * `realizedWeeklyPoints` instead (real byes, real per-week outcomes — the
+ * same upgrade 2.4 proved out for the snake side) when a caller supplies
+ * `weeklyActual`/`byeByTeam`; absent, scoring is the original
+ * `bestLineupPoints` unchanged, so 3.5's own already-closed gate script
+ * keeps behaving exactly as it did rather than being forced to upgrade.
  */
 import { maxUseful } from "./snake-engine.js";
 import { rankByAdp } from "./engine-core.js";
@@ -66,11 +82,12 @@ import {
 } from "./auction-engine.js";
 import {
   DP_POSITIONS, FLEX_ELIGIBLE, remainingStartingSlots, bidCeiling,
+  benchReserveDollars,
 } from "./budget-path.js";
 import {
   SINGLETON_POSITIONS, priceCeilingFor, bindingCeiling,
 } from "./opponent-capacity.js";
-import { mulberry32, bestLineupPoints } from "./draft-sim.mjs";
+import { mulberry32, bestLineupPoints, realizedWeeklyPoints } from "./draft-sim.mjs";
 
 /** Every roster field the auction fills, including the ones budget-path's
  *  DP does not optimize over (K/DST, BENCH, SF) — this is the harness's own
@@ -142,6 +159,10 @@ export function simulateAuction({
   board, teams = 10, roster, budget = 200, minBid = 1,
   agentTeam = 0, agentMode = "control", superflex = false,
   botNoise = 0.15, seed = 1,
+  // roadmap 3.7 — this room's historical bench-tier prices per position
+  // ({QB,RB,WR}, from `historicalBenchReserve`). Only consulted in
+  // "treatment-hist" mode; every other mode ignores it entirely.
+  benchReserve = {},
   // Bid-SHAPING params only (qbMarketCap, ratioScale*, …) for the control
   // arm's suggestBid() call — a sensitivity knob for diagnosing the control
   // arm itself, never for the shared market/dollar-value numbers both arms
@@ -208,7 +229,13 @@ export function simulateAuction({
         // allocationCeiling (AuctionRoom passes `null` for the same case,
         // which `?? undefined` turns into the same non-finite value).
         const { slots: openStartSlots, reserveSpots } = remainingStartingSlots(roster, t.players);
-        const dpBudget = Math.max(0, t.budget - reserveSpots);
+        // roadmap 3.7 — "treatment-hist" differentiates the reserve by
+        // position (historical-anchor $ instead of flat $1); every other
+        // mode (including plain "treatment") keeps the original flat count.
+        const reserveDollars = agentMode === "treatment-hist"
+          ? benchReserveDollars(roster, t.players, reserveSpots, benchReserve)
+          : reserveSpots;
+        const dpBudget = Math.max(0, t.budget - reserveDollars);
         const allocationCeiling = openStartSlots.length
           ? bidCeiling({ player, slots: openStartSlots, budget: dpBudget, pool: available, valueOf, priceOf, minBid })
           : undefined;
@@ -275,19 +302,30 @@ export function pairedCompareAuction({
   board, pointsById, roster, teams = 10, budget = 200, minBid = 1,
   agentTeam = 0, superflex = false, botNoise = 0.15, seeds = [1, 2, 3, 4, 5],
   modeA = "control", modeB = "treatment", controlParams = DEFAULT_AUCTION_PARAMS,
+  // roadmap 3.7 — see the module header. Passed straight through to both
+  // arms of simulateAuction; only "treatment-hist" consults it.
+  benchReserve,
+  // roadmap 3.7 — presence-gated realizedWeeklyPoints upgrade. Both must be
+  // supplied together (real byes need real weekly outcomes to score
+  // against); absent, scoring is the original bestLineupPoints, unchanged.
+  weeklyActual, byeByTeam, weeks = 17,
 }) {
+  const scoreOf = (weeklyActual && byeByTeam)
+    ? (rosterPlayers) => realizedWeeklyPoints(rosterPlayers, pointsById, weeklyActual, byeByTeam, roster, weeks)
+    : (rosterPlayers) => bestLineupPoints(rosterPlayers, pointsById, roster);
+
   const rows = [];
   for (const seed of seeds) {
     const a = simulateAuction({
       board, teams, roster, budget, minBid, agentTeam, superflex, botNoise, seed,
-      agentMode: modeA, controlParams,
+      agentMode: modeA, controlParams, benchReserve,
     });
     const b = simulateAuction({
       board, teams, roster, budget, minBid, agentTeam, superflex, botNoise, seed,
-      agentMode: modeB, controlParams,
+      agentMode: modeB, controlParams, benchReserve,
     });
-    const aPts = bestLineupPoints(a.rosters[agentTeam], pointsById, roster);
-    const bPts = bestLineupPoints(b.rosters[agentTeam], pointsById, roster);
+    const aPts = scoreOf(a.rosters[agentTeam]);
+    const bPts = scoreOf(b.rosters[agentTeam]);
     const aUnfilled = remainingStartingSlots(roster, a.rosters[agentTeam]).slots.length;
     const bUnfilled = remainingStartingSlots(roster, b.rosters[agentTeam]).slots.length;
     rows.push({

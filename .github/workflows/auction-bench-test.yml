@@ -1,0 +1,88 @@
+name: Auction bench-reservation gate (roadmap 3.7)
+
+# Manual. Asks whether anchoring the starter-phase bench reserve to a room's
+# own historical bench-tier prices ("treatment-hist") drafts better rosters
+# than today's flat $1/slot reserve ("treatment", the shipped 3.3 DP
+# unchanged otherwise). STRATIFIED into two scenario buckets (calm vs
+# early-overspend bot pricing) since a single pooled number could hide a
+# real scenario-specific loss — see the script header and
+# docs/ROADMAP.md 3.7 for the full pre-registration.
+#
+# Scored on REALIZED weekly lineups (bye-coverage half only, per
+# realizedWeeklyPoints' own stated limitation — this gate is BLIND to the
+# injury-insurance half of the original question).
+#
+# Needs FANTASYPROS_API_KEY: the opponent bots draft by that season's real
+# ADP. Without it they draft by our own model and both arms face a strawman
+# that shares our biases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      first:
+        description: "First season"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated drafts per slot per season per scenario"
+        required: false
+        default: "8"
+        type: string
+      slots:
+        description: "Draft slots to test (comma-separated)"
+        required: false
+        default: "1,4,7,10"
+        type: string
+      hist_seasons:
+        description: "Prior in-dataset seasons pooled into the historical reserve"
+        required: false
+        default: "5"
+        type: string
+
+jobs:
+  auction-bench-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      # The model and the harness both get verified before either is
+      # allowed to produce a number that decides whether something ships.
+      - name: budget-path selftest (3.3, 3.7's historicalBenchReserve/benchReserveDollars)
+        run: node frontend/src/engine/budget-path.selftest.mjs
+      - name: auction-sim selftest (3.5, treatment-hist mode + realizedWeeklyPoints presence-gate)
+        run: node frontend/src/engine/auction-sim.selftest.mjs
+      - name: draft-sim selftest (realizedWeeklyPoints itself)
+        run: node frontend/src/engine/draft-sim.selftest.mjs
+
+      - name: Export boards + realized weekly outcomes + byes
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Run the 3.7 gate
+        run: |
+          node frontend/src/engine/auction-bench-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --seeds ${{ inputs.seeds }} \
+            --slots ${{ inputs.slots }} \
+            --hist-seasons ${{ inputs.hist_seasons }} | tee data-pipeline/results/auction_bench_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: auction-bench-test
+          path: data-pipeline/results/auction_bench_test.txt

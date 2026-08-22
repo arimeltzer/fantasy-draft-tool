@@ -192,5 +192,66 @@ check("botWTPMultiplier is not opponentDemand's shape",
         `${orderA.slice(0, 5)} vs ${orderB.slice(0, 5)}`);
 }
 
+// ── roadmap 3.7: treatment-hist mode + realizedWeeklyPoints presence-gate ──
+{
+  const board = makeBoard();
+  const pointsById = Object.fromEntries(board.map((p) => [p.id, p.vbd]));
+
+  const noHist = pairedCompareAuction({
+    board, pointsById, roster: ROSTER, teams: 10, agentTeam: 4,
+    modeA: "treatment", modeB: "treatment-hist", benchReserve: {}, seeds: [1, 2, 3],
+  });
+  check("treatment-hist with no historical signal behaves exactly like treatment",
+        noHist.meanDiff === 0 && noHist.rows.every((r) => r.diff === 0),
+        JSON.stringify(noHist.rows.map((r) => r.diff)));
+
+  // A strong historical QB/RB/WR reserve changes what treatment-hist can
+  // spend on starters while a backup is still missing — must produce SOME
+  // divergence from plain treatment somewhere across these seeds (not
+  // asserting direction/size, just that the knob does something).
+  const withHist = pairedCompareAuction({
+    board, pointsById, roster: ROSTER, teams: 10, agentTeam: 4,
+    modeA: "treatment", modeB: "treatment-hist",
+    benchReserve: { QB: 40, RB: 40, WR: 40 }, seeds: [1, 2, 3, 4, 5],
+  });
+  check("a large historical reserve actually moves treatment-hist off plain treatment",
+        withHist.rows.some((r) => r.diff !== 0),
+        JSON.stringify(withHist.rows.map((r) => r.diff)));
+}
+
+{
+  // Presence-gate: supplying weeklyActual+byeByTeam must change what
+  // pairedCompareAuction reports vs the season-total default — sanity that
+  // the gate actually switches scorers, not proof of realizedWeeklyPoints'
+  // own correctness (draft-sim.selftest.mjs already owns that).
+  const POS = ["RB", "WR", "QB", "TE", "K", "DST"];
+  const teamsList = ["AAA", "BBB", "CCC", "DDD"];
+  const board = Array.from({ length: 60 }, (_, i) => ({
+    id: i + 1, name: `P${i + 1}`, pos: POS[i % POS.length],
+    team: teamsList[i % teamsList.length], age: 26, risk: 0.1, trend: 0,
+    vbd: +(150 - i).toFixed(1), valuePoints: +(160 - i).toFixed(1), adp: i + 1,
+  }));
+  const pointsById = Object.fromEntries(board.map((p) => [p.id, p.valuePoints]));
+  const weeklyActual = Object.fromEntries(
+    board.map((p) => [p.id, Object.fromEntries(
+      Array.from({ length: 17 }, (_, w) => [w + 1, (p.valuePoints / 17) * 0.5]),
+    )]),
+  );
+  const byeByTeam = { AAA: 6, BBB: 7, CCC: 8, DDD: 9 };
+
+  const withoutWeekly = pairedCompareAuction({
+    board, pointsById, roster: ROSTER, teams: 10, agentTeam: 1,
+    modeA: "control", modeB: "treatment", seeds: [1, 2, 3],
+  });
+  const withWeekly = pairedCompareAuction({
+    board, pointsById, roster: ROSTER, teams: 10, agentTeam: 1,
+    modeA: "control", modeB: "treatment", seeds: [1, 2, 3],
+    weeklyActual, byeByTeam,
+  });
+  check("supplying weeklyActual+byeByTeam changes the reported diffs vs the season-total default",
+        JSON.stringify(withoutWeekly.rows.map((r) => r.diff))
+          !== JSON.stringify(withWeekly.rows.map((r) => r.diff)));
+}
+
 console.log(`\n${pass} passed, ${fails.length} failed`);
 if (fails.length) process.exit(1);

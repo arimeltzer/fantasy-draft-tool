@@ -110,6 +110,11 @@ export interface PriorDraftPick {
   team: string;
   bid: number | null;
   round: number | null;
+  /** Overall pick / nomination order, when ESPN supplies it — confirmed real
+   *  nomination order on the `current` league-API path (roadmap 3.7's
+   *  precondition, data-pipeline/espn_draft_order_probe.py). Absent for Yahoo
+   *  and for ESPN leagueHistory-path seasons that weren't checked. */
+  overall?: number | null;
   owner: string;
   resolved: boolean;
   /** Which draft this pick came from. Lets calibration weight older seasons

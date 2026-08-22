@@ -37,6 +37,36 @@ export declare function firstBackupBoost(
   roster?: Record<string, number>,
 ): number;
 
+/** Roadmap 3.7 — this room's historical bench-tier price per position, from
+ *  stored prior drafts' picks near the league's first-backup rank in
+ *  nomination order. `usable: false` (the common case — most leagues import
+ *  1-2 seasons) means every position fell back to $1. */
+export declare const BENCH_WINDOW: number;
+export declare const BENCH_RESERVE_MIN_PICKS: number;
+export declare const BENCH_RESERVE_SHRINK_K0: number;
+
+export interface HistoricalBenchReserve {
+  reserve: Record<string, number>;
+  usable: boolean;
+  sample: Record<string, number>;
+  notes: string[];
+}
+
+export declare function historicalBenchReserve(
+  draftPicks: { pos?: string; bid?: number | null; overall?: number | null; season?: number }[] | null | undefined,
+  league?: { teams?: number; roster?: Record<string, number> },
+): HistoricalBenchReserve;
+
+/** The starter-phase reserve in real dollars — today's flat $1/slot with the
+ *  first still-missing QB/RB/WR backup upgraded to its historical-anchor
+ *  price, capped by how many reserve slots are actually left to spend it on. */
+export declare function benchReserveDollars(
+  roster?: Record<string, number>,
+  myPlayers?: { pos?: string }[],
+  reserveSpots?: number,
+  historical?: Record<string, number>,
+): number;
+
 export declare function reachableRoster<T = BoardPlayer>(args: {
   slots: string[];
   budget: number;
