@@ -376,6 +376,12 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     });
     const { bid: ceiling, binding } = bindingCeiling({
       allocationCeiling: allocationCeiling ?? undefined,
+      // What I can actually pay for ONE player and still fill every other
+      // open slot at $1. Without this the post-starters branch above
+      // (`allocationCeiling = market`) is a property of the player alone and
+      // nothing caps it by my own wallet — reported by a user as $Max
+      // driving them to overspend.
+      budgetCeiling: myMax,
       // priceCeilingFor already folded demand in, so hand bindingCeiling a
       // single synthetic capacity rather than the raw per-opponent list —
       // otherwise it would re-derive the ungated ceiling and the demand
@@ -406,6 +412,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
       // guarantee. Listed explicitly so a future change to openStartSlots
       // can't silently leave this reading a stale roster.
       haveByPos,
+      myMax,
       oppBudgets, oppOpenSpots, oppCounts, settings.roster, settings.superflex]);
 
   const valueTargets = useMemo(() => {
@@ -617,7 +624,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                 <Tip tip="Live value: par price repriced for how the room is actually spending. If teams have overpaid so far, remaining players are worth more (inflation), and vice versa. Red means it's above the max you can bid.">$Live</Tip>
               </span>
               <span className="text-right hidden sm:block">
-                <Tip tip="The most you should actually pay (roadmap 3.3-3.5) — accounting for what's left to fill on your own roster AND what the room can afford. Often well below $Live, including for players worth targeting: $Live is what he's worth in the abstract, $Max is what paying for him costs YOU given everything else you still need. A '~' means the number is real but below expected market price — worth bidding up to, just not favored to win at. 'pass' means truly no price is worth it. QB/RB/WR/TE only — K/DST aren't in scope for this ceiling.">$Max</Tip>
+                <Tip tip="The most you should actually pay (roadmap 3.3-3.5) — accounting for what's left to fill on your own roster AND what the room can afford. Often well below $Live, including for players worth targeting: $Live is what he's worth in the abstract, $Max is what paying for him costs YOU given everything else you still need. A '~' means the number is real but below expected market price — worth bidding up to, just not favored to win at. A '!' means it's capped by YOUR remaining cash rather than by his value. A '*' means it's capped by what the room can still pay. 'pass' means truly no price is worth it. QB/RB/WR/TE only — K/DST aren't in scope for this ceiling.">$Max</Tip>
               </span>
               <span className="text-right">
                 <Tip tip="Type the final winning price, then hit Mine if you won the player or pick the opponent who did.">Bid / buy</Tip>
@@ -691,18 +698,21 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                           const c = ceilingByPlayer.get(p.id as number);
                           if (!c) return null;
                           const byRoom = c.binding === "opponents";
+                          const byCash = c.binding === "budget";
                           return (
                             <span
-                              className={`ml-1 font-semibold cursor-help sm:hidden ${c.pass ? "text-gray-400" : byRoom ? "text-violet-700" : "text-sky-700"}`}
+                              className={`ml-1 font-semibold cursor-help sm:hidden ${c.pass ? "text-gray-400" : byCash ? "text-amber-700" : byRoom ? "text-violet-700" : "text-sky-700"}`}
                               title={c.pass
                                 ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
+                                : byCash
+                                ? `Capped by YOUR money: $${myBudgetLeft} left with ${myOpenSpots} slot${myOpenSpots === 1 ? "" : "s"} to fill, so $${c.bid} is the most you can bid and still fill them at $1.`
                                 : byRoom
                                 ? `Capped by the room's money: no opponent can bid more than $${c.bid - 1}, so you never have to pay above $${c.bid}.`
                                 : c.belowMarket
                                 ? "Your real ceiling — worth pursuing at this price or below, but the market is likely to take him higher."
                                 : "The most you can pay and still end up with a roster at least as good as if you skipped him — accounting for what's left to fill."}
                             >
-                              {c.pass ? "· pass" : `· max $${c.bid}${byRoom ? "*" : c.belowMarket ? "~" : ""}`}
+                              {c.pass ? "· pass" : `· max $${c.bid}${byCash ? "!" : byRoom ? "*" : c.belowMarket ? "~" : ""}`}
                             </span>
                           );
                         })()}
@@ -730,18 +740,21 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                       const c = !sold ? ceilingByPlayer.get(p.id as number) : undefined;
                       if (!c) return <span className="hidden sm:block" />;
                       const byRoom = c.binding === "opponents";
+                      const byCash = c.binding === "budget";
                       return (
                         <span
-                          className={`text-right font-mono text-sm tabular-nums hidden sm:block cursor-help ${c.pass ? "text-gray-400" : byRoom ? "text-violet-700" : "text-sky-700"}`}
+                          className={`text-right font-mono text-sm tabular-nums hidden sm:block cursor-help ${c.pass ? "text-gray-400" : byCash ? "text-amber-700" : byRoom ? "text-violet-700" : "text-sky-700"}`}
                           title={c.pass
                             ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
+                            : byCash
+                            ? `Capped by YOUR remaining money, not by what he's worth: $${myBudgetLeft} left with ${myOpenSpots} slot${myOpenSpots === 1 ? "" : "s"} still to fill, so $${c.bid} is the most you can bid and still afford $1 for each of the rest. He may well be worth more than this — you just can't pay it.`
                             : byRoom
                             ? `Capped by the room's money: no opponent can bid more than $${c.bid - 1}, so you never have to pay above $${c.bid} no matter what he's worth. This is what the room CAN pay, not what it wants to — a hard upper bound that tightens as budgets drain.`
                             : c.belowMarket
                             ? `Your real ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him. He's worth pursuing at this price or below — the market is likely to take him higher, so treat this as your walk-away point, not a price you're favored to win at.`
                             : "Allocation ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him — reserves a realistic price for every remaining starter, not $1."}
                         >
-                          {c.pass ? "pass" : `$${c.bid}${byRoom ? "*" : c.belowMarket ? "~" : ""}`}
+                          {c.pass ? "pass" : `$${c.bid}${byCash ? "!" : byRoom ? "*" : c.belowMarket ? "~" : ""}`}
                         </span>
                       );
                     })()}

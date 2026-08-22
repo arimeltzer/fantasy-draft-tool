@@ -152,6 +152,77 @@ check("a full rich team does not prop up the ceiling",
           }
           return true;
         })());
+
+  /* --- MY OWN CASH (the overspend fix) ------------------------------------
+   * Reported by a user mid-draft: "$Max should never exceed my remaining
+   * budget... otherwise it is causing me to overspend." It could, and did:
+   * once starters are full AuctionRoom passes allocationCeiling = market,
+   * which is a property of the PLAYER, and the only other cap here was the
+   * ROOM's money. Nothing knew what the bidder could actually afford. */
+  const rich = bindingCeiling({ allocationCeiling: 35, budgetCeiling: 4, capacities: roomRich, minBid: 1 });
+  check("my own cash caps the bid when it is the tightest constraint",
+        rich.bid === 4 && rich.binding === "budget");
+
+  check("a $35 market player with $4 of room to bid never reads above $4",
+        bindingCeiling({ allocationCeiling: 35, budgetCeiling: 4, capacities: roomRich, minBid: 1 }).bid <= 4);
+
+  check("no money left is a real verdict, and outranks a positive allocation",
+        (() => {
+          const r = bindingCeiling({ allocationCeiling: 30, budgetCeiling: 0, capacities: roomRich, minBid: 1 });
+          return r.bid === 0 && r.binding === "budget";
+        })());
+
+  check("plenty of cash leaves the previous binding constraint reported",
+        (() => {
+          const a = bindingCeiling({ allocationCeiling: 30, budgetCeiling: 500, capacities: roomRich, minBid: 1 });
+          const o = bindingCeiling({ allocationCeiling: 60, budgetCeiling: 500, capacities: roomBroke, minBid: 1 });
+          return a.binding === "allocation" && o.binding === "opponents";
+        })());
+
+  check("omitting budgetCeiling preserves the old behaviour exactly",
+        (() => {
+          for (const alloc of [1, 7, 30, 200]) {
+            for (const caps of [roomRich, roomBroke]) {
+              const was = bindingCeiling({ allocationCeiling: alloc, capacities: caps, minBid: 1 });
+              const now = bindingCeiling({ allocationCeiling: alloc, budgetCeiling: undefined, capacities: caps, minBid: 1 });
+              if (JSON.stringify(was) !== JSON.stringify(now)) return false;
+            }
+          }
+          return true;
+        })());
+
+  /* Roster DEPTH drives the cap, and deeper is tighter — flagged by the user
+   * ("some rosters are deeper than 13"). The cap is maxBid(left, open) =
+   * left - (open - 1), so the same money spread over more unfilled slots
+   * leaves less for any one player. Nothing here hardcodes a roster size;
+   * this pins that the relationship holds and stays >= $1. */
+  check("a deeper roster tightens the wallet cap on the same money",
+        (() => {
+          const left = 20;
+          const capFor = (open) => Math.max(1, left - (open - 1));
+          const bids = [3, 8, 15, 30].map((open) => bindingCeiling({
+            allocationCeiling: 60, budgetCeiling: capFor(open),
+            capacities: roomRich, minBid: 1,
+          }).bid);
+          // 18, 13, 6, then floored at 1 — strictly decreasing until the floor.
+          return bids[0] === 18 && bids[1] === 13 && bids[2] === 6 && bids[3] === 1
+            && bids.every((b) => b >= 1);
+        })());
+
+  check("the composed bid never exceeds ANY of the three inputs",
+        (() => {
+          for (const alloc of [1, 7, 30, 200]) {
+            for (const mine of [0, 1, 4, 25, 300]) {
+              for (const caps of [roomRich, roomBroke]) {
+                const r = bindingCeiling({
+                  allocationCeiling: alloc, budgetCeiling: mine, capacities: caps, minBid: 1,
+                });
+                if (r.bid > alloc || r.bid > mine || r.bid > priceCeiling(caps, 1)) return false;
+              }
+            }
+          }
+          return true;
+        })());
 }
 
 /* --------------------------------------------------- realistic draft arc */

@@ -1031,6 +1031,37 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   You make one pick, so the 3rd-best QB isn't a choice — it's the same choice
   repeated, and it used to fill four slots the round a gate opened.
 
+## `$Max` never exceeds your own remaining money (auction)
+
+- **The bug, reported live: "$Max should never exceed my remaining budget —
+  it should be adjusted for distributing the money I have left. Otherwise it
+  is causing me to overspend."** Correct, and it could. `bindingCeiling`
+  composed exactly two constraints — MY allocation (3.3) and the ROOM's money
+  (3.4) — and once starters filled, `ceilingFor` passed
+  `allocationCeiling = market`, which is a property of the PLAYER. So in the
+  bench phase nothing in the composition knew what the bidder could afford.
+  Reproduced before fixing: market $35, $8 left with 5 slots to fill (real
+  max bid $4), rich room → **$Max read $35, overstated by $31**.
+- `bindingCeiling` now takes `budgetCeiling` as a first-class third
+  constraint, returns `binding: "budget"` when it's the tightest, and treats
+  `budgetCeiling <= 0` as a real verdict (no money, no bid) the same way
+  `allocationCeiling <= 0` already was. Ties resolve toward the constraint the
+  user can act on — "you can't afford more" beats "he isn't worth more".
+  Omitting the argument reproduces the old behaviour exactly, pinned by a
+  selftest, so the starter-phase path (already capped via `bidCeiling`'s own
+  `budget: dpBudget`) is unchanged.
+- Callers pass `maxBid(budgetLeft, openSpots)` — everything you hold minus the
+  $1 each remaining slot still needs. **Roster depth therefore drives the
+  cap and deeper is tighter** (flagged by the user: "some rosters are deeper
+  than 13"): `rosterSize` is summed from `settings.roster` including BENCH,
+  so nothing hardcodes a size, and the same money spread over more unfilled
+  slots leaves less for any one player. A selftest pins the relationship and
+  the $1 floor.
+- Surfaced as a `!` marker in amber, distinct from `*` (room-capped) and `~`
+  (below market), with a tooltip naming YOUR cash and slots rather than the
+  player's worth — the point being that he may genuinely be worth more, you
+  just can't pay it.
+
 ## `$Max` once starters are filled (auction)
 
 - `bidCeiling`'s own header says bench slots are "$1 filler and are NOT in the

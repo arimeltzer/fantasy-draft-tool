@@ -207,17 +207,32 @@ export function cappedPrice(market, capacities = [], minBid = 1) {
  *          number alone: it is the difference between "I can't afford him"
  *          and "I don't have to pay that much".
  */
-export function bindingCeiling({ allocationCeiling, capacities = [], minBid = 1 }) {
+export function bindingCeiling({
+  allocationCeiling, budgetCeiling, capacities = [], minBid = 1,
+}) {
   const roomCeiling = priceCeiling(capacities, minBid);
   const alloc = Number.isFinite(allocationCeiling) ? allocationCeiling : Infinity;
+  // MY OWN CASH. Omitted entirely until a user reported $Max telling them to
+  // bid many times what they had left: with starters full the room passes
+  // `allocationCeiling = market`, which is a property of the PLAYER, and the
+  // only other cap here was the room's money — so nothing in the composition
+  // knew what the bidder could actually afford. A ceiling above your own
+  // maximum bid isn't conservative, it actively invites the overspend.
+  // Callers pass `maxBid(budgetLeft, openSpots)`: everything you hold minus
+  // the $1 each remaining slot still needs.
+  const mine = Number.isFinite(budgetCeiling) ? Math.max(0, budgetCeiling) : Infinity;
 
   // Allocation ceiling of 0 is a real verdict from 3.3 ("he does not improve
   // your best reachable roster at any price"), not a missing value — it must
   // win, and must not be read as "unconstrained".
   if (alloc <= 0) return { bid: 0, binding: "allocation" };
+  // Likewise a real verdict, and it outranks the rest: no money, no bid.
+  if (mine <= 0) return { bid: 0, binding: "budget" };
 
-  if (alloc <= roomCeiling) {
-    return { bid: alloc, binding: Number.isFinite(allocationCeiling) ? "allocation" : "none" };
-  }
-  return { bid: roomCeiling, binding: "opponents" };
+  // Lowest cap wins. Ties resolve toward the constraint the user can act on:
+  // "you can't afford more" is more actionable than "he isn't worth more".
+  const bid = Math.min(alloc, mine, roomCeiling);
+  if (bid === mine && mine < alloc) return { bid, binding: "budget" };
+  if (bid === roomCeiling && roomCeiling < alloc) return { bid, binding: "opponents" };
+  return { bid, binding: Number.isFinite(allocationCeiling) ? "allocation" : "none" };
 }

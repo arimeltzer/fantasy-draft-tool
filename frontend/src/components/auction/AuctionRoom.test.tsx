@@ -340,6 +340,67 @@ describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
   });
 });
 
+describe("AuctionRoom never bids above my own remaining money", () => {
+  it("caps $Max by my wallet once starters are full, and says so", () => {
+    // Reported mid-draft: "$Max should never exceed my remaining budget - it
+    // should be adjusted for distributing the money I have left. Otherwise it
+    // is causing me to overspend." It could: with starters full the room
+    // passes allocationCeiling = market (a property of the PLAYER), and the
+    // only other cap was the ROOM's money, so nothing capped it by mine.
+    //
+    // Same 8-pick fixture as the maxUseful test: all 7 starting slots filled
+    // (QB1/RB2/WR2/TE1/FLEX1) plus a bench QB. Prices are set high enough
+    // that almost nothing is left of the $200 budget.
+    useDraftStore.setState({
+      leagueId: 1,
+      syncing: false,
+      picks: [1, 5, 2, 6, 10, 3, 7, 4].map((id, i) => ({
+        pickId: i + 1, playerId: id, overallPick: i + 1, mine: true,
+        teamId: null, price: 24, slot: null,          // 8 x $24 = $192 of $200
+      })),
+    });
+    renderInApp(deepRoom());
+
+    // SETTINGS.roster is QB1/RB2/WR2/TE1/FLEX1/BENCH6 = 13 spots. 8 taken
+    // leaves 5 open; $200 - 8x$24 = $8 left. So the most that can go on ONE
+    // player while still filling the other 4 at $1 is $8 - 4 = $4.
+    const WALLET_MAX = 4;
+    let sawCap = false;
+    for (const name of ["P14", "P15", "P16", "P18", "P19"]) {
+      const cells = within(row(name)).getAllByTitle(
+        /allocation ceiling|the most you can pay|capped by your|capped by the room|doesn't improve your best reachable roster/i,
+      );
+      for (const cell of cells) {
+        const shown = Number((cell.textContent ?? "").replace(/[^\d]/g, ""));
+        if (!Number.isFinite(shown) || !shown) continue;   // "pass" carries no number
+        // The bug: these read the player's MARKET price (tens of dollars)
+        // because nothing capped them by my wallet.
+        expect(shown).toBeLessThanOrEqual(WALLET_MAX);
+        if (shown === WALLET_MAX) sawCap = true;
+      }
+    }
+    // and the cap is actually biting, not vacuously satisfied by "pass".
+    expect(sawCap).toBe(true);
+  });
+
+  it("explains a wallet-capped number as being about my cash, not his value", () => {
+    useDraftStore.setState({
+      leagueId: 1,
+      syncing: false,
+      picks: [1, 5, 2, 6, 10, 3, 7, 4].map((id, i) => ({
+        pickId: i + 1, playerId: id, overallPick: i + 1, mine: true,
+        teamId: null, price: 24, slot: null,
+      })),
+    });
+    renderInApp(deepRoom());
+    // At least one row should now be explicitly budget-bound, and its
+    // explanation must name MY money rather than the player's worth.
+    const capped = screen.getAllByTitle(/capped by your remaining money/i);
+    expect(capped.length).toBeGreaterThan(0);
+    expect(capped[0].getAttribute("title")).toMatch(/can't pay it|most you can bid/i);
+  });
+});
+
 describe("AuctionRoom opponent-count guard", () => {
   // Regression, hit in practice: "it lists me as 'You' but still shows my team
   // name as having drafted no players (15 total teams listed in a 14 team

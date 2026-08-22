@@ -47,13 +47,18 @@ export declare function cappedPrice(
   minBid?: number,
 ): { price: number; ceiling: number; capped: boolean };
 
-/** Compose 3.3's allocation ceiling with 3.4's room ceiling, reporting which
- *  constraint binds. */
+/** Compose 3.3's allocation ceiling with 3.4's room ceiling AND the bidder's
+ *  own remaining cash, reporting which constraint binds.
+ *
+ *  `budgetCeiling` is `maxBid(budgetLeft, openSpots)` — everything you hold
+ *  minus the $1 each remaining slot still needs. Omit it and the composition
+ *  behaves exactly as before it existed. */
 export declare function bindingCeiling(args: {
   allocationCeiling?: number;
+  budgetCeiling?: number;
   capacities?: number[];
   minBid?: number;
-}): { bid: number; binding: "allocation" | "opponents" | "none" };
+}): { bid: number; binding: "allocation" | "opponents" | "budget" | "none" };
 
 /** Per-opponent positional counts from the pick log. Extracted into the
  *  engine so the derivation is directly testable. */

@@ -25,7 +25,7 @@ interface TargetItem {
   allocationCeiling?: number | null;
   /** Which constraint set the primary bid: my roster allocation, or the
    *  room's money. */
-  binding?: "allocation" | "opponents" | "none";
+  binding?: "allocation" | "opponents" | "budget" | "none";
   /** The ceiling is real but below the modeled market price — worth
    *  pursuing at this number, but the room is expected to take him higher.
    *  Not a reason to hide the number (that used to be "pass"). */
