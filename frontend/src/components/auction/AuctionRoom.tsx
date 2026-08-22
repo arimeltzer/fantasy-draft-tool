@@ -10,7 +10,7 @@ import { LeagueSettings, ApiLeague } from "@/lib/api";
 import {
   calibrateAuction, picksFromKeeperImport, noCalibration, describeCalibration,
 } from "@/engine/auction-calibration.js";
-import { bidCeiling, remainingStartingSlots } from "@/engine/budget-path.js";
+import { bidCeiling, remainingStartingSlots, firstBackupBoost } from "@/engine/budget-path.js";
 import { maxUseful } from "@/engine/snake-engine.js";
 import { byeCollisions } from "@/engine/bye-weeks.js";
 import { useByeWeeks } from "@/hooks/useByeWeeks";
@@ -371,12 +371,22 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     // RB/WR value for your remaining budget.
     const atCap = ["QB", "TE", "K", "DST"].includes(p.pos)
       && (haveByPos[p.pos] || 0) >= maxUseful(p.pos, settings.roster as unknown as Record<string, number>, !!settings.superflex);
+    // "One strong backup at QB, RB, and WR" — a user's own stated priority
+    // #2, ranked below points/value (#1). `atCap` above already stops
+    // over-DEPTH; this is the mirror case it never covered — a team's FIRST
+    // bench body at these three positions priced identically to its fourth.
+    // Nudges (not overrides) the ceiling above market for exactly that
+    // zero-to-one transition; back to plain market once it's landed. See
+    // firstBackupBoost's own docstring for why 1.15x and why QB/RB/WR only.
+    const backupBoost = openStartSlots.length
+      ? 1
+      : firstBackupBoost(p.pos, haveByPos[p.pos] || 0, settings.roster as unknown as Record<string, number>);
     const allocationCeiling = openStartSlots.length
       ? bidCeiling({
           player: p, slots: openStartSlots, budget: dpBudget,
           pool: availDollar, valueOf: valueOfPlayer, priceOf: priceOfPlayer,
         })
-      : atCap ? 1 : market;
+      : atCap ? 1 : Math.round(market * backupBoost);
     // roadmap 3.4 — and the room's ability to pay. Position-aware (3.4a):
     // only opponents who still need THIS position count, so a rich team
     // stacked at running back stops holding up every back's ceiling.
@@ -415,7 +425,12 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     // expected to honor.
     const pass = ceiling <= 0;
     const belowMarket = !pass && binding !== "opponents" && ceiling < market;
-    return { allocationCeiling, bid: ceiling, binding, room, pass, belowMarket };
+    // Only claim "boosted" when the boost is actually what's driving the
+    // number shown — same discipline `belowMarket` already uses. If the
+    // wallet or the room caps it below the boosted value, the ceiling isn't
+    // really expressing the boost anymore; it's expressing that constraint.
+    const backupBoosted = backupBoost > 1 && binding === "allocation";
+    return { allocationCeiling, bid: ceiling, binding, room, pass, belowMarket, backupBoosted };
   }, [openStartSlots, dpBudget, availDollar, valueOfPlayer, priceOfPlayer,
       // `haveByPos` drives the maxUseful depth cap above. It is masked today —
       // `openStartSlots` changes identity on the same trigger (`minePlayers`)
@@ -642,7 +657,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                 <Tip tip="Live value: par price repriced for how the room is actually spending. If teams have overpaid so far, remaining players are worth more (inflation), and vice versa. Red means it's above the max you can bid.">$Live</Tip>
               </span>
               <span className="text-right hidden sm:block">
-                <Tip tip="The most you should actually pay (roadmap 3.3-3.5) — accounting for what's left to fill on your own roster AND what the room can afford. Often well below $Live, including for players worth targeting: $Live is what he's worth in the abstract, $Max is what paying for him costs YOU given everything else you still need. A '~' means the number is real but below expected market price — worth bidding up to, just not favored to win at. A '!' means it's capped by YOUR remaining cash rather than by his value. A '*' means it's capped by what the room can still pay. 'pass' means truly no price is worth it. QB/RB/WR/TE only — K/DST aren't in scope for this ceiling.">$Max</Tip>
+                <Tip tip="The most you should actually pay (roadmap 3.3-3.5) — accounting for what's left to fill on your own roster AND what the room can afford. Often well below $Live, including for players worth targeting: $Live is what he's worth in the abstract, $Max is what paying for him costs YOU given everything else you still need. A '~' means the number is real but below expected market price — worth bidding up to, just not favored to win at. A '!' means it's capped by YOUR remaining cash rather than by his value. A '*' means it's capped by what the room can still pay. A '↑' means it's boosted above market — you have no backup yet at QB/RB/WR, and landing your first one is worth paying up for. 'pass' means truly no price is worth it. QB/RB/WR/TE only — K/DST aren't in scope for this ceiling.">$Max</Tip>
               </span>
               <span className="text-right">
                 <Tip tip="Type the final winning price, then hit Mine if you won the player or pick the opponent who did.">Bid / buy</Tip>
@@ -719,18 +734,20 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                           const byCash = c.binding === "budget";
                           return (
                             <span
-                              className={`ml-1 font-semibold cursor-help sm:hidden ${c.pass ? "text-gray-400" : byCash ? "text-amber-700" : byRoom ? "text-violet-700" : "text-sky-700"}`}
+                              className={`ml-1 font-semibold cursor-help sm:hidden ${c.pass ? "text-gray-400" : byCash ? "text-amber-700" : byRoom ? "text-violet-700" : c.backupBoosted ? "text-teal-700" : "text-sky-700"}`}
                               title={c.pass
                                 ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
                                 : byCash
                                 ? `Capped by YOUR money: $${myBudgetLeft} left with ${myOpenSpots} slot${myOpenSpots === 1 ? "" : "s"} to fill, so $${c.bid} is the most you can bid and still fill them at $1.`
                                 : byRoom
                                 ? `Capped by the room's money: no opponent can bid more than $${c.bid - 1}, so you never have to pay above $${c.bid}.`
+                                : c.backupBoosted
+                                ? `Boosted above market: you have no backup at ${p.pos} yet, and landing one strong backup is worth paying up for.`
                                 : c.belowMarket
                                 ? "Your real ceiling — worth pursuing at this price or below, but the market is likely to take him higher."
                                 : "The most you can pay and still end up with a roster at least as good as if you skipped him — accounting for what's left to fill."}
                             >
-                              {c.pass ? "· pass" : `· max $${c.bid}${byCash ? "!" : byRoom ? "*" : c.belowMarket ? "~" : ""}`}
+                              {c.pass ? "· pass" : `· max $${c.bid}${byCash ? "!" : byRoom ? "*" : c.backupBoosted ? "↑" : c.belowMarket ? "~" : ""}`}
                             </span>
                           );
                         })()}
@@ -761,18 +778,20 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                       const byCash = c.binding === "budget";
                       return (
                         <span
-                          className={`text-right font-mono text-sm tabular-nums hidden sm:block cursor-help ${c.pass ? "text-gray-400" : byCash ? "text-amber-700" : byRoom ? "text-violet-700" : "text-sky-700"}`}
+                          className={`text-right font-mono text-sm tabular-nums hidden sm:block cursor-help ${c.pass ? "text-gray-400" : byCash ? "text-amber-700" : byRoom ? "text-violet-700" : c.backupBoosted ? "text-teal-700" : "text-sky-700"}`}
                           title={c.pass
                             ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
                             : byCash
                             ? `Capped by YOUR remaining money, not by what he's worth: $${myBudgetLeft} left with ${myOpenSpots} slot${myOpenSpots === 1 ? "" : "s"} still to fill, so $${c.bid} is the most you can bid and still afford $1 for each of the rest. He may well be worth more than this — you just can't pay it.`
                             : byRoom
                             ? `Capped by the room's money: no opponent can bid more than $${c.bid - 1}, so you never have to pay above $${c.bid} no matter what he's worth. This is what the room CAN pay, not what it wants to — a hard upper bound that tightens as budgets drain.`
+                            : c.backupBoosted
+                            ? `Boosted above market: you have no backup at ${p.pos} yet. One strong backup here is worth paying a premium for — this eases off again once you land one.`
                             : c.belowMarket
                             ? `Your real ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him. He's worth pursuing at this price or below — the market is likely to take him higher, so treat this as your walk-away point, not a price you're favored to win at.`
                             : "Allocation ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him — reserves a realistic price for every remaining starter, not $1."}
                         >
-                          {c.pass ? "pass" : `$${c.bid}${byCash ? "!" : byRoom ? "*" : c.belowMarket ? "~" : ""}`}
+                          {c.pass ? "pass" : `$${c.bid}${byCash ? "!" : byRoom ? "*" : c.backupBoosted ? "↑" : c.belowMarket ? "~" : ""}`}
                         </span>
                       );
                     })()}

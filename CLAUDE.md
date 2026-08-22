@@ -1147,6 +1147,23 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   asymmetry the user described. No new kill gate needed — reusing an
   already-validated cap in a second consumer, not a new statistical claim.
   See `docs/ROADMAP.md` 3.6c.
+- **3.6e — "one strong backup" ceiling BOOST (shipped), the mirror case
+  3.6c never covered.** 3.6c stops over-DEPTH (a 3rd QB); it does nothing
+  about under-depth, so a team's FIRST bench body at a position priced
+  identically to its fourth. A user's own explicit priority #2 ("having one
+  strong backup at QB, RB, and WR"), stated below priority #1 ("points over
+  the season") — so this is a NUDGE, not an override. `budget-path.js
+  firstBackupBoost(pos, have, roster)` returns `BACKUP_BOOST_MULT` (1.15 —
+  the SAME constant `snake-engine.js needMult()` already uses for "below a
+  starter slot," reused rather than invented) exactly when `have === starters`
+  (zero bench bodies yet, not "under-filled," a real edge case a selftest
+  caught) at QB/RB/WR specifically; TE/K/DST are excluded since `maxUseful`
+  already owns their depth policy and a boost there would fight it, not
+  complement it. `AuctionRoom.tsx ceilingFor` multiplies `market` by the
+  boost once starters are full, still capped by the room and the wallet as
+  always (`bindingCeiling`) — a `↑` marker (teal) shows only when the boost
+  is actually what's binding, same discipline `belowMarket`'s `~` already
+  uses. Surfaced in both the main board and the "your targets" panel.
 - **Real-time bye-collision flag (shipped, both rooms) — a deliberately
   UNPRICED alternative to 3.6a, per an explicit user call**: "I don't want to
   overdo the bye week adjustments... make the model bye week aware so it

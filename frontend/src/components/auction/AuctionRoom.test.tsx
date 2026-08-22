@@ -340,6 +340,83 @@ describe("AuctionRoom budget path (roadmap 3.3-3.5)", () => {
   });
 });
 
+describe("AuctionRoom backup priority boost (one strong backup at QB/RB/WR)", () => {
+  // Fills every starting slot (QB1/RB2/WR2/TE1/FLEX1 per SETTINGS.roster)
+  // with ZERO bench beyond that: 1 QB + 3 RB (2 starters + FLEX) + 2 WR + 1
+  // TE. Deliberately different from the maxUseful fixture above (which
+  // already has a 2nd QB) — that fixture's QB is already atCap, which is
+  // the WRONG state to prove the boost from, since atCap and the boost are
+  // mutually exclusive by construction. Here QB and WR both sit at EXACTLY
+  // their starter count with no bench body, which is exactly the case the
+  // boost exists for.
+  const picks = () => [1, 2, 6, 10, 3, 7, 4].map((id, i) => ({
+    pickId: i + 1, playerId: id, overallPick: i + 1, mine: true,
+    teamId: null, price: 10, slot: null,
+  }));
+
+  it("boosts $Max above market for QB and WR, the two positions with zero bench bodies", () => {
+    useDraftStore.setState({ leagueId: 1, syncing: false, picks: picks() });
+    renderInApp(deepRoom());
+
+    // P5 (next undrafted QB) — starters=1, have=1, no atCap (needs 2 to cap).
+    const qbCells = within(row("P5")).getAllByTitle(
+      /boosted above market/i,
+    );
+    expect(qbCells.length).toBeGreaterThan(0);
+    expect(qbCells.some((c) => /↑/.test(c.textContent ?? ""))).toBe(true);
+
+    // P11 (next undrafted WR) — starters=2, have=2, RB/WR never atCap at all.
+    const wrCells = within(row("P11")).getAllByTitle(
+      /boosted above market/i,
+    );
+    expect(wrCells.length).toBeGreaterThan(0);
+    expect(wrCells.some((c) => /↑/.test(c.textContent ?? ""))).toBe(true);
+  });
+
+  it("does not boost RB (already has a backup via FLEX) or TE (not in scope)", () => {
+    useDraftStore.setState({ leagueId: 1, syncing: false, picks: picks() });
+    renderInApp(deepRoom());
+
+    // P14 (next undrafted RB) — have=3, starters=2: already 1 backup, so no
+    // boost, and never capped either (RB is excluded from atCap).
+    const rbCells = within(row("P14")).getAllByTitle(
+      /allocation ceiling|the most you can pay|doesn't improve your best reachable roster/i,
+    );
+    expect(rbCells.length).toBeGreaterThan(0);
+    expect(rbCells.some((c) => /↑/.test(c.textContent ?? ""))).toBe(false);
+
+    // P8 (next undrafted TE) — not a backup-boost position at all.
+    const teCells = within(row("P8")).getAllByTitle(
+      /allocation ceiling|the most you can pay|doesn't improve your best reachable roster/i,
+    );
+    expect(teCells.length).toBeGreaterThan(0);
+    expect(teCells.some((c) => /↑/.test(c.textContent ?? ""))).toBe(false);
+  });
+
+  it("turns off again once a first backup is actually landed", () => {
+    // Same 7 starters, PLUS a bench WR (id11) — WR now has 3 (1 backup).
+    useDraftStore.setState({
+      leagueId: 1,
+      syncing: false,
+      picks: [...picks(), {
+        pickId: 8, playerId: 11, overallPick: 8, mine: true,
+        teamId: null, price: 5, slot: null,
+      }],
+    });
+    renderInApp(deepRoom());
+
+    // P15 is now the next undrafted WR — the boost should be gone.
+    const cells = within(row("P15")).getAllByTitle(
+      /allocation ceiling|the most you can pay|doesn't improve your best reachable roster/i,
+    );
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.some((c) => /↑/.test(c.textContent ?? ""))).toBe(false);
+    // And QB — untouched by this pick — is still boosted.
+    const qbCells = within(row("P5")).getAllByTitle(/boosted above market/i);
+    expect(qbCells.some((c) => /↑/.test(c.textContent ?? ""))).toBe(true);
+  });
+});
+
 describe("AuctionRoom never bids above my own remaining money", () => {
   it("caps $Max by my wallet once starters are full, and says so", () => {
     // Reported mid-draft: "$Max should never exceed my remaining budget - it

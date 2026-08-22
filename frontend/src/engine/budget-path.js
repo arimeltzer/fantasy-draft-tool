@@ -162,6 +162,49 @@ export function remainingStartingSlots(roster = {}, myPlayers = []) {
 }
 
 /**
+ * Bench-phase "one strong backup" priority — a ROSTER-CONSTRUCTION goal, not
+ * a value comparison. A user's own stated ranking: "(1) points over the
+ * season ... (2) having one strong backup at QB, RB, and WR." Once every
+ * starting slot is filled, the ceiling composition (`AuctionRoom.tsx
+ * ceilingFor`) had already prevented over-DEPTH (`maxUseful`'s $1 floor for
+ * QB/TE/K/DST) but priced a team's FIRST bench body at a position the same
+ * as its fourth: plain market value either way. This closes that specific
+ * gap by nudging the ceiling above market for exactly the transition from
+ * zero bench bodies to one, at exactly the three positions asked for.
+ *
+ * `BOOST_MULT` is deliberately the SAME 1.15 `needMult()` already uses on the
+ * snake side for "below a starter slot" — reusing an existing, already-tuned
+ * shape of nudge rather than inventing a fresh unfitted number. Small and
+ * secondary on purpose: this is priority #2, meant to break a near-tie in
+ * market's favor, not override it — `dollarValue`/`market` remain the
+ * dominant signal (priority #1).
+ *
+ * TE/K/DST are excluded — they already have a depth policy via `maxUseful`'s
+ * floor, and boosting there would fight it rather than complement it (a K/DST
+ * backup is never useful at all, so there is nothing to prioritize toward).
+ *
+ * `have` counts EVERYONE at the position, starters included — the same
+ * approximation `remainingStartingSlots` already makes about FLEX ownership
+ * (a dedicated FLEX starter drawn from this position is not distinguished
+ * from a bench body), stated rather than hidden.
+ */
+export const BACKUP_BOOST_MULT = 1.15;
+export const BACKUP_BOOST_POSITIONS = ["QB", "RB", "WR"];
+
+export function firstBackupBoost(pos, have, roster = {}) {
+  if (!BACKUP_BOOST_POSITIONS.includes(pos)) return 1;
+  const starters = roster[pos] || 0;
+  // Self-contained rather than relying on the caller to only invoke this once
+  // starters are full: EXACT equality, not `have - starters <= 0`, so a
+  // roster that has not yet filled its starters at this position (have <
+  // starters) does not read as "zero backups" and get boosted early — a real
+  // edge case a selftest caught, not a hypothetical one. A league with no
+  // starting requirement here at all (`starters === 0`) has no "backup"
+  // concept either way.
+  return starters > 0 && (have || 0) === starters ? BACKUP_BOOST_MULT : 1;
+}
+
+/**
  * The best roster still reachable.
  *
  * @param slots    array of position strings for the slots still to fill, e.g.

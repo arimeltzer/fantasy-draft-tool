@@ -1448,7 +1448,7 @@ where the endpoint was verified genuine before 0.3 was built on it.
 > distributions with interval-calibration validation. Do not wire them into
 > anything until the calibration check passes."
 
-### 2.4 Deterministic bye-aware lineup value — PRE-REGISTRATION, not yet built
+### 2.4 Deterministic bye-aware lineup value — GATE RUN, inconclusive at 432 drafts; larger run pending
 
 **Proposed by the user while revisiting 2.3**: "a model that assumes the
 maximum lineup each week of the season accounting for byes. That will
@@ -1524,13 +1524,47 @@ gate — which needs many independent league-seasons with known champions and ma
 not be measurable at acceptable cost at all — this one needs only per-week
 player scores the database already holds.
 
-**Status: SCOPED, NOT STARTED.** The build is small because every component
-exists; the gate run is the actual work.
+**Built, and a real harness bug found along the way.** `bye-lineup-value.js`
+implements the deterministic model (`seasonLineupValue`, `marginalLineupValue`,
+`byeLineupMult`); `draft-sim.mjs simulateDraft` gained a `byeByTeam` parameter
+and `realizedWeeklyPoints` (lineups set by projection, scored on reality —
+the harness that avoids the circularity trap). Building the gate surfaced
+that `simulateDraft` had NEVER passed a bye schedule to `pickScore`, so the
+SHIPPED `byeClash` penalty had never fired in any simulation this repo had
+run — every prior "shipped agent" result in this document was quietly a
+bye-blind agent. Fixed as part of this step; see CLAUDE.md's live-draft-sync
+section for the full note.
 
-> **Prompt** — "Build roadmap 2.4: wire `lineup-optimizer.js` to deterministic
-> per-week projections with real byes, produce a season bye-aware lineup value,
-> and run its pre-registered gate against realized `fantasy_player_logs` scores
-> before wiring it into any valuation."
+**First gate run — 9 seasons (2017-2025), 4 slots, 12 seeds, 432 drafts per
+arm:**
+
+| arm | mean | SE | mean/SE | verdict |
+|---|---|---|---|---|
+| deployment (2.4 vs shipped `byeClash`) | +4.55 pts | 3.49 | 1.30 | NOT significant |
+| isolation (bye-aware vs bye-blind) | +7.46 pts | 2.95 | 2.53 | significant |
+
+**Reading this honestly, not favorably.** The isolation arm says there IS a
+real bye-schedule signal — a bye-aware agent beats an otherwise-identical
+bye-blind one by a margin distinguishable from noise. But the number that
+decides whether to SHIP (deployment, vs. what the app actually runs today)
+did not clear the pre-registered bar. Per that bar, as written, this ships
+nothing yet. The two means are not actually far apart (4.55 vs 7.46) — this
+reads as underpowered rather than as a clean null, which is a real,
+non-circular distinction the isolation arm's significance supports.
+
+**User's call on how to proceed, having seen this exact result: run a bigger
+gate before deciding**, rather than ship early on a promising-but-not-yet-
+significant number or discard a real isolation-arm signal. A larger run
+(more seeds and/or slots, sized to plausibly clear mean/SE > 2 if the true
+effect sits near the observed mean) is queued as the next action on this
+step. Kill gate is UNCHANGED: still mean/SE > 2 on the deployment arm,
+still scored on realized weekly points, still ships nothing on a result
+inside that bar even if the new run reads as "closer."
+
+> **Prompt** — "Run a larger roadmap 2.4 gate (more seeds and/or slots) to
+> shrink the deployment arm's standard error, then re-apply the same
+> pre-registered mean/SE > 2 bar — do not lower the bar to fit a promising
+> but still-inconclusive result."
 
 ---
 
@@ -2736,12 +2770,56 @@ No kill gate needed — same reasoning as 3.6c: this is not a new predictive
 claim being tested, it is exposing data the app already derives (`byeByTeam`)
 in a new, unpriced way the user asked for directly.
 
-**Status: 3.6c and 3.6d SHIPPED. 3.6a/3.6b SCOPED, NOT STARTED** — real
-follow-up work, now lower priority twice over: 3.6c removed the roster-depth
-problem that originally motivated this whole step, and 3.6d gave the user a
-lighter-weight answer to the bye-specific half of it than a priced model
-would have. 3.6a is buildable with no precondition risk (a
-measurement-harness question to resolve first); 3.6b needs its precondition
+**3.6e "One strong backup" ceiling boost — DONE, shipped. The mirror case
+3.6c never covered.** Raised while revisiting $Max: "For $Max, when we get
+to bench points is it still trying to maximize my value? I would prioritize:
+(1) points over the season ... (2) having one strong backup at QB, RB, and
+WR." 3.6c's `maxUseful` floor stops over-DEPTH (a 3rd QB priced at $1 instead
+of competing with real RB/WR value) — but nothing stopped UNDER-depth: a
+team's FIRST bench body at a position was priced identically to its fourth,
+plain `market` value either way. Priority #2 above names exactly that gap,
+ranked explicitly BELOW priority #1 (points/value) — a nudge, not an
+override, which shaped the fix as small and reversible rather than a new
+valuation layer.
+
+Shipped as `budget-path.js firstBackupBoost(pos, have, roster)`: returns
+`BACKUP_BOOST_MULT` (1.15 — the SAME constant `needMult()` already uses on
+the snake side for "below a starter slot," reused rather than a fresh
+unfitted number) exactly when `have === starters` for that position — zero
+bench bodies yet. Scoped to QB/RB/WR only, per the user's own list; TE/K/DST
+are excluded because `maxUseful` already owns their depth policy (3.6c) and a
+boost there would fight it rather than complement it. A real edge case a
+selftest caught during review: the naive formula `max(0, have - starters) ===
+0` is ALSO true when `have < starters` (roster not even filled yet), which
+would have fired the boost before starters exist at all — fixed to exact
+equality, `starters > 0 && have === starters`, so the function is correct
+standalone rather than relying on the caller to only invoke it post-starters.
+
+Wired into `AuctionRoom.tsx ceilingFor`: `allocationCeiling = atCap ? 1 :
+market * firstBackupBoost(...)` once starters are full — mutually exclusive
+with 3.6c's floor by construction (QB's boost fires only at `have ===
+starters`, `atCap` only at `have >= starters + 1`; RB/WR are never `atCap` at
+all). Still composed through `bindingCeiling` exactly as before, so the
+wallet cap (roadmap "\$Max never exceeds your own remaining money") and the
+room cap still apply on top — the boost raises the ASK, it does not bypass
+what you can actually pay. A `↑` marker (teal) shows only when the boost is
+actually what's binding the number, same discipline `belowMarket`'s `~`
+already uses; surfaced on the main board (both densities) and in the "your
+targets" panel.
+
+No kill gate needed, same reasoning as 3.6c and 3.6d: this reuses an
+already-tuned constant (`needMult`'s 1.15) in a second consumer and encodes a
+roster-construction PREFERENCE the user stated directly, rather than testing
+a new predictive claim.
+
+**Status: 3.6c, 3.6d, and 3.6e SHIPPED. 3.6a/3.6b SCOPED, NOT STARTED** —
+real follow-up work, now lower priority three times over: 3.6c removed the
+over-depth problem, 3.6d gave a lighter-weight answer to the bye-specific
+half, and 3.6e covers the under-depth half priority #2 asked for directly.
+Priority #1 from the same message — bye-sensitive SEASON points — is
+tracked separately as roadmap 2.4, whose gate result (deployment arm not yet
+significant; see 2.4's own status) is why it is not yet wired into $Max.
+3.6a is buildable with no precondition risk; 3.6b needs its precondition
 checked before any kill-gate number is set. Neither is blocking anything the
 user has actually asked for at this point.
 

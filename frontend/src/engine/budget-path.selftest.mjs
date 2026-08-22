@@ -17,6 +17,7 @@
  */
 import {
   reachableRoster, bidCeiling, flexDistributions, remainingStartingSlots,
+  firstBackupBoost, BACKUP_BOOST_MULT,
   FLEX_ELIGIBLE, TOP_K_PER_POS,
 } from "./budget-path.js";
 
@@ -301,6 +302,33 @@ check("flexDistributions(1) is one per eligible position",
     check("an empty roster config asks for nothing",
           slots.length === 0 && reserveSpots === 0);
   }
+}
+
+/* ------------------------------------------------ firstBackupBoost ------ */
+{
+  const ROSTER = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 5 };
+
+  check("boosts the FIRST bench body at QB/RB/WR",
+        firstBackupBoost("QB", 1, ROSTER) === BACKUP_BOOST_MULT
+        && firstBackupBoost("RB", 2, ROSTER) === BACKUP_BOOST_MULT
+        && firstBackupBoost("WR", 2, ROSTER) === BACKUP_BOOST_MULT);
+
+  check("no boost once a backup already exists",
+        firstBackupBoost("RB", 3, ROSTER) === 1
+        && firstBackupBoost("QB", 2, ROSTER) === 1);
+
+  check("no boost before starters are even filled — this is a BENCH nudge",
+        firstBackupBoost("RB", 1, ROSTER) === 1
+        && firstBackupBoost("RB", 0, ROSTER) === 1);
+
+  check("TE/K/DST are excluded — they already have maxUseful's own policy",
+        firstBackupBoost("TE", 1, ROSTER) === 1
+        && firstBackupBoost("K", 1, ROSTER) === 1
+        && firstBackupBoost("DST", 1, ROSTER) === 1);
+
+  check("never negative-backups from an under-filled roster; never below 1",
+        firstBackupBoost("RB", 0, ROSTER) === 1
+        && firstBackupBoost("QB", 0, {}) === 1);
 }
 
 console.log();

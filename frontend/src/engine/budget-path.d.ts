@@ -25,6 +25,18 @@ export declare function remainingStartingSlots(
   myPlayers?: { pos?: string }[],
 ): { slots: string[]; reserveSpots: number };
 
+export declare const BACKUP_BOOST_MULT: number;
+export declare const BACKUP_BOOST_POSITIONS: string[];
+
+/** Bench-phase "one strong backup" ceiling nudge for QB/RB/WR — returns
+ *  BACKUP_BOOST_MULT when `have` is exactly at the starter count (zero bench
+ *  bodies at this position yet), 1 otherwise. */
+export declare function firstBackupBoost(
+  pos: string,
+  have: number,
+  roster?: Record<string, number>,
+): number;
+
 export declare function reachableRoster<T = BoardPlayer>(args: {
   slots: string[];
   budget: number;
