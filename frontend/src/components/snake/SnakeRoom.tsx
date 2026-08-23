@@ -193,11 +193,17 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
     const byPos: Record<string, BoardPlayer[]> = {};
     for (const p of avail) (byPos[p.pos] ||= []).push(p);
     const cliffById: Record<number, number> = {};
+    // roadmap 3.6h — best available VBD per position, from the same sorted
+    // lists cliffById already builds. Computed unconditionally (cheap); the
+    // opportunity-cost step that reads it stays off unless a future gate
+    // clears it (opportunityBenchAware is never set below).
+    const bestVbdByPos: Record<string, number> = {};
     for (const pos in byPos) {
       const list = byPos[pos].sort((a, b) => b.vbd - a.vbd);
       list.forEach((p, i) => {
         cliffById[p.id as number] = i + 1 < list.length ? +(p.vbd - list[i + 1].vbd).toFixed(1) : p.vbd;
       });
+      if (list.length) bestVbdByPos[pos] = list[0].vbd;
     }
 
     return {
@@ -212,6 +218,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
       needs,
       bestVbd,
       posRemaining,
+      bestVbdByPos,
       adpRankById: rankByAdp(board),
       cliffById,
       poolSize: avail.length,

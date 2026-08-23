@@ -3181,7 +3181,7 @@ needed — pure display, doesn't touch `valuePoints`, `$Max`, or
 slot, fires past it, clears once the sibling catches up, symmetric for
 WR, every other position untouched).
 
-**3.6h Opportunity-cost-aware bench pricing — SCOPED, gate in progress.**
+**3.6h Opportunity-cost-aware bench pricing — GATE BUILT, RESULT PENDING.**
 The second half of the same answer. Diagnosis of WHY 3.6f-snake failed so
 badly (not just null, -10 to -29 pts): `benchDepthMult` discounts a
 candidate purely by the drafter's OWN roster count, with zero awareness
@@ -3191,8 +3191,58 @@ toward a genuinely worse pick — there is no "safety valve" position for
 it to redirect into once QB/TE are already capped by `maxUseful`. The fix
 under test: only discount a deep position's candidate when a comparably-
 valued alternative is ACTUALLY AVAILABLE right now at the thin sibling
-position, not merely by count. See the follow-up section below for the
-mechanism, data requirements, and gate plan.
+position, not merely by count.
+
+MECHANISM. `budget-path.js opportunityBenchMult(pos, have, roster,
+siblingHave, candidateVbd, siblingBestVbd)` — a NEW function, `benchDepthMult`
+itself untouched. Shares its two existing preconditions exactly (past the
+depth slot `capacity + 1`; sibling not yet at ITS OWN capacity), adds a
+THIRD: `siblingBestVbd` — the best AVAILABLE (undrafted) player's VBD at
+the sibling position right now — must be a real positive value or the
+function is a no-op, full stop, no matter how deep `pos` already is. When
+it is real, the discount scales with how comparable the alternative is
+(`ratio = min(1, siblingBestVbd / candidateVbd)`), bounded to
+`[1 - OPPORTUNITY_BENCH_K, 1]` (`OPPORTUNITY_BENCH_K = 0.35`, an untuned
+placeholder pending this gate) so it can never overrule a genuinely
+much-better candidate.
+
+`snake-engine.js needMult()` gained three more trailing params —
+`opportunityAware, candidateVbd, siblingBestVbd` — a THIRD branch alongside
+the untouched, still-rejected `depthAware` one, calling
+`opportunityBenchMult` when `opportunityAware` is set. `pickScore` computes
+`siblingBestVbd` from a new `liveState.bestVbdByPos` field (best available
+VBD per position — absent from every pre-3.6h caller, so `pickScore` is
+byte-identical unless a caller explicitly supplies both `bestVbdByPos` and
+sets `opportunityBenchAware`). `draft-sim.mjs` computes `bestVbdByPos`
+unconditionally (cheap) and threads a `cfg.opportunityBench` opt-in flag
+onto `live.opportunityBenchAware`, mirroring `cfg.benchDepth`'s shape.
+`SnakeRoom.tsx`'s `live` builder also now computes `bestVbdByPos` (from the
+same sorted per-position lists `cliffById` already builds) so the plumbing
+is ready — but does NOT set `opportunityBenchAware`, so this has zero
+effect on any real draft today, pending this gate.
+`budget-path.selftest.mjs` (9 new assertions) and `snake-engine.selftest.mjs`
+(7 new assertions) pin the defining property: a no-op whenever
+`siblingBestVbd` shows nothing real, discounting only when it does.
+
+KILL GATE. `snake-opportunity-bench-test.mjs`, structurally identical to
+3.6f-snake's own gate (paired comparison, common random numbers,
+`realizedWeeklyPoints`, stratified over `temperature` calm/chaotic) — the
+ONLY change from that gate is which flag is opt-in
+(`opportunityBench` vs `benchDepth`). **Bar: mean/SE > 2 per bucket, same
+as every gate in this phase.** Workflow:
+`.github/workflows/snake-opportunity-bench-test.yml`.
+
+**RESULT: pending — awaiting the GitHub Actions run.** Read honestly
+either way: clearing the bar means the opportunity-cost framing was the
+right fix for 3.6f-snake's diagnosed failure mode, and this is a real
+candidate to wire into `SnakeRoom.tsx`. Still null or still negative means
+the harm 3.6f-snake showed was NOT (only) about missing alternatives on
+the board — some other mechanism is at fault, and `OPPORTUNITY_BENCH_K`
+being untuned is a real, uncontrolled variable in that read (a genuine
+signal could still be hiding behind a badly-chosen 0.35).
+
+> **Prompt** — "how else should we adjust to avoid a bench full of RBs?
+> there has to be some diminishing return here."
 
 > **Prompt** — "Check whether draft-sim.mjs's auction simulator can score
 > bye-week-specific lineup completeness (3.6a), and separately run

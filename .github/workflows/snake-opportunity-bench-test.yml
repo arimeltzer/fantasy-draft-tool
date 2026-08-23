@@ -1,0 +1,86 @@
+name: Snake opportunity-cost bench-pricing gate (roadmap 3.6h)
+
+# Manual. Asks whether an OPPORTUNITY-COST-AWARE bench-depth discount for
+# RB/WR (needMult's opportunityBenchAware step — only discounts a deep
+# candidate when a real, comparably-valued alternative is actually
+# available at the FLEX-sibling position right now, via bestVbdByPos)
+# drafts better rosters than the shipped agent (no discount at all).
+# STRATIFIED over the bot-noise "temperature" knob (calm/chaotic), same
+# split as 3.6f-snake's own gate for direct comparability.
+#
+# Scored on REALIZED weekly lineups.
+#
+# BUILT AFTER 3.6f-snake's REJECTION (docs/ROADMAP.md 3.6f-snake: -10 to
+# -29 realized pts) to fix the diagnosed failure mode — a blind per-
+# position-count discount fired even with no real alternative on the
+# board. This is a DIFFERENT claim, not a re-run: opportunityBenchMult is
+# a no-op whenever bestVbdByPos shows nothing real. NOT wired into
+# SnakeRoom.tsx — gated BEFORE any such wiring, same discipline 3.6f-snake
+# itself established. See docs/ROADMAP.md 3.6h.
+#
+# Needs FANTASYPROS_API_KEY: the opponent bots draft by that season's real
+# ADP. Without it they draft by our own model and both arms face a
+# strawman that shares our biases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      first:
+        description: "First season"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated drafts per slot per season per scenario"
+        required: false
+        default: "12"
+        type: string
+      slots:
+        description: "Draft slots to test (comma-separated)"
+        required: false
+        default: "1,4,7,10"
+        type: string
+
+jobs:
+  snake-opportunity-bench-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      - name: budget-path selftest (opportunityBenchMult itself)
+        run: node frontend/src/engine/budget-path.selftest.mjs
+      - name: snake-engine selftest (opportunityBenchAware opt-in)
+        run: node frontend/src/engine/snake-engine.selftest.mjs
+      - name: draft-sim selftest (realizedWeeklyPoints + cfg.opportunityBench)
+        run: node frontend/src/engine/draft-sim.selftest.mjs
+
+      - name: Export boards + realized weekly outcomes + byes
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Run the 3.6h gate
+        run: |
+          node frontend/src/engine/snake-opportunity-bench-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --seeds ${{ inputs.seeds }} \
+            --slots ${{ inputs.slots }} | tee data-pipeline/results/snake_opportunity_bench_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snake-opportunity-bench-test
+          path: data-pipeline/results/snake_opportunity_bench_test.txt

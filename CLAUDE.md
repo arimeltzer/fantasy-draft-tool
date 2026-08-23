@@ -1515,12 +1515,24 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   already stops), tooltip naming the exact counts. No gate needed — pure
   display. `budget-path.selftest.mjs` pins the threshold.
 - **Opportunity-cost-aware bench pricing — roadmap 3.6h, the harder half
-  of the same answer, SCOPED / gate in progress.** Diagnosis of why
+  of the same answer, GATE BUILT AND RUNNING.** Diagnosis of why
   3.6f-snake failed so badly: `benchDepthMult` discounts by roster COUNT
   alone, blind to whether a real alternative is actually on the board —
   when the best player left really is a 5th RB, the discount still fires
   and has nowhere good to redirect to (QB/TE already capped by
-  `maxUseful`). See `docs/ROADMAP.md` 3.6h for the mechanism and gate.
+  `maxUseful`). `budget-path.js opportunityBenchMult` is a NEW function
+  (`benchDepthMult` untouched) sharing its two preconditions and adding a
+  third — `siblingBestVbd`, the best AVAILABLE player's VBD at the FLEX
+  sibling right now — must be real and positive or the discount is a
+  no-op, full stop, however deep the position already is. `needMult`
+  gained a third branch (`opportunityAware`) alongside the untouched,
+  still-rejected `depthAware` one; `draft-sim.mjs`/`SnakeRoom.tsx` both
+  compute the new `bestVbdByPos` field the mechanism needs, but neither
+  sets `opportunityBenchAware` — zero effect on any real draft pending the
+  gate. `snake-opportunity-bench-test.mjs`, structurally identical to
+  3.6f-snake's own gate (same bar, same stratification), is the pre-
+  registered kill gate. See `docs/ROADMAP.md` 3.6h for the mechanism and
+  result once run.
 
 ## Frontend visual refresh (shipped, both rooms and every page)
 

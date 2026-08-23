@@ -356,13 +356,14 @@ check("a non-10-team league also uses it",
         !pickScore(rb, state(mildHeat)).reasons.includes("RB run"));
 }
 
-// ── roadmap 3.6f-snake: diminishing RB/WR bench depth (OPT-IN, ungated) ───
+// ── roadmap 3.6f-snake: diminishing RB/WR bench depth (OPT-IN, REJECTED) ──
 // The snake-side port of the auction's benchDepthMult, reusing the same
 // budget-path.js function. Built opt-in from the start (liveState.
-// benchDepthAware) — NOT wired into SnakeRoom.tsx yet, pending its own
-// draft-sim.mjs gate. These assertions pin the opt-in contract itself
-// (default-off regression safety) plus the mechanism reproducing the
-// reported live scenario ("5 RB, 0 WR, starters full") in snake terms.
+// benchDepthAware) — GATED and REJECTED (docs/ROADMAP.md 3.6f-snake:
+// -10 to -29 realized pts, worse than the shipped agent). Never wired into
+// SnakeRoom.tsx, and per that result, never should be with these constants.
+// These assertions stay to pin the mechanism itself (still reachable for
+// any future re-tuned attempt) and the opt-in contract's regression safety.
 {
   const rb = player("RB", 100);
 
@@ -427,6 +428,78 @@ check("a non-10-team league also uses it",
   const qbDeepOff = state({ counts: { QB: 1, RB: 2, WR: 2, TE: 1 } });
   check("QB is unaffected by benchDepthAware (not an RB/WR position)",
         pickScore(qb, qbDeep).score === pickScore(qb, qbDeepOff).score);
+}
+
+// ── roadmap 3.6h: opportunity-cost-aware bench pricing (OPT-IN, ungated) ──
+// Built after 3.6f-snake's rejection to fix the diagnosed failure mode: a
+// blind per-position discount fires even with no real alternative on the
+// board. The defining property under test here is exactly that — this
+// must be a no-op whenever bestVbdByPos shows nothing real to redirect
+// toward, which benchDepthAware above never checked at all.
+{
+  const rb = player("RB", 100);
+  const filledStarters = { QB: 1, RB: 0, WR: 2, TE: 1 };
+
+  // Absent flag: unchanged, regardless of bestVbdByPos being supplied.
+  const deep = state({ counts: { ...filledStarters, RB: 5, WR: 0 }, bestVbdByPos: { WR: 90 } });
+  check("opportunityBenchAware absent leaves a deep RB bench unchanged",
+        pickScore(rb, deep).score
+          === pickScore(rb, state({ counts: { ...filledStarters, RB: 5, WR: 0 } })).score);
+
+  // On, but no real WR alternative on the board at all (missing or zero) —
+  // must be a no-op. THIS is the exact gap benchDepthAware never had: it
+  // would have discounted this identically to the case below.
+  const noAlternative = state({
+    counts: { ...filledStarters, RB: 5, WR: 0 }, opportunityBenchAware: true,
+  });
+  const noAlternativeZero = state({
+    counts: { ...filledStarters, RB: 5, WR: 0 }, opportunityBenchAware: true,
+    bestVbdByPos: { WR: 0 },
+  });
+  const baseline = state({ counts: { ...filledStarters, RB: 5, WR: 0 } });
+  check("no real WR alternative on the board (missing bestVbdByPos) — no discount at all",
+        pickScore(rb, noAlternative).score === pickScore(rb, baseline).score);
+  check("no real WR alternative on the board (bestVbdByPos.WR = 0) — no discount at all",
+        pickScore(rb, noAlternativeZero).score === pickScore(rb, baseline).score);
+
+  // A REAL, comparable WR alternative IS on the board — this is the case
+  // that should actually discount, unlike the no-alternative cases above.
+  const realAlternative = state({
+    counts: { ...filledStarters, RB: 5, WR: 0 }, opportunityBenchAware: true,
+    bestVbdByPos: { WR: 90 },
+  });
+  check("a real, comparable WR alternative on the board DOES discount the 5th RB",
+        pickScore(rb, realAlternative).score < pickScore(rb, baseline).score,
+        `with=${pickScore(rb, realAlternative).score} baseline=${pickScore(rb, baseline).score}`);
+
+  // At/below the depth slot, unaffected even with a strong real alternative.
+  const atSlot = state({
+    counts: { ...filledStarters, RB: 4, WR: 0 }, opportunityBenchAware: true,
+    bestVbdByPos: { WR: 90 },
+  });
+  const atSlotOff = state({ counts: { ...filledStarters, RB: 4, WR: 0 } });
+  check("a 4th RB (at the depth slot) is unaffected even with a real alternative present",
+        pickScore(rb, atSlot).score === pickScore(rb, atSlotOff).score);
+
+  // Sibling already at its own capacity — unaffected even with a real
+  // alternative technically on the board (no imbalance to correct).
+  const siblingCovered = state({
+    counts: { ...filledStarters, RB: 5, WR: 3 }, opportunityBenchAware: true,
+    bestVbdByPos: { WR: 90 },
+  });
+  const siblingCoveredOff = state({ counts: { ...filledStarters, RB: 5, WR: 3 } });
+  check("no discount once the sibling has reached its own capacity, even with a real alternative",
+        pickScore(rb, siblingCovered).score === pickScore(rb, siblingCoveredOff).score);
+
+  // QB/TE untouched (FLEX_SIBLING only maps RB<->WR).
+  const qb2 = player("QB", 100);
+  const qbDeep2 = state({
+    counts: { QB: 1, RB: 2, WR: 2, TE: 1 }, opportunityBenchAware: true,
+    bestVbdByPos: { WR: 90 },
+  });
+  const qbDeepOff2 = state({ counts: { QB: 1, RB: 2, WR: 2, TE: 1 } });
+  check("QB is unaffected by opportunityBenchAware (not an RB/WR position)",
+        pickScore(qb2, qbDeep2).score === pickScore(qb2, qbDeepOff2).score);
 }
 
 console.log();

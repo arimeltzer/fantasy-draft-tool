@@ -11,7 +11,7 @@
    ===================================================================== */
 import { DEFAULT_PARAMS } from "./engine-core.js";
 import { byeClash } from "./bye-weeks.js";
-import { benchDepthMult, FLEX_SIBLING } from "./budget-path.js";
+import { benchDepthMult, opportunityBenchMult, FLEX_SIBLING } from "./budget-path.js";
 
 export {
   DEFAULT_PARAMS, SCORING_PRESETS, DEFAULT_SCORING, defaultScoring, resolveScoring,
@@ -138,7 +138,10 @@ export function maxUseful(pos, roster = {}, superflex = false) {
   return starters + (roster.FLEX || 0) + Math.max(2, roster.BENCH || 6);
 }
 
-function needMult(pos, have, roster, needs, flexEligible, superflex, depthAware, siblingHave) {
+function needMult(
+  pos, have, roster, needs, flexEligible, superflex,
+  depthAware, siblingHave, opportunityAware, candidateVbd, siblingBestVbd,
+) {
   if (have === 0) return 1.30;
   const belowStarter = (needs?.[pos] || 0) > 0 || (flexEligible && (needs?.FLEX || 0) > 0);
   if (belowStarter) return 1.15;
@@ -148,22 +151,29 @@ function needMult(pos, have, roster, needs, flexEligible, superflex, depthAware,
   // insurance, not depth, so it should not outrank a startable RB or WR.
   const insuranceOnly = (pos === "QB" && !superflex) || pos === "TE";
   const base = insuranceOnly ? 0.60 : 0.88;
-  // Diminishing RB/WR bench depth — the snake-side port of roadmap 3.6f's
-  // auction benchDepthMult, same function, same policy: full 0.88 through a
-  // startable 4th body at one position (roster[pos] + roster.FLEX + 1),
-  // geometric decay past that, with an extra discount while the FLEX
-  // sibling (RB<->WR) hasn't reached ITS OWN capacity yet.
-  //
-  // OPT-IN via `depthAware` (liveState.benchDepthAware, threaded by the
-  // caller), defaulting OFF — UNLIKE 3.6f's auction port, this one is NOT
-  // wired into the shipped room yet. 3.6f shipped ahead of its own gate,
-  // which turned out to be a real process mistake once asked about
-  // directly; the snake port follows the corrected process from the start
-  // (build behind a flag, gate via draft-sim.mjs, wire in only if it
-  // clears) — the same discipline 2.4/3.9 already used. See
-  // docs/ROADMAP.md 3.6f-snake.
-  if (!depthAware) return base;
-  return base * benchDepthMult(pos, have, roster, siblingHave || 0);
+  // Diminishing RB/WR bench depth — roadmap 3.6f-snake's port of 3.6f's
+  // auction benchDepthMult (full 0.88 through a startable 4th body, then
+  // geometric decay, plus an extra discount while the FLEX sibling hasn't
+  // reached ITS OWN capacity). GATED AND REJECTED: -10 to -29 realized pts
+  // (docs/ROADMAP.md 3.6f-snake) — a discount that fires by roster COUNT
+  // alone, with no awareness of the actual board, corrupted otherwise-
+  // correct picks when there was no real alternative to redirect toward.
+  // Kept here, still opt-in and still off by default, only so the harness
+  // and any future re-tuned attempt can still reach it.
+  if (depthAware) return base * benchDepthMult(pos, have, roster, siblingHave || 0);
+  // Opportunity-cost-aware successor (roadmap 3.6h) — same question, built
+  // to fix the exact failure mode 3.6f-snake diagnosed: only discounts
+  // when a REAL, currently-available player at the FLEX-sibling position
+  // could plausibly be taken instead (`siblingBestVbd`), never by count
+  // alone. OPT-IN via `opportunityAware` (liveState.opportunityBenchAware),
+  // defaulting OFF and NOT wired into any shipped room — gated the correct
+  // way, before wiring, per the process 3.6f-snake itself established.
+  // `candidateVbd`/`siblingBestVbd` are threaded through from `pickScore`
+  // below. See docs/ROADMAP.md 3.6h.
+  if (opportunityAware) {
+    return base * opportunityBenchMult(pos, have, roster, siblingHave || 0, candidateVbd, siblingBestVbd);
+  }
+  return base;
 }
 
 /**
@@ -178,6 +188,9 @@ function needMult(pos, have, roster, needs, flexEligible, superflex, depthAware,
  *   needs,          // computeNeeds() output (starter shortfalls incl. FLEX)
  *   bestVbd,        // best available VBD (urgency gate + tier cliff)
  *   posRemaining,   // { pos: # available with vbd>0 }
+ *   bestVbdByPos,   // { pos: best available VBD at that pos } — roadmap 3.6h,
+ *                   // optional, opportunityBenchMult's "is there a real
+ *                   // alternative" check; absent = that check is a no-op
  *   adpRankById,    // { id: adp rank } from rankByAdp(board)
  *   poolSize,       // # available players
  * }
@@ -211,8 +224,13 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
   // 1. Base = vbd × need_mult
   const siblingPos = FLEX_SIBLING[pos];
   const siblingHave = siblingPos ? ((s.counts && s.counts[siblingPos]) || 0) : 0;
+  // roadmap 3.6h — the best AVAILABLE player's VBD at the sibling position
+  // right now, or undefined if the caller hasn't supplied bestVbdByPos
+  // (every existing caller before 3.6h) or none is left; opportunityBenchMult
+  // treats either as "no real alternative" and is a no-op.
+  const siblingBestVbd = siblingPos ? (s.bestVbdByPos && s.bestVbdByPos[siblingPos]) : undefined;
   const nm = needMult(pos, have, s.roster || {}, s.needs, flexEligible, superflex,
-    s.benchDepthAware, siblingHave);
+    s.benchDepthAware, siblingHave, s.opportunityBenchAware, player.vbd, siblingBestVbd);
   let base = player.vbd * nm;
   if (nm >= 1.30) reasons.push(`no ${pos} yet`);
   else if (nm >= 1.15) reasons.push(`fills ${pos}`);

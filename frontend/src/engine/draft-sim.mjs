@@ -137,6 +137,12 @@ export function simulateDraft({
       const myRound = rosters[team].length + 1;
       const posRemaining = {};
       for (const p of avail) posRemaining[p.pos] = (posRemaining[p.pos] || 0) + 1;
+      // roadmap 3.6h — best available VBD per position, the "is there a
+      // real alternative on the board" input opportunityBenchMult needs.
+      const bestVbdByPos = {};
+      for (const p of avail) {
+        if (!(p.pos in bestVbdByPos) || p.vbd > bestVbdByPos[p.pos]) bestVbdByPos[p.pos] = p.vbd;
+      }
       const live = {
         round: myRound,
         teams,
@@ -147,6 +153,7 @@ export function simulateDraft({
         needs: needsFrom(counts[team], roster),
         bestVbd: Math.max(...avail.map((p) => p.vbd)),
         posRemaining,
+        bestVbdByPos,
         adpRankById: ranks,
         cliffById: cfg.cliffById || {},
         poolSize: avail.length,
@@ -199,6 +206,14 @@ export function simulateDraft({
       // ONLY difference.
       if (cfg.benchDepth) {
         live.benchDepthAware = true;
+      }
+      // Roadmap 3.6h, same opt-in-per-agent isolation reason: needMult()'s
+      // opportunityBenchMult step only fires when this is set. bestVbdByPos
+      // (built above) is already on `live` unconditionally — cheap to
+      // compute, and harmless when this flag is off since opportunityBenchMult
+      // is never called without opportunityBenchAware also being true.
+      if (cfg.opportunityBench) {
+        live.opportunityBenchAware = true;
       }
       let best = -Infinity;
       for (const p of avail) {

@@ -319,6 +319,53 @@ export function benchStackWarning(pos, have, roster = {}, siblingHave = 0) {
   return { sibling, siblingHave, siblingCapacity };
 }
 
+/** Untuned placeholder — needs its own gate before any default-on ship
+ *  decision (roadmap 3.6h). Bounds the discount to [1-K, 1]. */
+export const OPPORTUNITY_BENCH_K = 0.35;
+
+/**
+ * Opportunity-cost-aware answer to the SAME question `benchDepthMult`
+ * asked with a blind per-position-count discount — built after that
+ * discount was gated and REJECTED for the snake recommender
+ * (docs/ROADMAP.md 3.6f-snake: measurably WORSE, -10 to -29 realized
+ * pts). Diagnosis: `benchDepthMult` fires by roster COUNT alone, with no
+ * awareness of whether a real alternative sits on the board — when the
+ * best player left genuinely IS a 5th RB, the blind discount still
+ * suppresses him and has nowhere good to redirect toward (QB/TE are
+ * already hard-capped by `maxUseful`), corrupting an otherwise-correct
+ * pick. This only discounts when a REAL, currently-available player at
+ * the FLEX-sibling position could plausibly be taken instead — absent
+ * that, it is a no-op, by construction, no matter how deep `pos` already
+ * is.
+ *
+ * Shares `benchDepthMult`'s depth-slot/sibling-capacity gating exactly
+ * (same two preconditions: past the startable 4th, sibling not yet
+ * covered) — the new piece is the THIRD precondition, `siblingBestVbd`,
+ * which must be a real positive value or nothing is discounted at all.
+ * When it IS real, the discount scales with how comparable the
+ * alternative is (`ratio` — a near-equal alternative nudges harder than
+ * a clearly worse one), bounded to `[1 - OPPORTUNITY_BENCH_K, 1]` so it
+ * can never overrule a genuinely much-better candidate.
+ *
+ * NOT validated — `OPPORTUNITY_BENCH_K` is an untuned placeholder and
+ * this function is not wired into any shipped room. See docs/ROADMAP.md
+ * 3.6h for the pre-registration and gate.
+ */
+export function opportunityBenchMult(
+  pos, have, roster = {}, siblingHave = 0, candidateVbd = 0, siblingBestVbd = null,
+) {
+  const sibling = FLEX_SIBLING[pos];
+  if (!sibling) return 1;
+  const capacity = (roster[pos] || 0) + (roster.FLEX || 0);
+  const depthSlot = capacity + 1;
+  if ((have || 0) <= depthSlot) return 1;
+  const siblingCapacity = (roster[sibling] || 0) + (roster.FLEX || 0);
+  if ((siblingHave || 0) >= siblingCapacity) return 1;
+  if (!siblingBestVbd || siblingBestVbd <= 0 || !candidateVbd || candidateVbd <= 0) return 1;
+  const ratio = Math.min(1, siblingBestVbd / candidateVbd);
+  return 1 - OPPORTUNITY_BENCH_K * ratio;
+}
+
 /* =====================================================================
    HISTORICAL-ANCHOR BENCH RESERVE — roadmap 3.7. See docs/ROADMAP.md 3.7
    for the full pre-registration; this is the "replacement design" recorded

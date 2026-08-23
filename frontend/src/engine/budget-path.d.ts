@@ -65,6 +65,22 @@ export declare function benchStackWarning(
   siblingHave?: number,
 ): { sibling: string; siblingHave: number; siblingCapacity: number } | null;
 
+/** Untuned placeholder (roadmap 3.6h) — needs its own gate. */
+export declare const OPPORTUNITY_BENCH_K: number;
+
+/** Opportunity-cost-aware alternative to `benchDepthMult` (roadmap 3.6h,
+ *  NOT validated, not wired into any room) — only discounts when a real
+ *  alternative (`siblingBestVbd`) is actually available on the board;
+ *  see the JSDoc in budget-path.js. */
+export declare function opportunityBenchMult(
+  pos: string,
+  have: number,
+  roster?: Record<string, number>,
+  siblingHave?: number,
+  candidateVbd?: number,
+  siblingBestVbd?: number | null,
+): number;
+
 /** Roadmap 3.7 — this room's historical bench-tier price per position, from
  *  stored prior drafts' picks near the league's first-backup rank in
  *  nomination order. `usable: false` (the common case — most leagues import

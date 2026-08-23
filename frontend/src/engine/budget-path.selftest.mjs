@@ -24,6 +24,7 @@ import {
   bonusBackupPositions, withBonusBackupSlots,
   benchDepthMult, BENCH_DEPTH_DECAY, BENCH_DEPTH_IMBALANCE_MULT,
   benchStackWarning,
+  opportunityBenchMult, OPPORTUNITY_BENCH_K,
 } from "./budget-path.js";
 
 let pass = 0;
@@ -411,6 +412,56 @@ check("flexDistributions(1) is one per eligible position",
 
   check("stays flagged arbitrarily deep, as long as the sibling stays thin",
         benchStackWarning("RB", 20, ROSTER, 0) !== null);
+}
+
+/* ---------------------------------------------- opportunityBenchMult ---- */
+// Roadmap 3.6h — the opportunity-cost-aware successor to benchDepthMult,
+// built after 3.6f-snake's rejection diagnosed WHY a blind count-based
+// discount hurt: it fired even with no real alternative on the board. This
+// must be a no-op unless a real, positive-value alternative actually
+// exists — that's the whole point.
+{
+  const ROSTER = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 6 };
+
+  check("no discount up to and including the depth slot, regardless of alternative",
+        opportunityBenchMult("RB", 4, ROSTER, 0, 100, 90) === 1);
+
+  check("no discount once the sibling has reached ITS OWN capacity",
+        opportunityBenchMult("RB", 5, ROSTER, 3, 100, 90) === 1);
+
+  check("NO discount past the depth slot with a thin sibling, if no real alternative exists",
+        opportunityBenchMult("RB", 5, ROSTER, 0, 100, null) === 1
+        && opportunityBenchMult("RB", 5, ROSTER, 0, 100, 0) === 1
+        && opportunityBenchMult("RB", 5, ROSTER, 0, 100, undefined) === 1);
+
+  check("NO discount if the candidate itself has no value (avoids div-by-zero/garbage)",
+        opportunityBenchMult("RB", 5, ROSTER, 0, 0, 90) === 1);
+
+  check("discounts when a real, comparable alternative exists — the exact gap benchDepthMult missed",
+        (() => {
+          const m = opportunityBenchMult("RB", 5, ROSTER, 0, 100, 90);
+          return m < 1 && m >= 1 - OPPORTUNITY_BENCH_K;
+        })());
+
+  check("a near-equal alternative discounts harder than a clearly worse one",
+        opportunityBenchMult("RB", 5, ROSTER, 0, 100, 95)
+          < opportunityBenchMult("RB", 5, ROSTER, 0, 100, 20));
+
+  check("the discount is bounded — never exceeds OPPORTUNITY_BENCH_K even if the alternative is BETTER",
+        (() => {
+          const m = opportunityBenchMult("RB", 5, ROSTER, 0, 100, 500); // sibling far better
+          return Math.abs(m - (1 - OPPORTUNITY_BENCH_K)) < 1e-9;
+        })());
+
+  check("symmetric for WR, keyed off WR's own roster requirement",
+        opportunityBenchMult("WR", 5, ROSTER, 0, 100, 90) < 1
+        && opportunityBenchMult("WR", 4, ROSTER, 0, 100, 90) === 1);
+
+  check("every other position is untouched — this is RB/WR's shared FLEX relationship only",
+        opportunityBenchMult("QB", 10, ROSTER, 0, 100, 90) === 1
+        && opportunityBenchMult("TE", 10, ROSTER, 0, 100, 90) === 1
+        && opportunityBenchMult("K", 10, ROSTER, 0, 100, 90) === 1
+        && opportunityBenchMult("DST", 10, ROSTER, 0, 100, 90) === 1);
 }
 
 /* ------------------------------------------ historicalBenchReserve (3.7) */

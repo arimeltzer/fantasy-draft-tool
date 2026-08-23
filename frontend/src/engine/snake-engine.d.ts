@@ -37,6 +37,15 @@ export interface SnakeLiveState {
   needs: Record<string, number>;
   bestVbd: number;
   posRemaining: Record<string, number>;
+  /** roadmap 3.6h — best available VBD per position, opportunityBenchMult's
+   *  "is there a real alternative on the board" input. Absent = that check
+   *  is a no-op (opportunityBenchAware is also gated separately). */
+  bestVbdByPos?: Record<string, number>;
+  /** roadmap 3.6f-snake — REJECTED (docs/ROADMAP.md: -10 to -29 realized
+   *  pts). Kept reachable for the harness only; no shipped caller sets it. */
+  benchDepthAware?: boolean;
+  /** roadmap 3.6h — NOT validated, no shipped caller sets it. */
+  opportunityBenchAware?: boolean;
   adpRankById: Record<number, number>;
   cliffById?: Record<number, number>;
   poolSize: number;
