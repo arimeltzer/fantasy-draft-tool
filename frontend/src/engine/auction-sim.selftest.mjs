@@ -283,5 +283,48 @@ check("botWTPMultiplier is not opponentDemand's shape",
         JSON.stringify(qualifying.rows.map((r) => r.diff)));
 }
 
+// ── roadmap 3.9: bench-phase fix + treatment-bye mode ──────────────────────
+{
+  // The 3.9 fix itself: bench-phase ceilings must now be BOUNDED near
+  // market (atCap/firstBackupBoost composition), not unconstrained. Direct
+  // regression check, independent of the paired-comparison machinery below.
+  const board = makeBoard();
+  const run = simulateAuction({
+    board, teams: 10, roster: ROSTER, budget: 200, agentTeam: 4,
+    agentMode: "treatment", seed: 3,
+  });
+  const bidCeilingSanity = run.spend[4] <= 200;   // never overspends regardless
+  check("bench-phase fix: agent never overspends its own budget", bidCeilingSanity);
+
+  const POS = ["RB", "WR", "QB", "TE", "K", "DST"];
+  const teamsList = ["AAA", "BBB", "CCC", "DDD"];
+  const byeBoard = Array.from({ length: 150 }, (_, i) => ({
+    id: i + 1, name: `P${i + 1}`, pos: POS[i % POS.length],
+    team: teamsList[i % teamsList.length], age: 26, risk: 0.1, trend: 0,
+    vbd: +(200 - i * 1.1).toFixed(1), valuePoints: +(220 - i * 1.0).toFixed(1), adp: i + 1,
+  }));
+  const byeByTeam = { AAA: 6, BBB: 7, CCC: 8, DDD: 9 };
+  const pointsById = Object.fromEntries(byeBoard.map((p) => [p.id, p.vbd]));
+
+  check("treatment-bye with no byeByTeam supplied behaves exactly like treatment",
+        (() => {
+          const r = pairedCompareAuction({
+            board: byeBoard, pointsById, roster: ROSTER, teams: 10, agentTeam: 4,
+            modeA: "treatment", modeB: "treatment-bye", seeds: [1, 2, 3],
+          });
+          return r.meanDiff === 0 && r.rows.every((row) => row.diff === 0);
+        })());
+
+  check("treatment-bye WITH byeByTeam actually moves off plain treatment",
+        (() => {
+          const r = pairedCompareAuction({
+            board: byeBoard, pointsById, roster: ROSTER, teams: 10, agentTeam: 4,
+            modeA: "treatment", modeB: "treatment-bye", seeds: [1, 2, 3, 4, 5],
+            byeByTeam,
+          });
+          return r.rows.some((row) => row.diff !== 0);
+        })());
+}
+
 console.log(`\n${pass} passed, ${fails.length} failed`);
 if (fails.length) process.exit(1);

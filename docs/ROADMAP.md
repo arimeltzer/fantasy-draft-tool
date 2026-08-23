@@ -3218,6 +3218,73 @@ not a reason to reopen this specific result.
 > position-scoped measurement would be a genuinely new pre-registration,
 > not a rerun of this one."
 
+### 3.9 Auction: `byeLineupMult` as a bench-phase `$Max` multiplier — PRE-REGISTRATION, not yet built
+
+**The idea, and it is not a new one — it is 2.4's own stated next step,
+finally picked up.** 2.4's own record (above) explicitly declined to fold
+this into the snake-only ship: "Reusing the same validated VALUE FUNCTION
+as a price multiplier [in `bidCeiling`/`ceilingFor`] is a smaller
+extrapolation than inventing a new model... but it is still an
+extrapolation past what this specific gate measured, worth a separate
+explicit decision." That decision is this step. Proposed directly after
+3.7 and 3.8 (a rejected mechanism and a null one) as the next candidate,
+and deliberately checked FIRST by testing rather than trusting the "smaller
+extrapolation" reasoning — the same reasoning category that made 3.7's
+design look safe before its gate caught a real cross-position leak, and
+that mis-predicted 3.8's synthetic-fixture result. Explicitly requested to
+be gated, not wired in on the strength of 2.4's own already-cleared bar
+alone: "would we test your first suggestion before implementing? worth a
+shot."
+
+**Mechanism — no new model, a second consumer of an already-validated
+one.** `bye-lineup-value.js byeLineupMult(candidate, roster, opts)` is
+already gate-cleared (2.4: deployment mean/SE 2.83, isolation 4.23, 1,800
+drafts). `AuctionRoom.tsx ceilingFor`'s bench-phase branch — once starters
+are full — already multiplies `market` by `firstBackupBoost` (3.6e); this
+adds `byeLineupMult` as a second multiplier in the SAME composition:
+`Math.round(market * backupBoost * byeMult)`, called exactly the way
+`SnakeRoom.tsx` already calls it (`pointsOf: q.valuePoints ?? q.vbd ?? 0`,
+`byeOf` from the team's bye week, `rosterCfg: settings.roster`) so the two
+consumers cannot silently disagree about units. `atCap` (the 3.6e/`maxUseful`
+depth gate) is checked first and unchanged — a position already at its
+useful-depth cap still floors to $1 regardless of bye value, matching the
+existing precedence.
+
+**A REAL harness gap found while scoping this, fixed before the gate runs
+— the same "the simulator must match the shipped app" discipline 2.4's own
+`byeByTeam`-never-passed bug established.** `auction-sim.mjs`'s bench-phase
+branch has NEVER modeled 3.6c's `atCap`/3.6e's `firstBackupBoost` at all —
+it returns `undefined` (unconstrained, room-ceiling-only) the moment
+starters fill, which is not what `AuctionRoom.tsx` actually does and never
+was. `auction-sim.mjs`'s own header already names K/DST-outside-DP as a
+known, stated scope limit; this bench-phase gap was not previously named
+and is a different, unstated one. Fixed as part of this step, for EVERY
+mode (not just the new one) — the simulator's `"treatment"` bench-phase
+ceiling now matches `ceilingFor`'s real composition
+(`atCap ? 1 : market * backupBoost`), so the control arm this gate compares
+against is the ACTUAL shipped behavior, not a simplified stand-in. This
+changes what `"treatment"` computes in the bench phase for ALL modes on any
+FUTURE rerun of 3.5/3.7/3.8's scripts (their own recorded, already-CLOSED
+results are unaffected — they concerned the starter phase, which this fix
+does not touch) — noted here rather than silently, per this document's own
+standing rule.
+
+**Kill gate, same discipline and same stratification as 3.7/3.8.** Agent A:
+`"treatment"` (now bench-accurate, per the fix above). Agent B:
+`"treatment-bye"`, identical except the bench-phase ceiling gets the extra
+`* byeMult` factor. Scoring: `realizedWeeklyPoints`. Stratified calm /
+early-overspend. Bar: mean/SE > 2 on realized points, IN EACH BUCKET
+separately.
+
+**Status: SCOPED, NOT BUILT.**
+
+> **Prompt** — "Build roadmap 3.9: fix auction-sim.mjs's bench-phase branch
+> to match AuctionRoom.tsx's real atCap/firstBackupBoost composition, add a
+> `\"treatment-bye\"` mode multiplying that ceiling by byeLineupMult (same
+> call shape SnakeRoom.tsx already uses), and run the pre-registered gate
+> STRATIFIED by calm vs. early-overspend scenarios exactly like 3.7/3.8's.
+> Report both buckets. Only wire into AuctionRoom.tsx if it clears the bar."
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.

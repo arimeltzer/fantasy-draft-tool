@@ -1,0 +1,77 @@
+name: Auction bye-multiplier gate (roadmap 3.9)
+
+# Manual. Asks whether multiplying the auction bench-phase ceiling by
+# byeLineupMult (2.4's already gate-cleared value function, reused as a
+# price multiplier — "treatment-bye") drafts better rosters than the
+# bench-phase ceiling alone ("treatment", now bench-accurate per the 3.9
+# harness fix). STRATIFIED into the same calm / early-overspend buckets
+# 3.7/3.8 used.
+#
+# Scored on REALIZED weekly lineups.
+#
+# Needs FANTASYPROS_API_KEY: the opponent bots draft by that season's real
+# ADP. Without it they draft by our own model and both arms face a
+# strawman that shares our biases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      first:
+        description: "First season"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated drafts per slot per season per scenario"
+        required: false
+        default: "10"
+        type: string
+      slots:
+        description: "Draft slots to test (comma-separated)"
+        required: false
+        default: "1,4,7,10"
+        type: string
+
+jobs:
+  auction-bye-mult-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      - name: bye-lineup-value selftest (byeLineupMult itself)
+        run: node frontend/src/engine/bye-lineup-value.selftest.mjs
+      - name: auction-sim selftest (3.9's bench-phase fix + treatment-bye mode)
+        run: node frontend/src/engine/auction-sim.selftest.mjs
+      - name: draft-sim selftest (realizedWeeklyPoints itself)
+        run: node frontend/src/engine/draft-sim.selftest.mjs
+
+      - name: Export boards + realized weekly outcomes + byes
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Run the 3.9 gate
+        run: |
+          node frontend/src/engine/auction-bye-mult-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --seeds ${{ inputs.seeds }} \
+            --slots ${{ inputs.slots }} | tee data-pipeline/results/auction_bye_mult_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: auction-bye-mult-test
+          path: data-pipeline/results/auction_bye_mult_test.txt

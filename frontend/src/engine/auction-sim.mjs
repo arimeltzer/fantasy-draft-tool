@@ -42,8 +42,21 @@
  *     starter at a 2+-starter position" together with "the bench slot that
  *     follows it" and prefer a cheaper starter when the combined value
  *     wins. Isolates that ONE change; everything else matches "treatment".
- *   A fourth mode, "passive" (never bids), exists only for the selftest's
+ *   - "treatment-bye" — roadmap 3.9. IDENTICAL to "treatment" except the
+ *     BENCH-PHASE ceiling (once starters are full) is multiplied by
+ *     `byeLineupMult` — 2.4's already gate-cleared value function, reused
+ *     as a price multiplier the same way `firstBackupBoost` already is.
+ *   A sixth mode, "passive" (never bids), exists only for the selftest's
  *   crippled-agent check and is not a real strategy.
+ *
+ * BENCH-PHASE CEILING, ROADMAP 3.9 FIX. Every mode's bench-phase ceiling
+ * (once starters fill) now mirrors `AuctionRoom.tsx ceilingFor`'s real
+ * composition — `atCap ? 1 : market * firstBackupBoost(...)` — instead of
+ * the `undefined` (unconstrained) placeholder this file used before 3.9.
+ * That was a real, previously unstated gap between this harness and the
+ * shipped app, found while scoping 3.9 and fixed for every mode, not just
+ * the new one, so "treatment" is what's actually shipped when a future
+ * gate compares against it.
  *
  * CIRCULARITY MITIGATION, DELIBERATELY DIFFERENT FROM 3.1's. Both arms
  * price off the SAME static market curve, so any privileged-knowledge edge
@@ -87,12 +100,13 @@ import {
 } from "./auction-engine.js";
 import {
   DP_POSITIONS, FLEX_ELIGIBLE, remainingStartingSlots, bidCeiling,
-  benchReserveDollars, withBonusBackupSlots,
+  benchReserveDollars, withBonusBackupSlots, firstBackupBoost,
 } from "./budget-path.js";
 import {
   SINGLETON_POSITIONS, priceCeilingFor, bindingCeiling,
 } from "./opponent-capacity.js";
 import { mulberry32, bestLineupPoints, realizedWeeklyPoints } from "./draft-sim.mjs";
+import { byeLineupMult } from "./bye-lineup-value.js";
 
 /** Every roster field the auction fills, including the ones budget-path's
  *  DP does not optimize over (K/DST, BENCH, SF) — this is the harness's own
@@ -168,6 +182,11 @@ export function simulateAuction({
   // ({QB,RB,WR}, from `historicalBenchReserve`). Only consulted in
   // "treatment-hist" mode; every other mode ignores it entirely.
   benchReserve = {},
+  // roadmap 3.9 — {TEAM: bye week}. Only consulted in "treatment-bye" mode
+  // (for byeLineupMult) — absent/null there falls back to no bye credit,
+  // same "missing data skips the effect" contract every bye-aware field in
+  // this codebase already follows.
+  byeByTeam = null,
   // Bid-SHAPING params only (qbMarketCap, ratioScale*, …) for the control
   // arm's suggestBid() call — a sensitivity knob for diagnosing the control
   // arm itself, never for the shared market/dollar-value numbers both arms
@@ -247,9 +266,29 @@ export function simulateAuction({
         const dpSlots = agentMode === "treatment-bonus"
           ? withBonusBackupSlots(openStartSlots, roster, t.players)
           : openStartSlots;
+        // roadmap 3.9 fix: the bench-phase ceiling (no open starting slots
+        // left) now mirrors AuctionRoom.tsx's real composition instead of
+        // leaving it unconstrained — see the module header. `atCap` is not
+        // re-checked here: the early `counts[player.pos] >= maxUseful(...)`
+        // gate a few lines up already returns a $0 bid for a capped
+        // position before this branch is ever reached, so atCap can never
+        // be true at this point — recomputing it would be dead code.
         const allocationCeiling = openStartSlots.length
           ? bidCeiling({ player, slots: dpSlots, budget: dpBudget, pool: available, valueOf, priceOf, minBid })
-          : undefined;
+          : (() => {
+              const backupBoost = firstBackupBoost(player.pos, counts[player.pos] || 0, roster);
+              // roadmap 3.9 — "treatment-bye" multiplies the bench ceiling
+              // by byeLineupMult, the same gate-cleared value function
+              // SnakeRoom.tsx already uses, called the identical way.
+              const byeMult = agentMode === "treatment-bye" && byeByTeam
+                ? byeLineupMult(player, t.players, {
+                    pointsOf: (q) => q.valuePoints ?? q.vbd ?? 0,
+                    byeOf: (q) => (q.team ? byeByTeam[q.team] ?? null : null),
+                    rosterCfg: roster,
+                  })
+                : 1;
+              return Math.round(market * backupBoost * byeMult);
+            })();
 
         const oppBudgets = [], oppOpenSpots = [], oppCounts = [];
         state.forEach((o, j) => {
@@ -329,11 +368,11 @@ export function pairedCompareAuction({
   for (const seed of seeds) {
     const a = simulateAuction({
       board, teams, roster, budget, minBid, agentTeam, superflex, botNoise, seed,
-      agentMode: modeA, controlParams, benchReserve,
+      agentMode: modeA, controlParams, benchReserve, byeByTeam,
     });
     const b = simulateAuction({
       board, teams, roster, budget, minBid, agentTeam, superflex, botNoise, seed,
-      agentMode: modeB, controlParams, benchReserve,
+      agentMode: modeB, controlParams, benchReserve, byeByTeam,
     });
     const aPts = scoreOf(a.rosters[agentTeam]);
     const bPts = scoreOf(b.rosters[agentTeam]);
