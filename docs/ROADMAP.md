@@ -3087,7 +3087,7 @@ or one applied only to the SPECIFIC missing-backup slot's own price rather
 than uniformly to QB/RB/WR) would need its own pre-registration and gate,
 not a reuse of this one's numbers.
 
-### 3.8 Auction: joint valuation of the last starter + first bench slot — PRE-REGISTRATION, not yet built
+### 3.8 Auction: joint valuation of the last starter + first bench slot (tried — NOT shipped)
 
 **The idea, proposed directly after 3.7's rejection, and importantly a
 DIFFERENT mechanism from it, not a retry.** "Don't account for the bench
@@ -3162,13 +3162,61 @@ today's shipped DP (unaugmented `openStartSlots`). Agent B:
 > 2 on realized points, IN EACH BUCKET separately — a result inside that
 bar in either bucket ships nothing for that scenario, exactly 3.7's bar.
 
-**Status: SCOPED, NOT BUILT.**
+**RESULT: BUILT AND RUN — a clean NULL, not a reject like 3.7.**
+`bonusBackupPositions()`/`withBonusBackupSlots()` shipped in
+`budget-path.js` (57 selftest assertions total), `auction-sim.mjs` gained
+`"treatment-bonus"`, and `auction-bonus-slot-test.mjs` ran the full
+pre-registered gate on real 2017-2025 data (GitHub Actions run
+[32586944362](https://github.com/arimeltzer/fantasy-draft-tool/actions/runs/32586944362)),
+10 seeds × slots {1,4,7,10}:
 
-> **Prompt** — "Build roadmap 3.8: `bonusBackupPositions`/
-> `withBonusBackupSlots` in budget-path.js, a `\"treatment-bonus\"` mode in
-> auction-sim.mjs, and run the pre-registered gate STRATIFIED by calm vs.
-> early-overspend scenarios exactly like 3.7's. Report both buckets. Only
-> wire into AuctionRoom.tsx if it clears the bar."
+| bucket | n | mean diff | SE | mean/SE |
+|---|---|---|---|---|
+| calm | 360 | +1.13 pts | 8.01 | 0.14 |
+| early-overspend | 360 | -7.04 pts | 10.11 | -0.70 |
+
+Both land well inside the `|mean/SE| > 2` bar — indistinguishable from
+noise, in EITHER direction, in both scenarios. Per-season numbers swing
+enormously (+131.3 in 2023 calm to -231.4 in 2021 early-overspend) but
+average out close to zero across seasons, which reads as genuine noise
+rather than a real effect being masked by pooling.
+
+**A synthetic-fixture smoke test run before this, on toy data, had shown a
+strong, consistent NEGATIVE effect (mean/SE as low as -20)** — checked
+first because it was cheap, and reasoned through as plausibly real (a
+theory that requiring the bonus slot to be filled SIMULTANEOUSLY with the
+last starter forces a premature commitment a real draft could defer).
+The real-data gate did not confirm that theory: the effect vanished
+entirely rather than surviving at a smaller size. Read in hindsight, the
+toy fixture's thin player pool (dozens, not hundreds, of RB/WR candidates)
+most likely made the "find 2 good RBs" requirement bite artificially hard
+in a way a real ~500-player pool does not — a concrete illustration of why
+this document does not treat a synthetic smoke test as a verdict, only as
+a harness-correctness check, and why the real GitHub Actions data pull is
+run regardless of how confident a toy result looks.
+
+**Not shipped — but for a different reason than 3.7.** 3.7 was a
+confident, measured LOSS; this is a confident NULL. The mechanism itself
+is not wrong in the way 3.7's was (no cross-position budget leak was
+found or is expected, since nothing is subtracted from any budget here) —
+it simply does not move realized points either way at the population
+level this gate can measure. `bonusBackupPositions`/`withBonusBackupSlots`/
+`"treatment-bonus"` stay in the repo, selftested, as a documented null
+result. Nothing wired into `AuctionRoom.tsx`. A plausible reason a real,
+if present, effect could still be masked here: `realizedWeeklyPoints`
+scores the WHOLE roster's season, and a joint RB2+bench-RB decision made
+once, early-to-mid draft, is a small fraction of the ~15 total roster
+decisions that determine a season's realized points — the same
+signal-dilution risk any single-decision auction mechanism faces under
+this scorer. Not itself grounds to retry without a sharper measurement
+(e.g., isolating just the RB/WR position groups' own realized value,
+mirroring 2.4's deployment/isolation split) — left as a stated limitation,
+not a reason to reopen this specific result.
+
+> **Prompt** — "Roadmap 3.8 is CLOSED — null result, not shipped, see
+> docs/ROADMAP.md 3.8. Do not rebuild the same mechanism; a sharper
+> position-scoped measurement would be a genuinely new pre-registration,
+> not a rerun of this one."
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
