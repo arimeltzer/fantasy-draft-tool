@@ -3276,14 +3276,36 @@ standing rule.
 early-overspend. Bar: mean/SE > 2 on realized points, IN EACH BUCKET
 separately.
 
-**Status: SCOPED, NOT BUILT.**
+**RESULT: BUILT AND RUN — first pass UNDERPOWERED, same signature 2.4's
+own first run showed, not a clean null like 3.8.** `auction-sim.mjs`'s
+bench-phase branch was fixed to match `ceilingFor` for every mode (see
+above), `"treatment-bye"` was added, and `auction-bye-mult-test.mjs` ran
+on real 2017-2025 data (GitHub Actions run
+[32610990821](https://github.com/arimeltzer/fantasy-draft-tool/actions/runs/32610990821)),
+10 seeds × slots {1,4,7,10}:
 
-> **Prompt** — "Build roadmap 3.9: fix auction-sim.mjs's bench-phase branch
-> to match AuctionRoom.tsx's real atCap/firstBackupBoost composition, add a
-> `\"treatment-bye\"` mode multiplying that ceiling by byeLineupMult (same
-> call shape SnakeRoom.tsx already uses), and run the pre-registered gate
-> STRATIFIED by calm vs. early-overspend scenarios exactly like 3.7/3.8's.
-> Report both buckets. Only wire into AuctionRoom.tsx if it clears the bar."
+| bucket | n | mean diff | SE | mean/SE |
+|---|---|---|---|---|
+| calm | 360 | +1.09 pts | 0.77 | 1.43 |
+| early-overspend | 360 | +1.89 pts | 1.03 | 1.83 |
+
+Neither clears `|mean/SE| > 2`, so per the pre-registered bar this ships
+nothing YET — but unlike 3.8's result (huge season-to-season swings in
+both directions, -231 to +131, a clean null), this one shows a SMALL,
+CONSISTENT, mostly-POSITIVE effect: 7 of 9 seasons positive in BOTH
+buckets (2017 +6.0/+2.8, 2018 +10.2/+1.2, 2019 +0.2/+2.7, 2020 -10.1/-0.6,
+2021 +0.9/+0.5, 2022 -0.8/+7.8, 2023 +0.9/-0.5, 2024 +0.8/+1.6, 2025
++1.7/+1.5 — calm/early-overspend respectively). That pattern — small
+effect, tight-ish SE, consistent sign, close to but under the bar — is the
+literal signature 2.4's FIRST run had (mean/SE 1.30) before a 4x-larger
+run confirmed a real, modest effect (mean/SE 2.83). Read as underpowered,
+not null.
+
+**User's call, same fork 2.4 faced and the same choice made: run bigger
+rather than ship early or discard the signal.** "would we test your first
+suggestion before implementing? worth a shot" (requesting the gate in the
+first place) followed by choosing the bigger-run option when offered it
+directly.
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
