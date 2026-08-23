@@ -13,6 +13,7 @@ import {
 import { bidCeiling, remainingStartingSlots, firstBackupBoost } from "@/engine/budget-path.js";
 import { maxUseful } from "@/engine/snake-engine.js";
 import { byeCollisions } from "@/engine/bye-weeks.js";
+import { byeLineupMult } from "@/engine/bye-lineup-value.js";
 import { useByeWeeks } from "@/hooks/useByeWeeks";
 import {
   priceCeilingFor, bindingCeiling, opponentCountsFromPicks,
@@ -381,12 +382,25 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     const backupBoost = openStartSlots.length
       ? 1
       : firstBackupBoost(p.pos, haveByPos[p.pos] || 0, settings.roster as unknown as Record<string, number>);
+    // roadmap 3.9, gate-cleared (mean/SE 4.55 calm, 3.88 early-overspend
+    // over 3,150 simulated auctions — see docs/ROADMAP.md 3.9). Reuses 2.4's
+    // already-validated byeLineupMult as a second bench-phase multiplier,
+    // same call shape SnakeRoom.tsx already uses. Presence-gated on
+    // byeByTeam (the schedule may still be loading) — absent, this is 1 and
+    // the ceiling is exactly what it was before 3.9.
+    const byeMult = openStartSlots.length || !byeByTeam
+      ? 1
+      : byeLineupMult(p, minePlayers, {
+          pointsOf: (q: BoardPlayer) => q.valuePoints ?? q.vbd ?? 0,
+          byeOf: (q: BoardPlayer) => (q.team ? byeByTeam[q.team] ?? null : null),
+          rosterCfg: settings.roster as unknown as Record<string, number>,
+        });
     const allocationCeiling = openStartSlots.length
       ? bidCeiling({
           player: p, slots: openStartSlots, budget: dpBudget,
           pool: availDollar, valueOf: valueOfPlayer, priceOf: priceOfPlayer,
         })
-      : atCap ? 1 : Math.round(market * backupBoost);
+      : atCap ? 1 : Math.round(market * backupBoost * byeMult);
     // roadmap 3.4 — and the room's ability to pay. Position-aware (3.4a):
     // only opponents who still need THIS position count, so a rich team
     // stacked at running back stops holding up every back's ceiling.
@@ -438,6 +452,9 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
       // guarantee. Listed explicitly so a future change to openStartSlots
       // can't silently leave this reading a stale roster.
       haveByPos,
+      // roadmap 3.9 — byeMult reads these directly; not implied by anything
+      // else in this list.
+      minePlayers, byeByTeam,
       myMax,
       oppBudgets, oppOpenSpots, oppCounts, settings.roster, settings.superflex]);
 

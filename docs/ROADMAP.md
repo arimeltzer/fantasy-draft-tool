@@ -3218,7 +3218,7 @@ not a reason to reopen this specific result.
 > position-scoped measurement would be a genuinely new pre-registration,
 > not a rerun of this one."
 
-### 3.9 Auction: `byeLineupMult` as a bench-phase `$Max` multiplier — PRE-REGISTRATION, not yet built
+### 3.9 Auction: `byeLineupMult` as a bench-phase `$Max` multiplier — SHIPPED
 
 **The idea, and it is not a new one — it is 2.4's own stated next step,
 finally picked up.** 2.4's own record (above) explicitly declined to fold
@@ -3306,6 +3306,33 @@ rather than ship early or discard the signal.** "would we test your first
 suggestion before implementing? worth a shot" (requesting the gate in the
 first place) followed by choosing the bigger-run option when offered it
 directly.
+
+**BIGGER RUN — CLEARS THE BAR, DECISIVELY, IN BOTH BUCKETS.** 35 seeds ×
+slots {1,3,5,7,9} (a ~4.4x scale-up, the same ratio 2.4's own second run
+used), GitHub Actions run
+[32611678338](https://github.com/arimeltzer/fantasy-draft-tool/actions/runs/32611678338):
+
+| bucket | n | mean diff | SE | mean/SE |
+|---|---|---|---|---|
+| calm | 1,575 | +1.70 pts | 0.37 | **4.55** |
+| early-overspend | 1,575 | +1.79 pts | 0.46 | **3.88** |
+
+Point estimates (1.70, 1.79) landed close to the first run's (1.09, 1.89)
+— the same real, modest effect, not a different one appearing under more
+samples, exactly the pattern that confirmed 2.4's own underpowered first
+run. Both buckets clear `|mean/SE| > 2` comfortably.
+
+**SHIPPED.** `AuctionRoom.tsx ceilingFor`'s bench-phase branch now computes
+`byeMult` via `byeLineupMult(p, minePlayers, { pointsOf, byeOf, rosterCfg })`
+— identical call shape to `SnakeRoom.tsx`'s — and multiplies it into the
+ceiling alongside `firstBackupBoost`: `atCap ? 1 : Math.round(market *
+backupBoost * byeMult)`. Presence-gated on `byeByTeam` (the schedule may
+still be loading, or a room may not have it available at all) exactly like
+every other bye-aware field in this codebase — absent, `byeMult` is 1 and
+the ceiling is exactly what it was before 3.9. Full test suite (node
+selftests, `npm run build`, and `npm test`'s 87 vitest assertions
+including `AuctionRoom.test.tsx`'s own budget-path coverage) passes clean
+with the change in place.
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything

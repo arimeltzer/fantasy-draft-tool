@@ -1250,13 +1250,47 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   both `AuctionRoom.tsx` and `SnakeRoom.tsx` as a small amber `CalendarX`
   badge next to the player's name (same slot as the injury/risk icons),
   tooltip naming the week and the teammate(s) it clashes with. Pure display —
-  does not touch `valuePoints`, `$Max`, or `pickScore` in any way; the
+  did not touch `valuePoints`, `$Max`, or `pickScore` at the time it shipped
+  (3.9 below is the first thing that touches auction `$Max`); the
   snake recommender's existing `byeClash` penalty (small, capped, tied to an
-  actual starter shortfall) is unchanged and still the only priced bye
-  signal in the app. `RosterPanel`'s roster-wide "BYE CONFLICTS" summary
-  (via `byeReport`) is also unchanged and answers a different question
-  (which weeks leave a STARTER SLOT short) from this one (which specific
-  candidate on the board shares a week with a player I already have).
+  actual starter shortfall) is unchanged. `RosterPanel`'s roster-wide "BYE
+  CONFLICTS" summary (via `byeReport`) is also unchanged and answers a
+  different question (which weeks leave a STARTER SLOT short) from this one
+  (which specific candidate on the board shares a week with a player I
+  already have).
+- **`byeLineupMult` reused as an auction bench-phase `$Max` multiplier
+  (shipped, roadmap 3.9)** — 2.4's own record explicitly left this as a
+  named next step ("a smaller extrapolation than a new model... but still
+  worth a separate explicit decision"), picked up directly: "would we test
+  your first suggestion before implementing? worth a shot." Bench-phase
+  `ceilingFor` (once starters are full) now composes THREE things instead
+  of two: `atCap ? 1 : Math.round(market * backupBoost * byeMult)` —
+  `byeMult` from `byeLineupMult(p, minePlayers, {...})`, the identical call
+  shape `SnakeRoom.tsx` already uses. Presence-gated on `byeByTeam` exactly
+  like every other bye-aware field in this codebase.
+  - **A real harness gap was found and fixed while scoping this, not
+    discovered after a bad result.** `auction-sim.mjs`'s bench-phase branch
+    had NEVER modeled 3.6c's `atCap`/3.6e's `firstBackupBoost` at all — it
+    returned `undefined` (unconstrained, room-ceiling-only) the moment
+    starters filled, which is not what `AuctionRoom.tsx` actually does.
+    Fixed for every simulator mode, not just the new one, so the "control"
+    arm any gate compares against is the real shipped behavior. `3.5`'s own
+    already-closed gate result is unaffected — that fix only touches the
+    bench phase, never the starter-phase DP 3.5 measured.
+  - **First gate pass (10 seeds, slots 1/4/7/10): underpowered, not
+    null — same signature 2.4's own first run had.** calm +1.09 pts
+    (mean/SE 1.43), early-overspend +1.89 pts (mean/SE 1.83) — both under
+    the bar, but 7 of 9 seasons positive in BOTH buckets, a small
+    consistent effect rather than the wild season-to-season swings that
+    marked 3.8's genuine null. User's call, offered directly: run bigger
+    rather than ship early or discard the signal — the same fork 2.4 faced.
+  - **Second gate pass (35 seeds, slots 1/3/5/7/9, ~4.4x scale-up — the
+    same ratio 2.4's own second run used): CLEARS THE BAR in both
+    buckets.** calm +1.70 pts (mean/SE **4.55**), early-overspend +1.79 pts
+    (mean/SE **3.88**), 3,150 simulated auctions total. Point estimates
+    landed close to the first run's — the same real effect, not a
+    different one appearing under more samples. Shipped as the default;
+    `firstBackupBoost` and `atCap` are unchanged.
 
 ## Gotchas
 
