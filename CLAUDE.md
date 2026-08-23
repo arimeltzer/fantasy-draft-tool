@@ -203,6 +203,22 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     assigning teams"; both now share `resolve_my_team_index()` (raw
     `(id, name)` pairs, so the live path's payload dicts and the import
     path's `NormTeam`s use one implementation).
+    **A THIRD, unmigrated copy — `espn.resolve_team_ids()`, the live-WS-
+    watcher/live-ingest connect-time lookup — was missed by both prior
+    passes** because it lives in `espn.py` itself, not `base.py`, with its
+    own inline `mine_key in (id, name.lower())` check. Reported live on a
+    real ESPN mock draft, in auto/live-sync mode: "it identified the other
+    teams but not mine (probably name vs number for the mock)." A mock
+    draft's default team has no custom name at all — `_team_name()` falls
+    back to `f"Team {id}"` — so a stored display name that didn't
+    byte-for-byte match that generic label failed the exact-only check;
+    `teams_by_id` (built from every team unconditionally) was never the
+    broken half, only `my_team_id` came back None, so every SOLD event's
+    `is_mine` was False and none of the user's own picks were ever credited
+    to their roster while opponents looked completely normal — the same
+    "other teams fine, mine silently wrong" signature as the first two
+    instances of this bug. Now shares `resolve_my_team_index()` too.
+    `test_resolve_team_ids` in `integrations/selftest.py` pins it.
   - **A 404 from `fetch_league` is now a typed `LookupError`** with a human
     message, mapped to HTTP 404 at all three routes, instead of httpx's raw
     `Client error '404' for url <the whole query string>`. The cause people

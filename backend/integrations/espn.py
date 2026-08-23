@@ -611,13 +611,25 @@ def resolve_team_ids(data: dict, my_team: str | None = None) -> tuple[dict[int, 
     matching `my_team` (an ESPN team id OR display name — same matching
     `parse_live_draft` already does, factored out here so the live-WS
     watcher can resolve a numeric team id ONCE at connect time instead of
-    re-deriving it from a string on every event)."""
-    teams_by_id = {t.get("id"): _team_name(t) for t in data.get("teams", []) or []}
-    mine_key = (my_team or "").strip().lower()
-    for t in data.get("teams", []) or []:
-        if mine_key and mine_key in (str(t.get("id")).lower(), _team_name(t).lower()):
-            return teams_by_id, t.get("id")
-    return teams_by_id, None
+    re-deriving it from a string on every event).
+
+    THIS WAS A THIRD, UNMIGRATED COPY of the exact-only team-match bug
+    already fixed twice elsewhere (`resolve_my_team`, `parse_live_draft` —
+    see `resolve_my_team_index`'s own docstring). Reported live: "it
+    identified the other teams but not mine (probably name vs number for
+    the mock)" — a mock draft's default team labels ("Team 1", "Team 2", …)
+    don't exact-match a stored display name, so `my_team_id` stayed None,
+    every SOLD event's `is_mine` came back False, and none of the user's
+    own picks were ever credited to their roster while every opponent —
+    matched only by `teams_by_id`, which never needed "mine" at all —
+    showed up fine. Now shares the same tiered matcher (exact id/name →
+    punctuation/case-folded name → unique substring) instead of its own
+    inline exact-only check.
+    """
+    teams = data.get("teams", []) or []
+    teams_by_id = {t.get("id"): _team_name(t) for t in teams}
+    idx = resolve_my_team_index([(str(t.get("id")), _team_name(t)) for t in teams], my_team)
+    return teams_by_id, (teams[idx].get("id") if idx is not None else None)
 
 
 def draft_security_url(league_id: str, season: int, team_id: int) -> str:

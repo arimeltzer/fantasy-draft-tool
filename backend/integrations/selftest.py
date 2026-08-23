@@ -277,6 +277,54 @@ def test_resolve_my_team():
     assert names == ["Team 1", "andrew's Angry Team"], names
 
 
+def test_resolve_team_ids():
+    """`espn.resolve_team_ids` — the live-WS-watcher/live-ingest path's OWN
+    team-id lookup. A THIRD, UNMIGRATED copy of the exact-only bug
+    `test_resolve_my_team` above already regression-tests twice over
+    (`resolve_my_team`, `parse_live_draft`) — this one was missed because it
+    lives in `espn.py` itself rather than `base.py`, with its own inline
+    `mine_key in (id, name.lower())` check instead of sharing
+    `resolve_my_team_index`.
+
+    Reported live, on a real ESPN MOCK DRAFT: "it identified the other teams
+    but not mine (probably name vs number for the mock)." A mock draft's
+    default team has no custom name at all — `_team_name()` falls back to
+    `f"Team {id}"` — so a stored display name that doesn't byte-for-byte
+    match that generic label (retyped, differently punctuated, or simply
+    the league's REAL name from a prior season) failed the old exact-only
+    check. `teams_by_id` was never the broken half — it's built from every
+    team unconditionally — only `my_team_id` came back None, so every SOLD
+    event's `is_mine` was False and none of the user's own picks were ever
+    credited to their roster while opponents looked completely normal.
+    """
+    data = {"teams": [
+        {"id": 1},                                  # mock draft default: no name set
+        {"id": 2},
+        {"id": 3, "name": "Ari's Team"},
+    ]}
+
+    # Every team is always in teams_by_id, named or not — confirms the
+    # "other teams look fine" half of the report was never in question.
+    teams_by_id, mine = espn.resolve_team_ids(data, "Team 2")
+    assert teams_by_id == {1: "Team 1", 2: "Team 2", 3: "Ari's Team"}, teams_by_id
+    assert mine == 2, mine
+
+    # Tier 1 — exact numeric id as a string.
+    _, mine = espn.resolve_team_ids(data, "3")
+    assert mine == 3, mine
+
+    # Tier 2 — the actual reported shape: punctuation/spacing folded away.
+    _, mine = espn.resolve_team_ids(data, "Aris Team")
+    assert mine == 3, mine
+
+    # No match -> None, not a silent wrong guess (same refusal discipline as
+    # resolve_my_team_index itself).
+    _, mine = espn.resolve_team_ids(data, "Nobody's Team")
+    assert mine is None, mine
+    _, mine = espn.resolve_team_ids(data, None)
+    assert mine is None, mine
+
+
 def test_scoring_diagnostics():
     """ESPN/Yahoo: only PPR is auto-mapped into valuations (statId/stat_id
     schemes for the rest are undocumented and not guessed — see the docstrings
@@ -778,6 +826,7 @@ def main():
     test_espn_draft_picks(); print("✓ espn draft picks (incl. dropped)")
     test_opponent_team_ids(); print("✓ opponent team ids")
     test_resolve_my_team(); print("✓ resolve my team")
+    test_resolve_team_ids(); print("✓ resolve team ids (live-WS path)")
     test_scoring_diagnostics(); print("✓ scoring diagnostics")
     test_keeper_candidates(); print("✓ keeper candidates")
     test_yahoo(); print("✓ yahoo parse")
