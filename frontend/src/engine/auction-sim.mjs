@@ -101,6 +101,7 @@ import {
 import {
   DP_POSITIONS, FLEX_ELIGIBLE, remainingStartingSlots, bidCeiling,
   benchReserveDollars, withBonusBackupSlots, firstBackupBoost,
+  benchDepthMult, FLEX_SIBLING,
 } from "./budget-path.js";
 import {
   SINGLETON_POSITIONS, priceCeilingFor, bindingCeiling,
@@ -287,7 +288,13 @@ export function simulateAuction({
                     rosterCfg: roster,
                   })
                 : 1;
-              return Math.round(market * backupBoost * byeMult);
+              // diminishing RB/WR bench depth — mirrors AuctionRoom.tsx's
+              // ceilingFor exactly (same call shape), so this harness stays
+              // honest about what the shipped app actually does. See
+              // budget-path.js benchDepthMult's own header for the policy.
+              const depthMult = benchDepthMult(player.pos, counts[player.pos] || 0, roster,
+                counts[FLEX_SIBLING[player.pos]] || 0);
+              return Math.round(market * backupBoost * byeMult * depthMult);
             })();
 
         const oppBudgets = [], oppOpenSpots = [], oppCounts = [];

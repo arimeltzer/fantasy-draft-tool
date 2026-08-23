@@ -33,6 +33,10 @@ interface TargetItem {
   /** Bench-phase "one strong backup" nudge (QB/RB/WR): the ceiling is above
    *  market because this position has zero bench bodies yet. */
   backupBoosted?: boolean;
+  /** Diminishing RB/WR bench depth: the ceiling is discounted below market
+   *  because this position already has a startable 4th (or more), doubly so
+   *  while the FLEX-sibling position hasn't caught up yet. */
+  depthCapped?: boolean;
   /** suggestBid()'s OWN independent-pricing number — shown alongside, not
    *  hidden, because the two methods disagreeing is itself informative. */
   modelBid: number;
@@ -115,7 +119,7 @@ export default function NominationPanel({ factor, phase, nominations, valueTarge
           <Tip tip="Players whose model value most exceeds their expected price — the best bargains left. The bid is the most you should pay, accounting for what's left to fill on your own roster AND what the room can actually afford (roadmap 3.3-3.5: measured to beat independent pricing head-to-head). A '~' means the market is expected to go higher — it's your walk-away point, not a price you're favored to win at. 'pass' means he doesn't improve your reachable roster at ANY price.">Targets to consider</Tip>
         </div>
         <div className="flex flex-col gap-2.5">
-          {valueTargets.map(({ p, bid, market, pass, binding, belowMarket, backupBoosted, modelBid, modelPass }) => {
+          {valueTargets.map(({ p, bid, market, pass, binding, belowMarket, backupBoosted, depthCapped, modelBid, modelPass }) => {
             const st = posStyle(p.pos);
             const overMax = bid > myMax;
             const byRoom = binding === "opponents";
@@ -125,7 +129,7 @@ export default function NominationPanel({ factor, phase, nominations, valueTarge
                   <span className={`w-[18px] h-[18px] rounded-md ${st.badge} text-white text-[8px] font-bold grid place-items-center shrink-0`}>{p.pos}</span>
                   <span className="truncate flex-1 font-semibold">{p.name}</span>
                   <span
-                    className={`font-mono font-bold shrink-0 cursor-help ${overMax ? "text-rose-500" : pass ? "text-faint" : byRoom ? "text-violet-700" : backupBoosted ? "text-teal-700" : "text-sky-700"}`}
+                    className={`font-mono font-bold shrink-0 cursor-help ${overMax ? "text-rose-500" : pass ? "text-faint" : byRoom ? "text-violet-700" : backupBoosted ? "text-teal-700" : depthCapped ? "text-stone-500" : "text-sky-700"}`}
                     title={overMax
                       ? "Suggested bid is above the max you can afford while filling your roster"
                       : pass
@@ -134,11 +138,13 @@ export default function NominationPanel({ factor, phase, nominations, valueTarge
                       ? `Capped by the room's money: no opponent can bid more than $${bid - 1}, so you never have to pay above $${bid} no matter what he's worth. This is what the room CAN pay, not what it wants to — a hard upper bound that tightens as budgets drain.`
                       : backupBoosted
                       ? `Boosted above market: you have no backup at ${p.pos} yet, and landing one strong backup is worth paying up for.`
+                      : depthCapped
+                      ? `Discounted for bench depth: you already have a startable 4th at ${p.pos} (or more) — diminishing returns past that, doubly so while your other skill position hasn't caught up.`
                       : belowMarket
                       ? `Your real ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him. He's worth pursuing at this price — the market (~$${market}) is likely to take him higher, so treat this as your walk-away point, not a price you're favored to win at.`
                       : "Allocation ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him — reserves a realistic price for every remaining starter, not $1."}
                   >
-                    {pass ? "pass" : `bid $${bid}${byRoom ? "*" : backupBoosted ? "↑" : belowMarket ? "~" : ""}`}
+                    {pass ? "pass" : `bid $${bid}${byRoom ? "*" : backupBoosted ? "↑" : depthCapped ? "↓" : belowMarket ? "~" : ""}`}
                   </span>
                 </div>
                 <div className="pl-6 text-2xs text-faint font-mono">

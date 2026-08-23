@@ -22,6 +22,7 @@ import {
   historicalBenchReserve, benchReserveDollars,
   BENCH_WINDOW, BENCH_RESERVE_MIN_PICKS,
   bonusBackupPositions, withBonusBackupSlots,
+  benchDepthMult, BENCH_DEPTH_DECAY, BENCH_DEPTH_IMBALANCE_MULT,
 } from "./budget-path.js";
 
 let pass = 0;
@@ -332,6 +333,43 @@ check("flexDistributions(1) is one per eligible position",
   check("never negative-backups from an under-filled roster; never below 1",
         firstBackupBoost("RB", 0, ROSTER) === 1
         && firstBackupBoost("QB", 0, {}) === 1);
+}
+
+/* ---------------------------------------------------- benchDepthMult ---- */
+{
+  // 2 dedicated + 1 FLEX = capacity 3; depth slot (full value) is the 4th.
+  const ROSTER = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 6 };
+
+  check("full value through the depth slot (up to and including the 4th)",
+        benchDepthMult("RB", 1, ROSTER, 2) === 1
+        && benchDepthMult("RB", 3, ROSTER, 2) === 1
+        && benchDepthMult("RB", 4, ROSTER, 2) === 1);
+
+  check("decays starting at the 5th, geometrically",
+        Math.abs(benchDepthMult("RB", 5, ROSTER, 3) - BENCH_DEPTH_DECAY) < 1e-9
+        && Math.abs(benchDepthMult("RB", 6, ROSTER, 3) - BENCH_DEPTH_DECAY ** 2) < 1e-9);
+
+  // The exact scenario reported live: 5 RBs, zero WR (sibling capacity 3 not
+  // reached) — the imbalance penalty stacks on top of the plain decay.
+  check("extra discount when the FLEX sibling hasn't reached its own capacity",
+        Math.abs(benchDepthMult("RB", 5, ROSTER, 0) - BENCH_DEPTH_DECAY * BENCH_DEPTH_IMBALANCE_MULT) < 1e-9);
+
+  check("no imbalance penalty once the sibling has reached ITS capacity",
+        Math.abs(benchDepthMult("RB", 5, ROSTER, 3) - BENCH_DEPTH_DECAY) < 1e-9
+        && Math.abs(benchDepthMult("RB", 5, ROSTER, 5) - BENCH_DEPTH_DECAY) < 1e-9);
+
+  check("symmetric for WR, keyed off WR's own roster requirement",
+        benchDepthMult("WR", 4, ROSTER, 2) === 1
+        && Math.abs(benchDepthMult("WR", 5, ROSTER, 0) - BENCH_DEPTH_DECAY * BENCH_DEPTH_IMBALANCE_MULT) < 1e-9);
+
+  check("every other position is untouched — this is RB/WR's shared FLEX relationship only",
+        benchDepthMult("QB", 10, ROSTER, 0) === 1
+        && benchDepthMult("TE", 10, ROSTER, 0) === 1
+        && benchDepthMult("K", 10, ROSTER, 0) === 1
+        && benchDepthMult("DST", 10, ROSTER, 0) === 1);
+
+  check("never exceeds 1 (a discount only, never a bonus) and never negative",
+        benchDepthMult("RB", 20, ROSTER, 0) > 0 && benchDepthMult("RB", 20, ROSTER, 0) <= 1);
 }
 
 /* ------------------------------------------ historicalBenchReserve (3.7) */

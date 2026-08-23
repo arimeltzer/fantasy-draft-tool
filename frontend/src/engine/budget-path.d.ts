@@ -37,6 +37,23 @@ export declare function firstBackupBoost(
   roster?: Record<string, number>,
 ): number;
 
+/** RB<->WR: the only FLEX-sibling pair `benchDepthMult` reasons about. */
+export declare const FLEX_SIBLING: { RB: "WR"; WR: "RB" };
+export declare const BENCH_DEPTH_DECAY: number;
+export declare const BENCH_DEPTH_IMBALANCE_MULT: number;
+
+/** Diminishing-returns multiplier for RB/WR bench depth. 1 up to and
+ *  including the depth slot (`roster[pos] + roster.FLEX + 1`); decays
+ *  geometrically past it, with an extra one-time discount while the FLEX
+ *  sibling position hasn't reached its own startable capacity yet. 1 for
+ *  every position other than RB/WR. */
+export declare function benchDepthMult(
+  pos: string,
+  have: number,
+  roster?: Record<string, number>,
+  siblingHave?: number,
+): number;
+
 /** Roadmap 3.7 — this room's historical bench-tier price per position, from
  *  stored prior drafts' picks near the league's first-backup rank in
  *  nomination order. `usable: false` (the common case — most leagues import

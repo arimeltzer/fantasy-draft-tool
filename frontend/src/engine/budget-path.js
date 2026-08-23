@@ -205,6 +205,88 @@ export function firstBackupBoost(pos, have, roster = {}) {
 }
 
 /* =====================================================================
+   BENCH-PHASE RB/WR DIMINISHING DEPTH — a user's own stated refinement,
+   raised directly after `firstBackupBoost`/`atCap` failed to explain a real
+   mid-draft moment: bidding real money on a 6th RB with zero QB/WR depth
+   at all. RB/WR are deliberately NEVER capped to $1 the way QB/TE/K/DST
+   are (`maxUseful` — "little value past N of these, but always value
+   RB/WR depth"), and that call stands; what was missing is that "always
+   value depth" was flat all the way down, never actually diminishing.
+
+   THE USER'S OWN FRAMING, kept as the spec: "build a bench that is
+   diverse and not overloaded at one position. With the flex position, 3
+   RBs or 3 WRs can start at once. A fourth player creates depth. A 5th
+   and down has diminishing returns — especially if at the expense of a
+   3rd WR/RB (the other position)."
+
+   Two effects, composed:
+     1. DEPTH DECAY. `capacity(pos) = roster[pos] + roster.FLEX` — the most
+        bodies at ONE skill position that could ever be in the starting
+        lineup at once (2 dedicated + a FLEX that could go either way, in
+        the common case). The body AT `capacity+1` — the 4th, in that
+        common case — is real depth/insurance and keeps full value,
+        exactly as `firstBackupBoost`'s zero-to-one nudge does for the
+        FIRST backup. Every body PAST that decays geometrically — still
+        real value (never floored to $1, unlike QB/TE/K/DST), just less
+        of it the deeper the bench goes at one position.
+     2. IMBALANCE PENALTY. An EXTRA discount, on top of the decay, applied
+        only while the FLEX-sibling position (RB<->WR) hasn't even reached
+        its own startable capacity yet — the concrete case raised: a 6th
+        RB while sitting at zero WR is a worse use of the next dollar than
+        the same money toward a 3rd WR, because the 3rd WR is still
+        genuinely startable value the roster doesn't have AT ALL.
+
+   A ROSTER-CONSTRUCTION POLICY, not a new predictive valuation claim —
+   the same category `maxUseful`/`firstBackupBoost`/`atCap` already are,
+   shipped directly on the user's own stated goal rather than gated behind
+   a backtest (that discipline is for claims about what a PLAYER is worth;
+   this is a claim about what ROSTER SHAPE is worth, which nothing in this
+   codebase backtests — see 3.6c/3.6e's own precedent for shipping this
+   category directly). `DEPTH_DECAY`/`IMBALANCE_MULT` are therefore
+   deliberately modest, not fitted — a real, monotone nudge in the
+   direction asked for, not a tuned optimum. TE is intentionally excluded:
+   it already has a hard depth policy via `maxUseful`'s `starters+1` floor,
+   and this is about RB/WR's shared FLEX relationship specifically, which
+   TE (also FLEX-eligible) isn't symmetrically part of the way RB<->WR are.
+   ===================================================================== */
+
+/** RB's FLEX sibling is WR and vice versa — the only pair this policy
+ *  reasons about "the other position" for. */
+export const FLEX_SIBLING = { RB: "WR", WR: "RB" };
+
+/** Per-body multiplier applied for every player past the depth slot
+ *  (`capacity + 1`) at one position — geometric, so it keeps decaying
+ *  rather than cutting off sharply. */
+export const BENCH_DEPTH_DECAY = 0.85;
+
+/** Extra, one-time multiplier stacked on top of the decay while the FLEX
+ *  sibling position hasn't reached its own startable capacity yet — the
+ *  "at the expense of the other position" case. */
+export const BENCH_DEPTH_IMBALANCE_MULT = 0.85;
+
+/**
+ * Diminishing-returns multiplier for a bench body at RB or WR.
+ *
+ * 1 for every position other than RB/WR, and for RB/WR up to and
+ * including the depth slot (`capacity(pos) + 1` — the 4th body in the
+ * common 2-starter/1-FLEX case). Decays past that; decays further, an
+ * extra one-time step, while the sibling position (`siblingHave`) hasn't
+ * reached ITS OWN startable capacity — hoarding a 5th here instead of
+ * catching up a thin 3rd elsewhere.
+ */
+export function benchDepthMult(pos, have, roster = {}, siblingHave = 0) {
+  const sibling = FLEX_SIBLING[pos];
+  if (!sibling) return 1;
+  const capacity = (roster[pos] || 0) + (roster.FLEX || 0);
+  const depthSlot = capacity + 1;
+  if ((have || 0) <= depthSlot) return 1;
+  let mult = Math.pow(BENCH_DEPTH_DECAY, (have || 0) - depthSlot);
+  const siblingCapacity = (roster[sibling] || 0) + (roster.FLEX || 0);
+  if ((siblingHave || 0) < siblingCapacity) mult *= BENCH_DEPTH_IMBALANCE_MULT;
+  return mult;
+}
+
+/* =====================================================================
    HISTORICAL-ANCHOR BENCH RESERVE — roadmap 3.7. See docs/ROADMAP.md 3.7
    for the full pre-registration; this is the "replacement design" recorded
    there after the FIRST design (anchoring a meaningful bench slot's reserve

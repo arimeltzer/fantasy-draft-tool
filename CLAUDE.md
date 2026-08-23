@@ -1343,6 +1343,48 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     landed close to the first run's — the same real effect, not a
     different one appearing under more samples. Shipped as the default;
     `firstBackupBoost` and `atCap` are unchanged.
+- **Diminishing RB/WR bench depth (shipped) — 3.6c's "always value RB/WR
+  depth" call was flat all the way down, and a real mid-draft moment
+  showed the gap: a live `$Max` of $4 (budget-capped) for a 6th RB with
+  ZERO QB or WR at all.** Investigated as a possible live-sync roster
+  miscount first (the same bug class 3rd-instance-fixed just above this
+  section) — ruled out by hand-tracing `remainingStartingSlots`/
+  `bidCeiling` and confirming in Node that a genuinely-surplus RB (5 have
+  vs. 2 starters + 1 FLEX) already prices at `pass`, correctly, when
+  QB/WR starters are still open. The real case, once clarified: starters
+  WERE full (QB/WR each had their one starter, zero backups), so the
+  bench-phase branch was live and RB/WR's uncapped-by-design policy
+  applied uncritically — a real, budget-capped price for a 6th RB, not a
+  bug, just a flat policy the user then refined in the same breath:
+  "build a bench that is diverse and not overloaded at one position...
+  a 4th player creates depth, a 5th and down has diminishing returns —
+  especially at the expense of a 3rd WR/RB [the other position]."
+  `budget-path.js benchDepthMult(pos, have, roster, siblingHave)`:
+  `capacity(pos) = roster[pos] + roster.FLEX` (the most bodies startable
+  at one position at once); full value through `capacity + 1` (the
+  user's stated "4th player creates depth"); geometric decay
+  (`BENCH_DEPTH_DECAY = 0.85`) per body past that; an EXTRA one-time
+  discount (`BENCH_DEPTH_IMBALANCE_MULT = 0.85`) stacked on while the
+  FLEX-sibling position (`FLEX_SIBLING`: RB↔WR) hasn't reached its own
+  capacity yet — the exact "at the expense of the other position" case
+  reported. Same ship-without-a-backtest precedent 3.6c/3.6e already
+  established: a roster-construction POLICY (what shape is worth),
+  not a new predictive claim about a PLAYER (what nothing here
+  backtests). TE excluded — already has its own hard `maxUseful` cap and
+  isn't symmetrically part of the RB↔WR FLEX relationship this reasons
+  about. Composed into `AuctionRoom.tsx ceilingFor`'s bench-phase branch
+  as a fourth multiplier (`market * backupBoost * byeMult * depthMult`);
+  a new `depthCapped` flag (same "only claim it when it's actually
+  binding" discipline as `backupBoosted`) drives a `↓` marker (stone/gray,
+  distinct from every other marker's hue) in both the main board's `$Max`
+  column and the "targets to consider" panel, with a tooltip naming the
+  reason. `auction-sim.mjs`'s bench-phase branch updated to match in the
+  same pass — the same harness-gap discipline 3.9 already established for
+  this exact spot — so a future gate here measures the real shipped
+  formula. `budget-path.selftest.mjs` pins the depth-slot boundary, the
+  decay, the imbalance stacking (including the exact reported 5-RB/0-WR
+  case), the sibling-caught-up no-penalty case, and that every other
+  position is untouched.
 
 ## Frontend visual refresh (shipped, both rooms and every page)
 

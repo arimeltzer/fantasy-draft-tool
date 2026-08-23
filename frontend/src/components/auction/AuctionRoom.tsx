@@ -11,7 +11,7 @@ import { LeagueSettings, ApiLeague } from "@/lib/api";
 import {
   calibrateAuction, picksFromKeeperImport, noCalibration, describeCalibration,
 } from "@/engine/auction-calibration.js";
-import { bidCeiling, remainingStartingSlots, firstBackupBoost } from "@/engine/budget-path.js";
+import { bidCeiling, remainingStartingSlots, firstBackupBoost, benchDepthMult, FLEX_SIBLING } from "@/engine/budget-path.js";
 import { maxUseful } from "@/engine/snake-engine.js";
 import { byeCollisions } from "@/engine/bye-weeks.js";
 import { byeLineupMult } from "@/engine/bye-lineup-value.js";
@@ -396,12 +396,26 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           byeOf: (q: BoardPlayer) => (q.team ? byeByTeam[q.team] ?? null : null),
           rosterCfg: settings.roster as unknown as Record<string, number>,
         });
+    // Diminishing RB/WR bench depth (a user's own roster-construction
+    // refinement, raised directly after a real 6th-RB-with-zero-QB/WR
+    // moment): "3 RBs or 3 WRs can start at once [with FLEX]. A fourth
+    // player creates depth. A 5th and down has diminishing returns —
+    // especially at the expense of a 3rd WR/RB." `atCap` above never
+    // covers RB/WR (deliberately — bench depth there is never floored to
+    // $1), so this is the missing piece: still real value, just less of
+    // it the deeper one position's bench goes, with an extra discount
+    // while the OTHER skill position hasn't reached its own capacity yet.
+    const depthMult = openStartSlots.length
+      ? 1
+      : benchDepthMult(p.pos, haveByPos[p.pos] || 0,
+          settings.roster as unknown as Record<string, number>,
+          haveByPos[(FLEX_SIBLING as Record<string, string>)[p.pos]] || 0);
     const allocationCeiling = openStartSlots.length
       ? bidCeiling({
           player: p, slots: openStartSlots, budget: dpBudget,
           pool: availDollar, valueOf: valueOfPlayer, priceOf: priceOfPlayer,
         })
-      : atCap ? 1 : Math.round(market * backupBoost * byeMult);
+      : atCap ? 1 : Math.round(market * backupBoost * byeMult * depthMult);
     // roadmap 3.4 — and the room's ability to pay. Position-aware (3.4a):
     // only opponents who still need THIS position count, so a rich team
     // stacked at running back stops holding up every back's ceiling.
@@ -445,7 +459,11 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     // wallet or the room caps it below the boosted value, the ceiling isn't
     // really expressing the boost anymore; it's expressing that constraint.
     const backupBoosted = backupBoost > 1 && binding === "allocation";
-    return { allocationCeiling, bid: ceiling, binding, room, pass, belowMarket, backupBoosted };
+    // Same "only claim it when it's actually driving the number" discipline
+    // as backupBoosted — a wallet or room cap below the depth-discounted
+    // value would make the marker lie about why the number is what it is.
+    const depthCapped = depthMult < 1 && binding === "allocation";
+    return { allocationCeiling, bid: ceiling, binding, room, pass, belowMarket, backupBoosted, depthCapped };
   }, [openStartSlots, dpBudget, availDollar, valueOfPlayer, priceOfPlayer,
       // `haveByPos` drives the maxUseful depth cap above. It is masked today —
       // `openStartSlots` changes identity on the same trigger (`minePlayers`)
@@ -760,7 +778,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                           const byCash = c.binding === "budget";
                           return (
                             <span
-                              className={`ml-1 font-semibold cursor-help sm:hidden ${c.pass ? "text-faint" : byCash ? "text-amber-700" : byRoom ? "text-violet-700" : c.backupBoosted ? "text-teal-700" : "text-sky-700"}`}
+                              className={`ml-1 font-semibold cursor-help sm:hidden ${c.pass ? "text-faint" : byCash ? "text-amber-700" : byRoom ? "text-violet-700" : c.backupBoosted ? "text-teal-700" : c.depthCapped ? "text-stone-500" : "text-sky-700"}`}
                               title={c.pass
                                 ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
                                 : byCash
@@ -769,11 +787,13 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                                 ? `Capped by the room's money: no opponent can bid more than $${c.bid - 1}, so you never have to pay above $${c.bid}.`
                                 : c.backupBoosted
                                 ? `Boosted above market: you have no backup at ${p.pos} yet, and landing one strong backup is worth paying up for.`
+                                : c.depthCapped
+                                ? `Discounted for bench depth: you already have plenty at ${p.pos}. Diminishing returns past a startable 4th — especially while the other skill position still needs bodies.`
                                 : c.belowMarket
                                 ? "Your real ceiling — worth pursuing at this price or below, but the market is likely to take him higher."
                                 : "The most you can pay and still end up with a roster at least as good as if you skipped him — accounting for what's left to fill."}
                             >
-                              {c.pass ? "· pass" : `· max $${c.bid}${byCash ? "!" : byRoom ? "*" : c.backupBoosted ? "↑" : c.belowMarket ? "~" : ""}`}
+                              {c.pass ? "· pass" : `· max $${c.bid}${byCash ? "!" : byRoom ? "*" : c.backupBoosted ? "↑" : c.depthCapped ? "↓" : c.belowMarket ? "~" : ""}`}
                             </span>
                           );
                         })()}
@@ -804,7 +824,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                       const byCash = c.binding === "budget";
                       return (
                         <span
-                          className={`text-right font-mono text-sm font-bold tabular-nums hidden sm:block cursor-help rounded-lg px-1.5 py-1 -mr-1.5 ${c.pass ? "text-faint" : byCash ? "text-amber-700 bg-amber-50" : byRoom ? "text-violet-700 bg-violet-50" : c.backupBoosted ? "text-teal-700 bg-teal-50" : "text-sky-700 bg-sky-50"}`}
+                          className={`text-right font-mono text-sm font-bold tabular-nums hidden sm:block cursor-help rounded-lg px-1.5 py-1 -mr-1.5 ${c.pass ? "text-faint" : byCash ? "text-amber-700 bg-amber-50" : byRoom ? "text-violet-700 bg-violet-50" : c.backupBoosted ? "text-teal-700 bg-teal-50" : c.depthCapped ? "text-stone-500 bg-stone-100" : "text-sky-700 bg-sky-50"}`}
                           title={c.pass
                             ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
                             : byCash
@@ -813,11 +833,13 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                             ? `Capped by the room's money: no opponent can bid more than $${c.bid - 1}, so you never have to pay above $${c.bid} no matter what he's worth. This is what the room CAN pay, not what it wants to — a hard upper bound that tightens as budgets drain.`
                             : c.backupBoosted
                             ? `Boosted above market: you have no backup at ${p.pos} yet. One strong backup here is worth paying a premium for — this eases off again once you land one.`
+                            : c.depthCapped
+                            ? `Discounted for bench depth: you already have a startable 4th at ${p.pos} (or more). A 5th and beyond has diminishing returns — even more so while your other skill position (RB/WR) hasn't caught up. Still real value, just not full market.`
                             : c.belowMarket
                             ? `Your real ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him. He's worth pursuing at this price or below — the market is likely to take him higher, so treat this as your walk-away point, not a price you're favored to win at.`
                             : "Allocation ceiling: the most you can pay and still end up with a roster at least as good as if you skipped him — reserves a realistic price for every remaining starter, not $1."}
                         >
-                          {c.pass ? "pass" : `$${c.bid}${byCash ? "!" : byRoom ? "*" : c.backupBoosted ? "↑" : c.belowMarket ? "~" : ""}`}
+                          {c.pass ? "pass" : `$${c.bid}${byCash ? "!" : byRoom ? "*" : c.backupBoosted ? "↑" : c.depthCapped ? "↓" : c.belowMarket ? "~" : ""}`}
                         </span>
                       );
                     })()}
