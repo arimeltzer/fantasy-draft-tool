@@ -1,7 +1,8 @@
 import { memo, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio, HelpCircle, CalendarX } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio, HelpCircle, CalendarX, Layers } from "lucide-react";
 import { myPickNumbers, rankByAdp, isRookieFilterMatch } from "@/engine/snake-engine.js";
+import { benchStackWarning, FLEX_SIBLING } from "@/engine/budget-path.js";
 import { byeCollisions } from "@/engine/bye-weeks.js";
 import { byeLineupMult } from "@/engine/bye-lineup-value.js";
 import { runHotness } from "@/engine/positional-run.js";
@@ -149,6 +150,32 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
     }
     return m;
   }, [board, byeByTeam, myRosterByeNames]);
+
+  // Real-time, unpriced "stacking one position at the expense of the other"
+  // flag (roadmap 3.6g) — the display-only replacement for benchDepthMult
+  // after both its auction-price and snake-selection-score versions were
+  // gated and REJECTED (docs/ROADMAP.md 3.6f, 3.6f-snake): no measurable
+  // benefit on the auction side, and measurably WORSE on the snake side —
+  // baking the judgment into a score/price fires even when no real
+  // alternative is on the board, which is exactly what corrupted the
+  // snake result. Same "flag it, I decide live" pattern as byeWarnByPlayer.
+  const haveByPos = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const p of minePlayers) m[p.pos as string] = (m[p.pos as string] || 0) + 1;
+    return m;
+  }, [minePlayers]);
+  const stackWarnByPlayer = useMemo(() => {
+    const m = new Map<number, { have: number; sibling: string; siblingHave: number; siblingCapacity: number }>();
+    const roster = settings.roster as unknown as Record<string, number>;
+    for (const p of board) {
+      if (typeof p.id !== "number") continue;
+      const have = haveByPos[p.pos as string] || 0;
+      const w = benchStackWarning(p.pos, have, roster,
+        haveByPos[(FLEX_SIBLING as Record<string, string>)[p.pos as string]] || 0);
+      if (w) m.set(p.id, { ...w, have });
+    }
+    return m;
+  }, [board, haveByPos, settings.roster]);
 
   // Live draft state consumed by the ported pickScore() recommender.
   const live = useMemo<SnakeLiveState>(() => {
@@ -492,6 +519,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
                   onDraft={draft}
                   onUndo={undo}
                   byeWarn={byeWarnByPlayer.get(p.id as number)}
+                  stackWarn={stackWarnByPlayer.get(p.id as number)}
                 />
               ))}
               {filtered.length === 0 && (
@@ -535,7 +563,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
  * data really does — so logging a pick now re-renders one row, not the board.
  */
 const PlayerRow = memo(function PlayerRow({
-  p, idx, pick, rank, maxVbd, opponents, getOnClock, onDraft, onUndo, byeWarn,
+  p, idx, pick, rank, maxVbd, opponents, getOnClock, onDraft, onUndo, byeWarn, stackWarn,
 }: {
   p: BoardPlayer;
   idx: number;
@@ -547,6 +575,7 @@ const PlayerRow = memo(function PlayerRow({
   onDraft: (p: BoardPlayer, mine: boolean, teamId?: number) => void;
   onUndo: (pickId: number) => void;
   byeWarn: { week: number; names: string[] } | undefined;
+  stackWarn: { have: number; sibling: string; siblingHave: number; siblingCapacity: number } | undefined;
 }) {
   const st = posStyle(p.pos);
   const mine = pick?.mine ?? false;
@@ -583,6 +612,11 @@ const PlayerRow = memo(function PlayerRow({
                         {byeWarn && (
                           <span title={`Same wk ${byeWarn.week} bye as your ${p.pos}: ${byeWarn.names.join(", ")}. Not priced in — your call.`}>
                             <CalendarX className="w-3 h-3 text-amber-600" aria-label={`bye clash week ${byeWarn.week}`} />
+                          </span>
+                        )}
+                        {stackWarn && (
+                          <span title={`You already have ${stackWarn.have} ${p.pos}s and no backup ${stackWarn.sibling} yet (${stackWarn.siblingHave}/${stackWarn.siblingCapacity}) — worth diversifying before another ${p.pos}. Not priced in — your call.`}>
+                            <Layers className="w-3 h-3 text-stone-500" aria-label={`stacked at ${p.pos}, thin at ${stackWarn.sibling}`} />
                           </span>
                         )}
                         {typeof p.id === "number" && <CommonOpponentsPopover playerId={p.id} />}

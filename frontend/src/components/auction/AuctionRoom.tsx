@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
-import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock, RotateCcw, Radio, HelpCircle, DollarSign, CalendarX } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock, RotateCcw, Radio, HelpCircle, DollarSign, CalendarX, Layers } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   auctionValues, applyInflation, maxBid,
@@ -11,7 +11,7 @@ import { LeagueSettings, ApiLeague } from "@/lib/api";
 import {
   calibrateAuction, picksFromKeeperImport, noCalibration, describeCalibration,
 } from "@/engine/auction-calibration.js";
-import { bidCeiling, remainingStartingSlots, firstBackupBoost } from "@/engine/budget-path.js";
+import { bidCeiling, remainingStartingSlots, firstBackupBoost, benchStackWarning, FLEX_SIBLING } from "@/engine/budget-path.js";
 import { maxUseful } from "@/engine/snake-engine.js";
 import { byeCollisions } from "@/engine/bye-weeks.js";
 import { byeLineupMult } from "@/engine/bye-lineup-value.js";
@@ -233,6 +233,26 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     }
     return m;
   }, [board, byeByTeam, myRosterByes]);
+
+  // Real-time, unpriced "stacking one position at the expense of the other"
+  // flag (roadmap 3.6g) — the display-only replacement for benchDepthMult
+  // after both its auction-price and snake-selection-score versions were
+  // gated and REJECTED (docs/ROADMAP.md 3.6f, 3.6f-snake): no measurable
+  // benefit on the auction side, and measurably WORSE on the snake side —
+  // baking the judgment into a score/price fires even when no real
+  // alternative is on the board, which is exactly what corrupted the
+  // snake result. Same "flag it, I decide live" pattern as byeWarnByPlayer.
+  const stackWarnByPlayer = useMemo(() => {
+    const m = new Map<number, { sibling: string; siblingHave: number; siblingCapacity: number }>();
+    const roster = settings.roster as unknown as Record<string, number>;
+    for (const p of board) {
+      if (typeof p.id !== "number") continue;
+      const w = benchStackWarning(p.pos, haveByPos[p.pos] || 0, roster,
+        haveByPos[(FLEX_SIBLING as Record<string, string>)[p.pos]] || 0);
+      if (w) m.set(p.id, w);
+    }
+    return m;
+  }, [board, haveByPos, settings.roster]);
 
   const maxVbd = board.length ? Math.max(1, board[0].vbd) : 1;
 
@@ -708,6 +728,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
 
                 const nominatedNow = p.id === currentNominationId;
                 const byeWarn = typeof p.id === "number" ? byeWarnByPlayer.get(p.id) : undefined;
+                const stackWarn = typeof p.id === "number" ? stackWarnByPlayer.get(p.id) : undefined;
 
                 return (
                   <div
@@ -747,6 +768,11 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                         {byeWarn && (
                           <span title={`Same wk ${byeWarn.week} bye as your ${p.pos}: ${byeWarn.names.join(", ")}. Not priced in — your call.`}>
                             <CalendarX className="w-3 h-3 text-amber-600" aria-label={`bye clash week ${byeWarn.week}`} />
+                          </span>
+                        )}
+                        {stackWarn && (
+                          <span title={`You already have ${haveByPos[p.pos] || 0} ${p.pos}s and no backup ${stackWarn.sibling} yet (${stackWarn.siblingHave}/${stackWarn.siblingCapacity}) — worth diversifying before another ${p.pos}. Not priced in — your call.`}>
+                            <Layers className="w-3 h-3 text-stone-500" aria-label={`stacked at ${p.pos}, thin at ${stackWarn.sibling}`} />
                           </span>
                         )}
                         {typeof p.id === "number" && <CommonOpponentsPopover playerId={p.id} />}

@@ -23,6 +23,7 @@ import {
   BENCH_WINDOW, BENCH_RESERVE_MIN_PICKS,
   bonusBackupPositions, withBonusBackupSlots,
   benchDepthMult, BENCH_DEPTH_DECAY, BENCH_DEPTH_IMBALANCE_MULT,
+  benchStackWarning,
 } from "./budget-path.js";
 
 let pass = 0;
@@ -370,6 +371,46 @@ check("flexDistributions(1) is one per eligible position",
 
   check("never exceeds 1 (a discount only, never a bonus) and never negative",
         benchDepthMult("RB", 20, ROSTER, 0) > 0 && benchDepthMult("RB", 20, ROSTER, 0) <= 1);
+}
+
+/* ------------------------------------------------- benchStackWarning ---- */
+// Roadmap 3.6g — the display-only flag that replaced benchDepthMult as a
+// SCORE/PRICE effect after both 3.6f gates rejected it. Shares
+// benchDepthMult's exact threshold (capacity + 1) on purpose, since it's
+// answering the identical question, just as information instead of a
+// valuation change.
+{
+  const ROSTER = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 6 };
+
+  check("no warning up to and including the depth slot (the 4th)",
+        benchStackWarning("RB", 1, ROSTER, 0) === null
+        && benchStackWarning("RB", 3, ROSTER, 0) === null
+        && benchStackWarning("RB", 4, ROSTER, 0) === null);
+
+  // The exact scenario reported live: 5 RBs, zero WR (sibling capacity 3
+  // not reached) — this is precisely what should fire.
+  check("fires once past the depth slot AND the sibling hasn't caught up",
+        (() => {
+          const w = benchStackWarning("RB", 5, ROSTER, 0);
+          return w && w.sibling === "WR" && w.siblingHave === 0 && w.siblingCapacity === 3;
+        })());
+
+  check("no warning once the sibling has reached ITS OWN capacity",
+        benchStackWarning("RB", 5, ROSTER, 3) === null
+        && benchStackWarning("RB", 5, ROSTER, 5) === null);
+
+  check("symmetric for WR, keyed off WR's own roster requirement",
+        benchStackWarning("WR", 4, ROSTER, 0) === null
+        && benchStackWarning("WR", 5, ROSTER, 0)?.sibling === "RB");
+
+  check("every other position is untouched — this is RB/WR's shared FLEX relationship only",
+        benchStackWarning("QB", 10, ROSTER, 0) === null
+        && benchStackWarning("TE", 10, ROSTER, 0) === null
+        && benchStackWarning("K", 10, ROSTER, 0) === null
+        && benchStackWarning("DST", 10, ROSTER, 0) === null);
+
+  check("stays flagged arbitrarily deep, as long as the sibling stays thin",
+        benchStackWarning("RB", 20, ROSTER, 0) !== null);
 }
 
 /* ------------------------------------------ historicalBenchReserve (3.7) */

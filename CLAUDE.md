@@ -1497,6 +1497,30 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   Both stay unshipped exactly as already decided; `injuryOracle` itself is
   a real, validated addition to the harness, kept for any future gate that
   needs it. See `docs/ROADMAP.md` 3.6f-injury-check for the full numbers.
+- **Real-time position-stack flag (shipped, both rooms) — roadmap 3.6g,
+  asked directly after all three 3.6f gates closed: "how else should we
+  adjust to avoid a bench full of RBs? there has to be some diminishing
+  return here."** `budget-path.js benchStackWarning(pos, have, roster,
+  siblingHave)` answers the identical question `benchDepthMult` tried to
+  answer with a score/price penalty, but as INFORMATION instead of a
+  valuation change — reuses `benchDepthMult`'s exact threshold
+  (`capacity + 1`) and `FLEX_SIBLING`, non-null exactly when a candidate
+  would push RB/WR past the startable depth slot while the FLEX sibling
+  hasn't reached its own capacity. Deliberately unpriced, same reasoning
+  as `byeCollisions`: baking this into `valuePoints`/`pickScore` was tried
+  twice and REJECTED both times (no auction benefit, measurably worse in
+  snake) — a flag carries the same information with none of that risk.
+  Stone-gray `Layers` icon next to the name on both rooms' main board
+  (not the auction targets panel, matching where the bye-collision badge
+  already stops), tooltip naming the exact counts. No gate needed — pure
+  display. `budget-path.selftest.mjs` pins the threshold.
+- **Opportunity-cost-aware bench pricing — roadmap 3.6h, the harder half
+  of the same answer, SCOPED / gate in progress.** Diagnosis of why
+  3.6f-snake failed so badly: `benchDepthMult` discounts by roster COUNT
+  alone, blind to whether a real alternative is actually on the board —
+  when the best player left really is a 5th RB, the discount still fires
+  and has nowhere good to redirect to (QB/TE already capped by
+  `maxUseful`). See `docs/ROADMAP.md` 3.6h for the mechanism and gate.
 
 ## Frontend visual refresh (shipped, both rooms and every page)
 

@@ -54,6 +54,17 @@ export declare function benchDepthMult(
   siblingHave?: number,
 ): number;
 
+/** Pure display flag (roadmap 3.6g) — non-null when drafting this
+ *  candidate would push pos past its startable depth slot while the
+ *  FLEX-sibling position hasn't reached its own capacity yet.
+ *  Deliberately unpriced; see the JSDoc in budget-path.js. */
+export declare function benchStackWarning(
+  pos: string,
+  have: number,
+  roster?: Record<string, number>,
+  siblingHave?: number,
+): { sibling: string; siblingHave: number; siblingCapacity: number } | null;
+
 /** Roadmap 3.7 — this room's historical bench-tier price per position, from
  *  stored prior drafts' picks near the league's first-backup rank in
  *  nomination order. `usable: false` (the common case — most leagues import

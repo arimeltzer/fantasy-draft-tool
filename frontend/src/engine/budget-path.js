@@ -286,6 +286,39 @@ export function benchDepthMult(pos, have, roster = {}, siblingHave = 0) {
   return mult;
 }
 
+/**
+ * Pure DISPLAY flag — roadmap 3.6g. Reuses `benchDepthMult`'s exact
+ * threshold (capacity + 1 = the startable depth slot) to answer the same
+ * question `benchDepthMult` tried to answer with a SCORE/PRICE penalty,
+ * but as information instead of a valuation change: would drafting this
+ * candidate push pos PAST its startable depth while the FLEX-sibling
+ * position hasn't reached its own starter+FLEX capacity yet — "stacking
+ * one position at the expense of the other," the exact live scenario a
+ * user reported (5 RBs, zero QB/WR backup).
+ *
+ * Deliberately UNPRICED. `benchDepthMult` baked the identical judgment
+ * into `needMult`/`ceilingFor` and was gated twice (docs/ROADMAP.md 3.6f,
+ * 3.6f-snake): the auction price version showed no measurable benefit,
+ * and the snake selection-score version was measurably WORSE — because a
+ * blind per-position discount fires even when no real alternative is on
+ * the board, corrupting a pick that may genuinely be the best one
+ * available. This carries the same information with none of that risk —
+ * the identical "flag it, I decide live" pattern already shipped for bye
+ * collisions (see bye-weeks.js byeCollisions).
+ *
+ * @returns null when not stacked, else { sibling, siblingHave, siblingCapacity }
+ */
+export function benchStackWarning(pos, have, roster = {}, siblingHave = 0) {
+  const sibling = FLEX_SIBLING[pos];
+  if (!sibling) return null;
+  const capacity = (roster[pos] || 0) + (roster.FLEX || 0);
+  const depthSlot = capacity + 1;
+  if ((have || 0) <= depthSlot) return null;               // not stacked yet
+  const siblingCapacity = (roster[sibling] || 0) + (roster.FLEX || 0);
+  if ((siblingHave || 0) >= siblingCapacity) return null;  // sibling already covered
+  return { sibling, siblingHave, siblingCapacity };
+}
+
 /* =====================================================================
    HISTORICAL-ANCHOR BENCH RESERVE — roadmap 3.7. See docs/ROADMAP.md 3.7
    for the full pre-registration; this is the "replacement design" recorded

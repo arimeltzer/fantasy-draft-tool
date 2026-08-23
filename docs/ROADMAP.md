@@ -3146,6 +3146,54 @@ independent of this particular result.
 > protection we skipped. if you randomized injuries to starters, I'll bet
 > we would see a different result."
 
+**3.6g Unpriced position-stack flag — SHIPPED, both rooms.** Asked
+directly after 3.6f/3.6f-snake/3.6f-injury-check all closed: "how else
+should we adjust to avoid a bench full of RBs? there has to be some
+diminishing return here." Two options were offered — an unpriced
+real-time flag (no gate needed, ships immediately) or a smarter,
+opportunity-cost-aware scoring attempt (real engineering, needs its own
+gate given 0-for-2 so far) — user chose both; this is the first.
+
+`budget-path.js benchStackWarning(pos, have, roster, siblingHave)`
+answers the identical question `benchDepthMult` tried to answer with a
+SCORE/PRICE penalty, but as information instead of a valuation change:
+reuses `benchDepthMult`'s exact threshold (`capacity + 1`, the startable
+depth slot) and `FLEX_SIBLING`, returning non-null exactly when drafting
+this candidate would push a RB/WR PAST that depth slot while the FLEX
+sibling hasn't reached its own capacity — the precise "stacking one
+position at the expense of the other" case a user reported live and that
+originally motivated 3.6f. Deliberately unpriced for the same reason
+`byeCollisions` already is: baking this judgment into `valuePoints` or
+`pickScore` was tried twice and REJECTED both times (3.6f: no measurable
+auction benefit; 3.6f-snake: measurably worse, because a blind discount
+fires even when no real alternative sits on the board). A flag carries
+the same information with none of that risk — the user decides in the
+moment, the same "flag it, I'll decide live" pattern already established
+for bye collisions.
+
+Wired into both rooms' main board (not the auction "targets" panel,
+matching where `byeWarnByPlayer` already stops) as a stone-gray `Layers`
+icon next to the player name, tooltip naming the exact counts
+(`"You already have N RBs and no backup WR yet (0/3)..."`). No gate
+needed — pure display, doesn't touch `valuePoints`, `$Max`, or
+`pickScore`, same reasoning that exempted `byeCollisions`.
+`budget-path.selftest.mjs` pins the threshold (silent through the depth
+slot, fires past it, clears once the sibling catches up, symmetric for
+WR, every other position untouched).
+
+**3.6h Opportunity-cost-aware bench pricing — SCOPED, gate in progress.**
+The second half of the same answer. Diagnosis of WHY 3.6f-snake failed so
+badly (not just null, -10 to -29 pts): `benchDepthMult` discounts a
+candidate purely by the drafter's OWN roster count, with zero awareness
+of what's actually available on the board. If the best player left really
+is a 5th RB, the flat discount still fires and can push the recommender
+toward a genuinely worse pick — there is no "safety valve" position for
+it to redirect into once QB/TE are already capped by `maxUseful`. The fix
+under test: only discount a deep position's candidate when a comparably-
+valued alternative is ACTUALLY AVAILABLE right now at the thin sibling
+position, not merely by count. See the follow-up section below for the
+mechanism, data requirements, and gate plan.
+
 > **Prompt** — "Check whether draft-sim.mjs's auction simulator can score
 > bye-week-specific lineup completeness (3.6a), and separately run
 > injury_probe-style verification of nflverse's player-level started/inactive
