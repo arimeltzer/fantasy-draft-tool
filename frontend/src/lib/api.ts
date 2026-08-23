@@ -19,6 +19,10 @@ export interface ApiPlayer {
   ecr: number | null;
   adp: number | null;
   aav: number | null;
+  /** FantasyPros' OWN consensus tier — distinct from the app's own computed
+   *  VBD-gap tier (`BoardPlayer.tier`, never stored, recomputed client-side).
+   *  Null for a player FantasyPros didn't tier. */
+  fp_tier: number | null;
   injury: InjuryInfo | null;
 }
 

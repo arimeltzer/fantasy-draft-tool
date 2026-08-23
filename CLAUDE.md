@@ -566,6 +566,27 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   say otherwise and was wrong. Real AAV comes in via the paste importer below
   instead, into the same `aav` column `auction-engine.js marketPrice()` already
   prefers over the modeled logarithmic curve when present.
+- **FantasyPros tier surfacing (shipped, both rooms).** `fantasypros.py
+  parse_rankings()` was already extracting each player's consensus TIER from
+  the rankings payload — it just went unused past that point.
+  `data-pipeline/projections.py` now writes it onto `p["fpTier"]`, the same
+  enrichment pass as ECR/ADP (both the matched-existing-player path and the
+  added-rookie path); `load_to_db.py` upserts it into a new `fp_tier` column
+  (migration `006_add_fp_tier.sql` — run on Railway before deploying code
+  that reads it, same discipline every migration here follows). Threaded
+  through untouched — `PlayerOut` → `ApiPlayer.fp_tier` → `useBoard.ts
+  toEnginePlayer` → `BoardPlayer.fpTier` — no engine stage reads or writes
+  it, since every pipeline stage already spreads `{...p, ...}` and this
+  rides along for free.
+  **Deliberately NOT merged with the app's own computed tier**
+  (`engine-core.js finalizeBoard`'s mechanical 18-VBD-point gap, per
+  position, never stored — recomputed client-side every time). They answer
+  different questions — FantasyPros' is an expert panel's judgment call,
+  the app's is a fixed numeric rule — and blending them would hide
+  disagreement that's useful to see. Both rooms show them side by side next
+  to the player name: the existing gray `T{n}` badge (computed) plus a new
+  indigo `FP{n}` badge (FantasyPros), each with its own tooltip explaining
+  what it is and that they're independent.
 - **FantasyPros auction values, pasted** (`backend/integrations/
   fantasypros_aav_paste.py`): the website's auction-values cheat sheet, copied
   as text — same fix as the Yahoo paste importer, for the same reason (no API
@@ -1389,7 +1410,7 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   (v1 removes the player + shows the round cost but doesn't reorder the exact
   picks). Draft slots and traded picks are handled, for you and per opponent.
 - **FantasyPros**: AAV is wired (migration `002_add_aav.sql`); tier surfacing
-  (FantasyPros tiers vs. the computed VBD-gap tiers) is still open.
+  is shipped — see below.
 - **ESPN/Yahoo full scoring auto-detect** (optional): currently PPR-only by
   design (see Integrations) — could be added for real if calibrated against a
   captured live payload cross-checked against the league's own scoring page,

@@ -25,6 +25,11 @@ export interface Player {
   ecr?: number | null;
   adp?: number | null;
   aav?: number | null;
+  /** FantasyPros' OWN consensus tier, carried straight through from the
+   *  player row — distinct from `BoardPlayer.tier` (the app's own computed
+   *  VBD-gap tier, set by finalizeBoard). Shown alongside it, never blended
+   *  in. */
+  fpTier?: number | null;
   /** Reported injury, carried straight through from the player row. */
   injury?: {
     status: string; short?: string | null; type?: string | null;

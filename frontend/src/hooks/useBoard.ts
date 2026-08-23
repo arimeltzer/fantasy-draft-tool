@@ -41,6 +41,7 @@ function toEnginePlayer(p: ApiPlayer) {
     ecr: p.ecr ?? undefined,
     adp: p.adp ?? undefined,
     aav: p.aav ?? undefined,
+    fpTier: p.fp_tier ?? undefined,
     injury: p.injury ?? null,
   };
 }

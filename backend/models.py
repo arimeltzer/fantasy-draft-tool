@@ -63,6 +63,10 @@ class Player(Base):
     aav    = Column(Float, nullable=True)   # FantasyPros consensus auction average value
     # Reported injury status (migration 005); NULL = nothing reported.
     injury = Column(JSONB, nullable=True)
+    # FantasyPros' OWN consensus tier (migration 006) — distinct from the
+    # app's own computed VBD-gap tier, which is never stored (recomputed
+    # client-side from valuePoints). NULL = FantasyPros didn't tier this player.
+    fp_tier = Column(Integer, nullable=True)
 
     __table_args__ = (UniqueConstraint("season", "name", "pos", "team", name="uq_player_season"),)
 

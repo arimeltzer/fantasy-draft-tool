@@ -575,6 +575,7 @@ const PlayerRow = memo(function PlayerRow({
                         <InjuryBadge injury={p.injury} />
                         <span className="font-mono text-xs text-gray-500">{p.team}</span>
                         {p.tier && <span className="text-xs font-mono bg-gray-100 px-1 rounded text-gray-500" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
+                        {p.fpTier != null && <span className="text-xs font-mono bg-indigo-50 px-1 rounded text-indigo-600" title={`FantasyPros' own consensus Tier ${p.fpTier} at ${p.pos} — their expert panel's judgment of drop-offs, separate from this app's computed tier above (a mechanical gap in value). Shown side by side, never blended.`}>FP{p.fpTier}</span>}
                         {p.risk >= 0.4 && (
                           <span title={`Elevated risk (${p.risk} of 1) from week-to-week volatility, injury history, or age — expect a wider range of outcomes`}>
                             <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />

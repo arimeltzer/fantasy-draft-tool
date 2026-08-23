@@ -13,7 +13,7 @@ import type { LeagueSettings } from "@/lib/api";
  */
 const p = (over: Partial<ApiPlayer> & { id: number; name: string; pos: string }): ApiPlayer => ({
   season: 2026, team: "", age: null, proj: null, last: null, last2: null,
-  ecr: null, adp: null, aav: null, injury: null, ...over,
+  ecr: null, adp: null, aav: null, fp_tier: null, injury: null, ...over,
 } as ApiPlayer);
 
 const names = (rows: ApiPlayer[]) => rows.map((r) => r.name);
@@ -179,6 +179,16 @@ describe("useBoard projBreakdown", () => {
     const { result } = renderHook(() => useBoard(players, SETTINGS, undefined));
     const plain = byName(result.current, "Plain WR");
     expect(plain.projBreakdown?.map((s) => s.label)).toEqual(["Base model"]);
+  });
+
+  it("carries FantasyPros' own consensus tier through to the board, untouched", () => {
+    const tiered = [...players, p({
+      id: 8, name: "Tiered TE", pos: "TE", team: "SF", fp_tier: 3,
+    })];
+    const { result } = renderHook(() => useBoard(tiered, SETTINGS, undefined));
+    expect(byName(result.current, "Tiered TE").fpTier).toBe(3);
+    // Never blended into the app's own computed tier — a separate field.
+    expect(byName(result.current, "Plain WR").fpTier).toBeUndefined();
   });
 
   it("adds Injury discount only for the player it actually discounted", () => {

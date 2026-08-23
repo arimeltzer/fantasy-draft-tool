@@ -219,6 +219,7 @@ class PlayerOut(BaseModel):
     ecr: Optional[float]
     adp: Optional[float]
     aav: Optional[float]
+    fp_tier: Optional[int]
     injury: Optional[dict]
 
     model_config = {"from_attributes": True}

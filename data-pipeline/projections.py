@@ -130,6 +130,7 @@ def main():
     # --- ECR / ADP ---
     ecr: dict = {}
     adp: dict = {}
+    fp_tier: dict = {}
     source = "nflverse load_ff_rankings"
     fp_rank: dict = {}
     if fp_mod:
@@ -138,6 +139,14 @@ def main():
             fp_rank = fp
             ecr = {k: v["ecr"] for k, v in fp.items() if v.get("ecr") is not None}
             adp = {k: v["adp"] for k, v in fp.items() if v.get("adp") is not None}
+            # FantasyPros' own consensus tier (parse_rankings already extracts
+            # it; it just went unused until now) — surfaced alongside the
+            # app's own computed VBD-gap tier (engine-core.js finalizeBoard),
+            # never blended into it. Two different things: FP's tier reflects
+            # the panel's judgment of drop-offs, ours is a mechanical 18-pt
+            # VBD gap. Showing both lets a user see where they agree/disagree
+            # rather than picking one silently.
+            fp_tier = {k: v["tier"] for k, v in fp.items() if v.get("tier") is not None}
             source = f"FantasyPros API ({args.scoring}, {args.season})"
             print(f"Pulling ECR/ADP from {source}…  {len(ecr)} ranked players")
         except Exception as e:
@@ -172,7 +181,7 @@ def main():
         except Exception as e:
             print(f"  ! FantasyPros injuries failed ({e}); no injury flags this run")
 
-    n_ecr = n_adp = n_proj = n_aav = 0
+    n_ecr = n_adp = n_proj = n_aav = n_fp_tier = 0
     seen = set()
     for p in players:
         k = (norm(p.get("name")), p.get("pos"))
@@ -185,6 +194,8 @@ def main():
             p["proj"] = proj[k]; n_proj += 1
         if k in aav:
             p["aav"] = aav[k]; n_aav += 1
+        if k in fp_tier:
+            p["fpTier"] = fp_tier[k]; n_fp_tier += 1
         p["injury"] = injuries.get(k)
 
     # --- players the base doesn't have at all -------------------------------
@@ -213,6 +224,7 @@ def main():
                 "ecr": round(ecr[k], 1) if k in ecr else None,
                 "adp": round(adp[k], 1) if k in adp else None,
                 "aav": aav.get(k),
+                "fpTier": fp_tier.get(k),
                 "injury": injuries.get(k),
                 "rookie": True,
             })
@@ -226,6 +238,8 @@ def main():
     print(f"  ✓ ECR matched: {n_ecr}/{len(players)}  (source: {source})")
     if n_adp:
         print(f"  ✓ ADP matched: {n_adp}/{len(players)}")
+    if n_fp_tier:
+        print(f"  ✓ FantasyPros tier matched: {n_fp_tier}/{len(players)}")
     if proj:
         print(f"  ✓ projections matched: {n_proj}/{len(players)}  (source: {proj_source})")
     else:
