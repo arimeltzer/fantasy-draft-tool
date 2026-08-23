@@ -65,7 +65,7 @@ export default function TeamPicker({ opponents, getOnClock, onPick, title, class
         if (e.target.value === "") return;
         onPick(e.target.value === "mine" ? null : Number(e.target.value));
       }}
-      className={`min-w-0 rounded border border-gray-300 bg-gray-50 px-1 py-1 text-xs text-gray-600 hover:text-gray-800 focus:border-gray-400 focus:outline-none ${className}`}
+      className={`min-w-0 rounded-lg border border-line bg-surface px-1.5 py-1.5 text-xs text-muted hover:text-ink focus:border-faint focus:outline-none ${className}`}
     >
       <option value="" disabled>Drafted by…</option>
       {opts.map((o) => (

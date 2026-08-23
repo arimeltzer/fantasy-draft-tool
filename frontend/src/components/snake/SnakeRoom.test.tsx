@@ -48,11 +48,10 @@ const room = () => (
   <SnakeRoom league={LEAGUE} settings={SETTINGS} board={BOARD} leagueId={1} />
 );
 
-/** The scrollable player list, reached from a stable landmark — the column
- *  header — rather than by class name, which is styling and may change. */
+/** The scrollable player list, reached from a stable landmark — a
+ *  data-testid — rather than by class name, which is styling and may change. */
 function list(): HTMLElement {
-  const header = screen.getByText("Player").closest("div")!;
-  return header.parentElement!.querySelector(".divide-y") as HTMLElement;
+  return screen.getByTestId("player-list");
 }
 
 /** One player's row within the list. */

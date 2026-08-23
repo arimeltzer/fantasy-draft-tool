@@ -1,4 +1,4 @@
-import { Crown, RotateCcw, CalendarX } from "lucide-react";
+import { RotateCcw, CalendarX } from "lucide-react";
 import { posStyle } from "@/lib/posStyles";
 import Tip from "@/components/shared/Tip";
 import { byeReport } from "@/engine/bye-weeks.js";
@@ -62,52 +62,51 @@ export default function RosterPanel({ picks, board, settings, onReset, mode }: P
     : [];
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-100 p-3">
-      <div className="flex items-center justify-between mb-2.5">
-        <div className="flex items-center gap-2">
-          <Crown className="w-4 h-4 text-gray-500" />
-          <Tip tip="Your picks, auto-arranged into the best starting lineup (highest projected points fill each slot first); everyone left goes to the bench.">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">My roster</h2>
-          </Tip>
-        </div>
-        <button onClick={onReset} title="Clear every pick in this draft and start over (asks for confirmation)" className="text-gray-500 hover:text-gray-600">
+    <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+      <div className="flex items-center justify-between mb-3.5">
+        <Tip tip="Your picks, auto-arranged into the best starting lineup (highest projected points fill each slot first); everyone left goes to the bench.">
+          <h2 className="text-xs font-bold text-muted">Your roster · {mine.length} of {slots.length + (r.BENCH ?? 0)}</h2>
+        </Tip>
+        <button onClick={onReset} title="Clear every pick in this draft and start over (asks for confirmation)" className="text-faint hover:text-muted">
           <RotateCcw className="w-3.5 h-3.5" />
         </button>
       </div>
 
-      <div className="space-y-1">
+      <div className="flex flex-col gap-2.5">
         {slots.map((row, i) => {
           const st = row.player ? posStyle(row.player.player!.pos) : null;
           return (
-            <div key={i} className="flex items-center gap-2 text-xs">
-              <span className="font-mono text-xs text-gray-500 w-9">{row.slot}</span>
+            <div key={i} className={`flex items-center gap-2.5 ${row.player ? "" : "opacity-40"}`}>
+              <span className={`w-[26px] h-[26px] rounded-lg text-white text-2xs font-bold grid place-items-center shrink-0 ${st ? st.badge : "bg-faint"}`}>
+                {row.slot}
+              </span>
               {row.player ? (
                 <>
-                  <span className={`w-1.5 h-1.5 rounded-full ${st!.dot}`} />
-                  <span className="truncate flex-1">{row.player.player!.name}</span>
+                  <span className="truncate flex-1 text-sm font-semibold">{row.player.player!.name}</span>
                   {mode === "auction" && row.player.price != null && (
-                    <span className="font-mono text-amber-700 text-xs">${row.player.price}</span>
+                    <span className="font-mono text-xs font-semibold text-faint">${row.player.price}</span>
                   )}
                 </>
               ) : (
-                <span className="text-gray-400 italic">empty</span>
+                <span className="text-sm text-faint">Empty slot</span>
               )}
             </div>
           );
         })}
 
         {bench.length > 0 && (
-          <div className="pt-1.5 mt-1.5 border-t border-gray-200">
-            <div className="font-mono text-xs text-gray-400 mb-1">BENCH</div>
+          <div className="pt-2.5 mt-1 border-t border-hair flex flex-col gap-2.5">
+            <div className="font-mono text-2xs font-bold text-faint tracking-wider">BENCH</div>
             {bench.map((p) => {
               const st = posStyle(p.player!.pos);
               return (
-                <div key={p.playerId} className="flex items-center gap-2 text-xs">
-                  <span className="font-mono text-xs w-9 text-gray-500">{p.player!.pos}</span>
-                  <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-                  <span className="truncate flex-1">{p.player!.name}</span>
+                <div key={p.playerId} className="flex items-center gap-2.5">
+                  <span className={`w-[26px] h-[26px] rounded-lg text-white text-2xs font-bold grid place-items-center shrink-0 ${st.badge}`}>
+                    {p.player!.pos}
+                  </span>
+                  <span className="truncate flex-1 text-sm font-semibold">{p.player!.name}</span>
                   {mode === "auction" && p.price != null && (
-                    <span className="font-mono text-amber-700 text-xs">${p.price}</span>
+                    <span className="font-mono text-xs font-semibold text-faint">${p.price}</span>
                   )}
                 </div>
               );
@@ -116,26 +115,26 @@ export default function RosterPanel({ picks, board, settings, onReset, mode }: P
         )}
 
         {mine.length === 0 && (
-          <div className="text-xs text-gray-500 italic">No picks yet.</div>
+          <div className="text-xs text-faint italic">No picks yet.</div>
         )}
       </div>
 
       {byeConflicts.length > 0 && (
-        <div className="pt-1.5 mt-2 border-t border-gray-200">
-          <div className="flex items-center gap-1.5 mb-1">
+        <div className="pt-2.5 mt-3 border-t border-hair">
+          <div className="flex items-center gap-1.5 mb-1.5">
             <CalendarX className="w-3.5 h-3.5 text-amber-600" />
             <Tip tip="Weeks where enough of your starters at one position share a bye that you cannot fill the slot. A bye costs you nothing on its own — only when it collides.">
-              <span className="font-mono text-xs text-gray-500">BYE CONFLICTS</span>
+              <span className="font-mono text-2xs font-bold text-faint tracking-wider">BYE CONFLICTS</span>
             </Tip>
           </div>
           {byeConflicts.map((c) => (
-            <div key={`${c.week}-${c.pos}`} className="flex items-center gap-2 text-xs">
-              <span className="font-mono text-xs w-9 text-gray-500">wk {c.week}</span>
+            <div key={`${c.week}-${c.pos}`} className="flex items-center gap-2 text-xs py-0.5">
+              <span className="font-mono text-xs w-9 text-faint">wk {c.week}</span>
               <span className={`w-1.5 h-1.5 rounded-full ${posStyle(c.pos).dot}`} />
-              <span className="flex-1 text-gray-600">
+              <span className="flex-1 text-muted">
                 {c.pos}: {c.available} of {c.starters} available
               </span>
-              <span className="font-mono text-amber-700">-{c.short}</span>
+              <span className="font-mono font-semibold text-amber-700">-{c.short}</span>
             </div>
           ))}
         </div>

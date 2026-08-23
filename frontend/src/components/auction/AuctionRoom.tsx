@@ -511,20 +511,20 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   const pprLabel = settings.ppr === 1 ? "PPR" : settings.ppr === 0.5 ? "Half-PPR" : "Std";
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
-      <header className="sticky top-0 z-20 border-b border-gray-200 bg-gray-50/90 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3 flex-wrap">
-          <button onClick={() => nav("/")} className="text-gray-500 hover:text-gray-600 mr-1">
+    <div className="min-h-screen bg-paper text-ink font-sans">
+      <header className="sticky top-0 z-20 border-b border-line bg-paper/90 backdrop-blur">
+        <div className="max-w-6xl xl:max-w-[1400px] mx-auto px-4 py-3.5 flex items-center gap-3.5 flex-wrap">
+          <button onClick={() => nav("/")} className="text-faint hover:text-muted mr-0.5">
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded bg-amber-50 border border-amber-300 grid place-items-center">
-              <Gavel className="w-4 h-4 text-amber-400" />
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-400 to-gold grid place-items-center shadow-[0_4px_10px_rgba(180,83,9,0.25)]">
+              <Gavel className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h1 className="text-sm font-semibold tracking-tight leading-none">{league.name}</h1>
-              <p className="text-xs text-gray-500 leading-none mt-0.5 font-mono">
-                {settings.teams}×${settings.budget} · {rosterSize}-man · {pprLabel}
+              <h1 className="text-base font-extrabold tracking-tight leading-none">{league.name}</h1>
+              <p className="text-xs text-muted leading-none mt-1">
+                {settings.teams} teams · ${settings.budget} budget · {rosterSize}-man roster · {pprLabel}
               </p>
             </div>
           </div>
@@ -538,10 +538,10 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
             <CalibrationBadge cal={calibration} />
             <button
               onClick={() => setShowLive(true)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border ${
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full border font-semibold ${
                 live.running
                   ? "bg-emerald-50 border-emerald-300 text-emerald-700"
-                  : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
+                  : "bg-surface border-line text-muted hover:border-faint"}`}
               title={live.running
                 ? "Live sync is running in the background — click to open the panel"
                 : "Follow the draft on ESPN/Yahoo and log picks automatically"}
@@ -551,7 +551,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
             </button>
             <button
               onClick={() => { setShowAav((v) => !v); setShowSettings(false); setShowKeepers(false); }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint"
               title="Paste real auction values from FantasyPros for this league"
             >
               <DollarSign className="w-3.5 h-3.5" /> Values
@@ -561,10 +561,10 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                 </span>
               )}
             </button>
-            <button onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); setShowAav(false); }} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300">
+            <button onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); setShowAav(false); }} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint">
               <Lock className="w-3.5 h-3.5" /> Keepers
             </button>
-            <button onClick={() => { setShowSettings((v) => !v); setShowKeepers(false); setShowAav(false); }} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300">
+            <button onClick={() => { setShowSettings((v) => !v); setShowKeepers(false); setShowAav(false); }} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint">
               <Settings className="w-3.5 h-3.5" /> League
             </button>
           </div>
@@ -615,8 +615,8 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
         />
       )}
 
-      <main className="max-w-6xl xl:max-w-[1400px] mx-auto px-4 py-4 grid grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_300px]">
-        <aside className="space-y-3">
+      <main className="max-w-6xl xl:max-w-[1400px] mx-auto px-4 py-5 grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_300px]">
+        <aside className="space-y-3.5">
           <BudgetTracker
             budget={settings.budget}
             spent={mySpent}
@@ -649,8 +649,8 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
             rookieCount={rookieCount}
           />
 
-          <div className="rounded-lg border border-gray-200 overflow-hidden">
-            <div className="grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_64px_160px] gap-2 px-3 py-2 bg-white/80 text-xs uppercase tracking-wider text-gray-500 font-mono">
+          <div>
+            <div className="grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_64px_160px] gap-2 px-4 py-1.5 mb-1 text-2xs uppercase tracking-wider text-faint font-mono font-semibold">
               <span>Pos</span>
               <span className="flex items-center gap-1">
                 Player
@@ -659,7 +659,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                   target="_blank"
                   rel="noopener noreferrer"
                   title="What do the projection and value labels mean?"
-                  className="text-gray-400 hover:text-gray-600 normal-case"
+                  className="text-faint hover:text-muted normal-case"
                 >
                   <HelpCircle className="w-3.5 h-3.5" />
                 </a>
@@ -681,7 +681,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
               </span>
             </div>
 
-            <div className="divide-y divide-gray-200 max-h-[62vh] overflow-y-auto">
+            <div data-testid="player-list" className="flex flex-col gap-2 max-h-[64vh] overflow-y-auto pr-0.5">
               {filtered.map((p) => {
                 const st = posStyle(p.pos);
                 const pickEntry = picks.find((pk) => pk.playerId === (p.id as number));
@@ -698,9 +698,16 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                 return (
                   <div
                     key={p.id}
-                    className={`grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_64px_160px] gap-2 px-3 py-2 items-center text-sm ${sold ? "opacity-40" : "hover:bg-gray-100"} ${nominatedNow ? "bg-amber-50 ring-1 ring-inset ring-amber-300" : ""}`}
+                    className={`grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_64px_160px] gap-2 px-3 py-2.5 items-center text-sm rounded-2xl border ${
+                      sold ? "opacity-40 bg-raised border-line"
+                      : nominatedNow ? "bg-amber-50/70 border-amber-300 shadow-[0_6px_16px_rgba(180,83,9,0.08)]"
+                      : "bg-surface border-line hover:border-faint"
+                    }`}
                   >
-                    <span className="flex items-center gap-1 text-xs font-mono">
+                    <span className={`hidden sm:flex w-9 h-9 rounded-xl ${st.badge} text-white text-2xs font-bold items-center justify-center`}>
+                      {p.pos}
+                    </span>
+                    <span className="flex sm:hidden items-center gap-1 text-xs font-mono">
                       <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
                       <span className={st.text}>{p.pos}</span>
                     </span>
@@ -712,12 +719,12 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" /> Nominated
                           </span>
                         )}
-                        {pickEntry?.mine && <Crown className="w-3 h-3 text-amber-400 shrink-0" />}
-                        <span className="font-medium truncate">{p.name}</span>
+                        {pickEntry?.mine && <Crown className="w-3 h-3 text-gold shrink-0" />}
+                        <span className="font-semibold truncate">{p.name}</span>
                         <InjuryBadge injury={p.injury} />
-                        <span className="font-mono text-xs text-gray-500">{p.team}</span>
-                        {p.tier && <span className="text-xs font-mono bg-gray-100 px-1 rounded text-gray-500" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
-                        {p.fpTier != null && <span className="text-xs font-mono bg-indigo-50 px-1 rounded text-indigo-600" title={`FantasyPros' own consensus Tier ${p.fpTier} at ${p.pos} — their expert panel's judgment of drop-offs, separate from this app's computed tier above (a mechanical gap in value). Shown side by side, never blended.`}>FP{p.fpTier}</span>}
+                        <span className="font-mono text-xs text-faint">{p.team}</span>
+                        {p.tier && <span className="text-2xs font-mono font-bold bg-raised border border-line px-1.5 py-0.5 rounded-md text-muted" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
+                        {p.fpTier != null && <span className="text-2xs font-mono font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md text-indigo-600" title={`FantasyPros' own consensus Tier ${p.fpTier} at ${p.pos} — their expert panel's judgment of drop-offs, separate from this app's computed tier above (a mechanical gap in value). Shown side by side, never blended.`}>FP{p.fpTier}</span>}
                         {p.risk >= 0.4 && (
                           <span title={`Elevated risk (${p.risk} of 1) from week-to-week volatility, injury history, or age — expect a wider range of outcomes`}>
                             <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />
@@ -730,7 +737,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                         )}
                         {typeof p.id === "number" && <CommonOpponentsPopover playerId={p.id} />}
                       </div>
-                      <div className="text-xs text-gray-500 font-mono tabular-nums">
+                      <div className="text-xs text-muted font-mono tabular-nums">
                         <ProjTip steps={p.projBreakdown} value={p.valuePoints} />
                         <span title={p.priorEquiv != null ? "Last season's scoring pace over a full 17 games — a reality check on the projection" : "No 2025 stats — rookie or missed season, so the projection leans on market rankings"}>
                           {p.priorEquiv != null ? ` · '25 pace ${p.priorEquiv}` : " · no '25"}
@@ -752,7 +759,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                           const byCash = c.binding === "budget";
                           return (
                             <span
-                              className={`ml-1 font-semibold cursor-help sm:hidden ${c.pass ? "text-gray-400" : byCash ? "text-amber-700" : byRoom ? "text-violet-700" : c.backupBoosted ? "text-teal-700" : "text-sky-700"}`}
+                              className={`ml-1 font-semibold cursor-help sm:hidden ${c.pass ? "text-faint" : byCash ? "text-amber-700" : byRoom ? "text-violet-700" : c.backupBoosted ? "text-teal-700" : "text-sky-700"}`}
                               title={c.pass
                                 ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
                                 : byCash
@@ -776,10 +783,10 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                       <ValueBar pos={p.pos} vbd={p.vbd} maxVbd={maxVbd} />
                     </div>
 
-                    <span className="text-right font-mono text-xs text-gray-500 hidden sm:block" title="Pre-draft fair price (par value)">${p.parValue}</span>
+                    <span className="text-right font-mono text-xs text-faint hidden sm:block" title="Pre-draft fair price (par value)">${p.parValue}</span>
 
                     <span
-                      className={`text-right font-mono text-sm tabular-nums ${overMax && !sold ? "text-rose-600" : "text-amber-700"}`}
+                      className={`text-right font-mono text-sm font-bold tabular-nums ${overMax && !sold ? "text-rose-600" : "text-gold"}`}
                       title={overMax && !sold ? `Inflation-adjusted value — above your current max bid of $${myMax}` : "What the player is worth right now, adjusted for draft-room inflation"}
                     >
                       ${live}
@@ -796,7 +803,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                       const byCash = c.binding === "budget";
                       return (
                         <span
-                          className={`text-right font-mono text-sm tabular-nums hidden sm:block cursor-help ${c.pass ? "text-gray-400" : byCash ? "text-amber-700" : byRoom ? "text-violet-700" : c.backupBoosted ? "text-teal-700" : "text-sky-700"}`}
+                          className={`text-right font-mono text-sm font-bold tabular-nums hidden sm:block cursor-help rounded-lg px-1.5 py-1 -mr-1.5 ${c.pass ? "text-faint" : byCash ? "text-amber-700 bg-amber-50" : byRoom ? "text-violet-700 bg-violet-50" : c.backupBoosted ? "text-teal-700 bg-teal-50" : "text-sky-700 bg-sky-50"}`}
                           title={c.pass
                             ? "He doesn't improve your best reachable roster at any price you'd have to pay — skip him."
                             : byCash
@@ -814,11 +821,11 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                       );
                     })()}
 
-                    <div className="flex items-center justify-end gap-1">
+                    <div className="flex items-center justify-end gap-1.5">
                       {sold ? (
                         <button
                           onClick={() => pickEntry && undo(pickEntry.pickId)}
-                          className="text-xs font-mono px-2 py-1 rounded bg-gray-100 border border-gray-300 text-gray-500 hover:text-gray-700"
+                          className="text-xs font-mono font-semibold px-3 py-1.5 rounded-lg bg-surface border border-line text-muted hover:text-ink"
                         >
                           ${pickEntry?.price} ✕
                         </button>
@@ -828,7 +835,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                             type="number"
                             value={prices[p.id as number] ?? live}
                             onChange={(e) => setPrices((pr) => ({ ...pr, [p.id as number]: Number(e.target.value) }))}
-                            className="w-10 sm:w-12 px-1.5 py-1 rounded bg-gray-50 border border-gray-300 text-right font-mono text-xs text-gray-700 focus:outline-none focus:border-amber-600"
+                            className="w-10 sm:w-12 px-1.5 py-1.5 rounded-lg bg-surface border border-line text-right font-mono text-xs text-ink focus:outline-none focus:border-gold"
                           />
                           <select
                             value=""
@@ -838,7 +845,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                               else buy(p, false, Number(e.target.value));
                             }}
                             title="Who won this player?"
-                            className="min-w-0 flex-1 px-1 py-1 rounded text-xs bg-gray-50 border border-gray-300 text-gray-600 hover:text-gray-800 focus:outline-none focus:border-amber-500"
+                            className="min-w-0 flex-1 px-2 py-1.5 rounded-lg text-xs font-semibold bg-ink text-white border border-ink hover:bg-ink/90 focus:outline-none"
                           >
                             <option value="" disabled>Winner…</option>
                             <option value="mine">Mine</option>
@@ -853,13 +860,13 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                 );
               })}
               {filtered.length === 0 && (
-                <div className="px-3 py-8 text-center text-sm text-gray-500">No players match.</div>
+                <div className="px-3 py-8 text-center text-sm text-muted">No players match.</div>
               )}
             </div>
           </div>
         </section>
 
-        <aside className="space-y-3">
+        <aside className="space-y-3.5">
           <NominationPanel
             factor={inflation.factor}
             phase={phase}

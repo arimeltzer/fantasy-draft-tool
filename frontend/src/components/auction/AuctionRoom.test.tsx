@@ -38,8 +38,7 @@ const room = () => (
 );
 
 function list(): HTMLElement {
-  const header = screen.getByText("Player").closest("div")!;
-  return header.parentElement!.querySelector(".divide-y") as HTMLElement;
+  return screen.getByTestId("player-list");
 }
 
 function row(name: string): HTMLElement {

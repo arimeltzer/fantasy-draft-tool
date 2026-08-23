@@ -14,7 +14,7 @@ export default {
     extend: {
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
-        mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
+        mono: ["\"JetBrains Mono\"", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       fontSize: {
         "2xs": ["0.6875rem", { lineHeight: "1rem" }],
@@ -26,28 +26,31 @@ export default {
         "2xl":["1.5rem",    { lineHeight: "2rem" }],
       },
       colors: {
-        // App surfaces
-        paper:    "#eef1f5", // page background
+        // App surfaces — warm "card-forward" palette (roadmap: UI refresh,
+        // Direction B). Token NAMES are unchanged from the previous cool-gray
+        // palette on purpose, so every existing `bg-paper`/`text-muted`/etc.
+        // class across the app repaints for free with no per-usage edits.
+        paper:    "#f6f3ee", // page background
         surface:  "#ffffff", // cards, table body
-        raised:   "#f1f4f8", // table headers, inset chips
-        sunken:   "#f8fafc", // inputs, wells
+        raised:   "#faf8f4", // panel headers, inset chips
+        sunken:   "#f8f4ec", // inputs, wells
         // Lines
-        line:     "#dfe4ea", // standard border
-        hair:     "#eaeef3", // hairline divider
+        line:     "#e8e1d6", // standard border
+        hair:     "#efe9de", // hairline divider
         // Text
-        ink:      "#16202e", // primary text
-        muted:    "#5a6573", // secondary text
-        faint:    "#9aa4b2", // tertiary / labels
+        ink:      "#201a12", // primary text
+        muted:    "#6b6255", // secondary text
+        faint:    "#a49c8c", // tertiary / labels
         // Row shading (zebra)
-        stripe:   "#f6f8fb", // alternate row tint
-        hover:    "#eaf0f7", // row hover
+        stripe:   "#faf7f0", // alternate row tint
+        hover:    "#f3ede0", // row hover
         // Brand accents
         brand:    "#0d9488", // snake / primary (teal)
-        gold:     "#a16207", // auction (amber-700)
+        gold:     "#b45309", // auction (amber-700)
       },
       boxShadow: {
-        card: "0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06)",
-        pop:  "0 8px 24px rgba(16, 24, 40, 0.12), 0 2px 6px rgba(16, 24, 40, 0.08)",
+        card: "0 1px 2px rgba(32, 26, 18, 0.05), 0 1px 3px rgba(32, 26, 18, 0.06)",
+        pop:  "0 8px 24px rgba(32, 26, 18, 0.08), 0 2px 6px rgba(32, 26, 18, 0.06)",
       },
       borderRadius: {
         xl: "0.75rem",

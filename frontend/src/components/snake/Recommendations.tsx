@@ -52,39 +52,39 @@ export default function Recommendations({ board, draftedIds, live, onDraft }: Pr
   }
 
   return (
-    <div className="mb-4 rounded-lg border border-emerald-500/25 bg-emerald-500/[0.04] p-3">
-      <div className="flex items-center gap-2 mb-2.5">
+    <div className="mb-4 rounded-2xl border-[1.5px] border-emerald-500/25 bg-emerald-500/[0.04] p-4">
+      <div className="flex items-center gap-2 mb-3">
         <Target className="w-4 h-4 text-emerald-600" />
         <Tip tip="The model's best picks for you right now — not just the highest-ranked players, but the best mix of value, your open roster spots, and how fast each position is drying up.">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Recommended now</h2>
+          <h2 className="text-xs font-bold uppercase tracking-wider text-emerald-700">Recommended now</h2>
         </Tip>
         <Tip tip="Scores are adjusted for what your roster still needs — a position you've filled scores lower even if the player ranks higher overall.">
-          <span className="text-xs text-gray-500">need-adjusted</span>
+          <span className="text-xs text-muted">need-adjusted</span>
         </Tip>
       </div>
-      <div className="grid sm:grid-cols-2 gap-2">
+      <div className="grid sm:grid-cols-2 gap-2.5">
         {recs.map((p, i) => {
           const st = posStyle(p.pos);
           return (
-            <div key={p.id} className="flex items-center gap-2.5 rounded-md bg-gray-50 border border-gray-200 px-2.5 py-2">
-              <span className="text-xs font-mono text-gray-400 w-3">{i + 1}</span>
-              <span className={`text-xs font-mono px-1.5 py-0.5 rounded border ${st.chip}`}>{p.pos}</span>
+            <div key={p.id} className="flex items-center gap-2.5 rounded-xl bg-surface border border-line px-3 py-2.5">
+              <span className="text-xs font-mono text-faint w-3">{i + 1}</span>
+              <span className={`w-6 h-6 rounded-md ${st.badge} text-white text-[9px] font-bold grid place-items-center shrink-0`}>{p.pos}</span>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium truncate">
-                  {p.name} <span className="text-gray-500 font-mono text-xs">{p.team}</span>
+                <div className="text-sm font-semibold truncate">
+                  {p.name} <span className="text-faint font-mono text-xs">{p.team}</span>
                 </div>
                 {p.reasons.length > 0 && (
-                  <div className="text-xs text-gray-500 truncate">{p.reasons.join(" · ")}</div>
+                  <div className="text-xs text-muted truncate">{p.reasons.join(" · ")}</div>
                 )}
               </div>
               <div className="text-right" title="Projected points above a replacement-level player at this position">
-                <div className="font-mono text-xs text-gray-700 tabular-nums">{p.vbd}</div>
-                <div className="text-xs text-gray-400 uppercase">vbd</div>
+                <div className="font-mono text-xs font-bold text-ink tabular-nums">{p.vbd}</div>
+                <div className="text-2xs text-faint uppercase font-semibold">vbd</div>
               </div>
               <button
                 onClick={() => onDraft(p)}
                 title="Draft this player to your team"
-                className="ml-1 p-1.5 rounded bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-100"
+                className="ml-1 w-7 h-7 grid place-items-center rounded-lg bg-emerald-50 border border-emerald-300 text-emerald-700 hover:bg-emerald-100"
               >
                 <Check className="w-3.5 h-3.5" />
               </button>

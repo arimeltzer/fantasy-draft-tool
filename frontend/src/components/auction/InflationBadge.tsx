@@ -42,11 +42,11 @@ export default function InflationBadge({ factor, reliable = true, clamped = fals
   return (
     <div
       title={`Live inflation multiplier applied to every $Live price. ${explain}${clampNote}${unreliableNote}`}
-      className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded border font-mono text-xs cursor-help ${
-        !reliable ? "bg-gray-50 border-gray-200 text-gray-400" :
+      className={`hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full border font-mono text-xs font-semibold cursor-help ${
+        !reliable ? "bg-surface border-line text-faint" :
         hot  ? "bg-rose-50 border-rose-200 text-rose-600" :
         cold ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-700" :
-               "bg-gray-50 border-gray-200 text-gray-600"
+               "bg-surface border-line text-muted"
       }`}
     >
       <Flame className="w-3.5 h-3.5" />

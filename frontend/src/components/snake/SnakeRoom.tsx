@@ -302,19 +302,19 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   const pprLabel = settings.ppr === 1 ? "PPR" : settings.ppr === 0.5 ? "Half-PPR" : "Std";
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans">
-      <header className="sticky top-0 z-20 border-b border-gray-200 bg-gray-50/90 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3 flex-wrap">
-          <button onClick={() => nav("/")} className="text-gray-500 hover:text-gray-600 mr-1">
+    <div className="min-h-screen bg-paper text-ink font-sans">
+      <header className="sticky top-0 z-20 border-b border-line bg-paper/90 backdrop-blur">
+        <div className="max-w-6xl mx-auto px-4 py-3.5 flex items-center gap-3.5 flex-wrap">
+          <button onClick={() => nav("/")} className="text-faint hover:text-muted mr-0.5">
             <ArrowLeft className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded bg-emerald-50 border border-emerald-300 grid place-items-center">
-              <Zap className="w-4 h-4 text-emerald-600" />
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 grid place-items-center shadow-[0_4px_10px_rgba(5,150,105,0.25)]">
+              <Zap className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h1 className="text-sm font-semibold tracking-tight leading-none">{league.name}</h1>
-              <p className="text-xs text-gray-500 leading-none mt-0.5 font-mono">
+              <h1 className="text-base font-extrabold tracking-tight leading-none">{league.name}</h1>
+              <p className="text-xs text-muted leading-none mt-1">
                 {settings.teams}-team · slot {settings.draftSlot} · {pprLabel}
                 {settings.superflex ? " · Superflex" : ""}
               </p>
@@ -324,9 +324,9 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
             {/* The pick the app THINKS is next. Shown so a drift between this
                 and the real room is visible before it mis-assigns picks. */}
             <Tip tip="Whose pick the app has next, from the draft order (including any traded picks). If this doesn't match the real draft, fix the order or log the missing picks.">
-              <span className="hidden md:flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2 py-1 font-mono text-gray-500">
-                <span className="text-gray-400">#{overallPick}</span>
-                <span className={onClockOwner === "__me__" ? "font-semibold text-emerald-600" : "text-gray-700"}>
+              <span className="hidden md:flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 font-mono text-muted">
+                <span className="text-faint">#{overallPick}</span>
+                <span className={onClockOwner === "__me__" ? "font-semibold text-emerald-600" : "text-ink"}>
                   {onClockOwner === "__me__" ? "You" : onClockOwner ?? "—"}
                 </span>
               </span>
@@ -339,10 +339,10 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
             />
             <button
               onClick={() => setShowLive(true)}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded border ${
+              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full border font-semibold ${
                 liveDraft.running
                   ? "bg-emerald-50 border-emerald-300 text-emerald-700"
-                  : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
+                  : "bg-surface border-line text-muted hover:border-faint"}`}
               title={liveDraft.running
                 ? "Live sync is running in the background — click to open the panel"
                 : "Follow the draft on ESPN/Yahoo and log picks automatically"}
@@ -352,20 +352,20 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
             </button>
             <button
               onClick={() => { setShowOrder(true); setShowSettings(false); setShowKeepers(false); }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint"
               title="The full draft order, with traded picks"
             >
               <ListOrdered className="w-3.5 h-3.5" /> Order
             </button>
             <button
               onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint"
             >
               <Lock className="w-3.5 h-3.5" /> Keepers
             </button>
             <button
               onClick={() => { setShowSettings((v) => !v); setShowKeepers(false); }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded bg-gray-50 border border-gray-200 hover:border-gray-300"
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint"
             >
               <Settings className="w-3.5 h-3.5" /> League
             </button>
@@ -419,8 +419,8 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
         />
       )}
 
-      <main className="max-w-6xl xl:max-w-[1400px] mx-auto px-4 py-4 grid grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[300px_minmax(0,1fr)_300px]">
-        <aside className="space-y-3">
+      <main className="max-w-6xl xl:max-w-[1400px] mx-auto px-4 py-5 grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_300px]">
+        <aside className="space-y-3.5">
           <RosterPanel
             picks={picks}
             board={board}
@@ -454,8 +454,8 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
             rookieCount={rookieCount}
           />
 
-          <div className="rounded-lg border border-gray-200 overflow-hidden">
-            <div className="grid grid-cols-[28px_1fr_auto] sm:grid-cols-[28px_44px_1fr_70px_140px] gap-2 px-3 py-2 bg-white/80 text-xs uppercase tracking-wider text-gray-500 font-mono">
+          <div>
+            <div className="grid grid-cols-[28px_1fr_auto] sm:grid-cols-[28px_44px_1fr_70px_140px] gap-2 px-4 py-1.5 mb-1 text-2xs uppercase tracking-wider text-faint font-mono font-semibold">
               <span>#</span>
               <span className="hidden sm:block">Pos</span>
               <span className="flex items-center gap-1">
@@ -465,7 +465,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
                   target="_blank"
                   rel="noopener noreferrer"
                   title="What do the projection and value labels mean?"
-                  className="text-gray-400 hover:text-gray-600 normal-case"
+                  className="text-faint hover:text-muted normal-case"
                 >
                   <HelpCircle className="w-3.5 h-3.5" />
                 </a>
@@ -478,7 +478,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
               </span>
             </div>
 
-            <div className="divide-y divide-gray-200 max-h-[60vh] overflow-y-auto">
+            <div data-testid="player-list" className="flex flex-col gap-2 max-h-[62vh] overflow-y-auto pr-0.5">
               {filtered.map((p, i) => (
                 <PlayerRow
                   key={p.id as number}
@@ -495,13 +495,13 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
                 />
               ))}
               {filtered.length === 0 && (
-                <div className="px-3 py-8 text-center text-sm text-gray-500">No players match.</div>
+                <div className="px-3 py-8 text-center text-sm text-muted">No players match.</div>
               )}
             </div>
           </div>
         </section>
 
-        <aside className="space-y-3">
+        <aside className="space-y-3.5">
           <DraftOverview
             picks={picks}
             board={board}
@@ -555,27 +555,26 @@ const PlayerRow = memo(function PlayerRow({
 
   return (
                   <div
-                    className={`grid grid-cols-[28px_1fr_auto] sm:grid-cols-[28px_44px_1fr_70px_140px] gap-2 px-3 py-2 items-center text-sm ${
-                      mine ? "bg-emerald-500/[0.06]" :
-                      taken ? "bg-gray-100 opacity-50" :
-                      "hover:bg-gray-100"
+                    className={`grid grid-cols-[28px_1fr_auto] sm:grid-cols-[28px_44px_1fr_70px_140px] gap-2 px-3 py-2.5 items-center text-sm rounded-2xl border ${
+                      mine ? "bg-emerald-500/[0.05] border-emerald-200" :
+                      taken ? "bg-raised border-line opacity-50" :
+                      "bg-surface border-line hover:border-faint"
                     }`}
                   >
-                    <span className="font-mono text-xs text-gray-400">{idx + 1}</span>
+                    <span className="font-mono text-xs text-faint">{idx + 1}</span>
 
-                    <span className="hidden sm:flex items-center gap-1 text-xs font-mono">
-                      <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-                      <span className={st.text}>{p.pos}</span>
+                    <span className={`hidden sm:flex w-9 h-9 -ml-1 rounded-xl ${st.badge} text-white text-2xs font-bold items-center justify-center`}>
+                      {p.pos}
                     </span>
 
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         {mine && <Crown className="w-3 h-3 text-emerald-600 shrink-0" />}
-                        <span className="font-medium truncate">{p.name}</span>
+                        <span className="font-semibold truncate">{p.name}</span>
                         <InjuryBadge injury={p.injury} />
-                        <span className="font-mono text-xs text-gray-500">{p.team}</span>
-                        {p.tier && <span className="text-xs font-mono bg-gray-100 px-1 rounded text-gray-500" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
-                        {p.fpTier != null && <span className="text-xs font-mono bg-indigo-50 px-1 rounded text-indigo-600" title={`FantasyPros' own consensus Tier ${p.fpTier} at ${p.pos} — their expert panel's judgment of drop-offs, separate from this app's computed tier above (a mechanical gap in value). Shown side by side, never blended.`}>FP{p.fpTier}</span>}
+                        <span className="font-mono text-xs text-faint">{p.team}</span>
+                        {p.tier && <span className="text-2xs font-mono font-bold bg-raised border border-line px-1.5 py-0.5 rounded-md text-muted" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
+                        {p.fpTier != null && <span className="text-2xs font-mono font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md text-indigo-600" title={`FantasyPros' own consensus Tier ${p.fpTier} at ${p.pos} — their expert panel's judgment of drop-offs, separate from this app's computed tier above (a mechanical gap in value). Shown side by side, never blended.`}>FP{p.fpTier}</span>}
                         {p.risk >= 0.4 && (
                           <span title={`Elevated risk (${p.risk} of 1) from week-to-week volatility, injury history, or age — expect a wider range of outcomes`}>
                             <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />
@@ -588,7 +587,7 @@ const PlayerRow = memo(function PlayerRow({
                         )}
                         {typeof p.id === "number" && <CommonOpponentsPopover playerId={p.id} />}
                       </div>
-                      <div className="text-xs text-gray-500 font-mono tabular-nums">
+                      <div className="text-xs text-muted font-mono tabular-nums">
                         <span className="sm:hidden">{p.pos} · vbd {p.vbd} · </span>
                         <ProjTip steps={p.projBreakdown} value={p.valuePoints} />
                         <span title={p.priorEquiv != null ? "Last season's scoring pace over a full 17 games — a reality check on the projection" : "No 2025 stats — rookie or missed season, so the projection leans on market rankings"}>
@@ -610,11 +609,11 @@ const PlayerRow = memo(function PlayerRow({
                       <ValueBar pos={p.pos} vbd={p.vbd} maxVbd={maxVbd} />
                     </div>
 
-                    <div className="flex items-center justify-end gap-1">
+                    <div className="flex items-center justify-end gap-1.5">
                       {pick ? (
                         <button
                           onClick={() => onUndo(pick!.pickId)}
-                          className="text-xs font-mono px-2 py-1 rounded bg-gray-100 border border-gray-300 text-gray-500 hover:text-gray-700"
+                          className="text-xs font-mono font-semibold px-3 py-1.5 rounded-lg bg-surface border border-line text-muted hover:text-ink"
                         >
                           {mine ? "Mine" : "Taken"}{pick?.pending ? "…" : " ✕"}
                         </button>
@@ -622,7 +621,7 @@ const PlayerRow = memo(function PlayerRow({
                         <>
                           <button
                             onClick={() => onDraft(p, true)}
-                            className="px-1.5 py-1 rounded text-xs bg-gray-50 border border-gray-300 text-gray-500 hover:text-emerald-600 hover:border-emerald-600"
+                            className="w-8 h-8 grid place-items-center rounded-lg bg-surface border border-line text-muted hover:text-emerald-600 hover:border-emerald-600"
                             title="I drafted this player"
                           >
                             <Check className="w-3.5 h-3.5" />

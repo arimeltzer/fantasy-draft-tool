@@ -35,38 +35,38 @@ export default function NeedsPanel({ mine, settings, draftedCount, untilMine }: 
   const hasNeeds = Object.values(needs).some((n) => n > 0);
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-100 p-3">
-      <div className="flex items-center gap-2 mb-2">
-        <TrendingUp className="w-4 h-4 text-gray-500" />
+    <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+      <div className="flex items-center gap-2 mb-3.5">
+        <TrendingUp className="w-4 h-4 text-faint" />
         <Tip tip="Starting-lineup spots you haven't filled yet, by position. Bench depth doesn't count against these.">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Still need</h2>
+          <h2 className="text-xs font-bold text-muted">Still need</h2>
         </Tip>
       </div>
-      <div className="flex flex-wrap gap-1.5 mb-3">
+      <div className="flex flex-wrap gap-2 mb-4">
         {(Object.entries(needs) as [string, number][]).filter(([, n]) => n > 0).map(([pos, n]) => {
           const st = posStyle(pos === "FLEX" ? "RB" : pos);
           return (
             <span
               key={pos}
-              className={`text-xs font-mono px-2 py-1 rounded border ${
-                pos === "FLEX" ? "bg-gray-100 border-gray-300 text-gray-600" : st.chip
+              className={`text-xs font-bold font-mono px-3 py-1.5 rounded-full ${
+                pos === "FLEX" ? "bg-raised text-muted" : `${st.badge} text-white`
               }`}
             >
-              {pos} ×{n}
+              {n} more {pos}
             </span>
           );
         })}
-        {!hasNeeds && <span className="text-xs text-gray-500">Starters filled — draft for depth.</span>}
+        {!hasNeeds && <span className="text-xs text-muted">Starters filled — draft for depth.</span>}
       </div>
-      <div className={`pt-2.5 border-t border-gray-200 grid ${untilMine !== undefined ? "grid-cols-2" : "grid-cols-1"} gap-2 text-center`}>
+      <div className={`pt-3.5 border-t border-hair grid ${untilMine !== undefined ? "grid-cols-2" : "grid-cols-1"} gap-2 text-center`}>
         <div title="Total players drafted by all teams so far">
-          <div className="font-mono text-base text-gray-700">{draftedCount}</div>
-          <div className="text-xs uppercase text-gray-400">picks made</div>
+          <div className="font-mono text-lg font-bold text-ink tabular-nums">{draftedCount}</div>
+          <div className="text-2xs uppercase text-faint font-semibold">picks made</div>
         </div>
         {untilMine !== undefined && (
           <div title="Picks by other teams before you're on the clock again (based on your draft slot and the snake order)">
-            <div className="font-mono text-base text-emerald-600">{untilMine ?? "—"}</div>
-            <div className="text-xs uppercase text-gray-400">till your turn</div>
+            <div className="font-mono text-lg font-bold text-emerald-600 tabular-nums">{untilMine ?? "—"}</div>
+            <div className="text-2xs uppercase text-faint font-semibold">till your turn</div>
           </div>
         )}
       </div>

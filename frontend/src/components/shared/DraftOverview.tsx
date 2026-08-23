@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
-import { Users, ChevronDown, ChevronRight, Pencil, AlertTriangle } from "lucide-react";
-import { posStyle } from "@/lib/posStyles";
+import { ChevronDown, ChevronRight, Pencil, AlertTriangle } from "lucide-react";
 import { BoardPlayer } from "@/engine/valuation-engine.js";
 import { LeagueSettings } from "@/lib/api";
 import { DraftEntry } from "@/store/draftStore";
@@ -71,25 +70,23 @@ export default function DraftOverview({ picks, board, settings, mode, onEditLog 
   }, [settings.opponents, settings.teams]);
 
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-100 p-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <Users className="w-4 h-4 text-gray-500" />
-          <Tip tip="Every team's draft at a glance. Click a team to see who they've taken; use Edit log to fix any pick entered incorrectly.">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Draft board</h2>
-          </Tip>
-        </div>
+    <div className="rounded-2xl border border-line bg-surface p-5 shadow-card">
+      <div className="flex items-center justify-between mb-0.5">
+        <Tip tip="Every team's draft at a glance. Click a team to see who they've taken; use Edit log to fix any pick entered incorrectly.">
+          <h2 className="text-xs font-bold text-muted">Draft board</h2>
+        </Tip>
         <button
           onClick={onEditLog}
-          className="flex items-center gap-1 text-xs px-2 py-1 rounded bg-gray-50 border border-gray-300 text-gray-600 hover:text-gray-800 hover:border-gray-400"
+          className="flex items-center gap-1 text-xs font-bold text-gold hover:text-gold/80"
           title="Open the full pick-by-pick log to review and edit entries"
         >
           <Pencil className="w-3 h-3" /> Edit log
         </button>
       </div>
+      <div className="text-2xs text-faint mb-3">Every team's draft — click one to see who they've taken</div>
 
       {extraTeams > 0 && (
-        <div className="mb-2 flex items-start gap-1.5 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-2xs leading-snug text-amber-800">
+        <div className="mb-3 flex items-start gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-2xs leading-snug text-amber-800">
           <AlertTriangle className="mt-px h-3 w-3 shrink-0" />
           <span>
             {(settings.opponents ?? []).filter(Boolean).length + 1} teams listed for a{" "}
@@ -100,18 +97,18 @@ export default function DraftOverview({ picks, board, settings, mode, onEditLog 
         </div>
       )}
 
-      <div className="grid grid-cols-[16px_1fr_auto_auto] gap-x-2 text-2xs uppercase tracking-wider text-gray-400 px-1 mb-1">
-        <span />
-        <span>Team</span>
-        <Tip tip="Players drafted so far by this team." underline={false}><span>Picks</span></Tip>
-        {mode === "auction" && (
+      {mode === "auction" && (
+        <div className="grid grid-cols-[16px_1fr_auto_auto] gap-x-2 text-2xs uppercase tracking-wider text-faint px-1 mb-1">
+          <span />
+          <span>Team</span>
+          <Tip tip="Players drafted so far by this team." underline={false}><span>Picks</span></Tip>
           <Tip tip="Auction money remaining out of the starting budget (spent shown when expanded)." underline={false}>
             <span className="text-right">$ Left</span>
           </Tip>
-        )}
-      </div>
+        </div>
+      )}
 
-      <div className="space-y-0.5">
+      <div className="flex flex-col">
         {rows.map((row) => {
           const open = openTeam === row.key;
           const left = settings.budget - row.spent;
@@ -119,38 +116,36 @@ export default function DraftOverview({ picks, board, settings, mode, onEditLog 
             <div key={row.key}>
               <button
                 onClick={() => setOpenTeam(open ? null : row.key)}
-                className={`w-full grid grid-cols-[16px_1fr_auto_auto] gap-x-2 items-center px-1 py-1 rounded text-xs text-left hover:bg-gray-200/60 ${row.mine ? "font-semibold text-gray-800" : "text-gray-600"}`}
+                className={`w-full grid grid-cols-[16px_1fr_auto_auto] gap-x-2 items-center px-1.5 py-1.5 rounded-lg text-xs text-left hover:bg-raised ${row.mine ? "font-bold text-ink bg-amber-50/70" : "font-semibold text-muted"}`}
               >
-                {open ? <ChevronDown className="w-3 h-3 text-gray-400" /> : <ChevronRight className="w-3 h-3 text-gray-400" />}
+                {open ? <ChevronDown className="w-3 h-3 text-faint" /> : <ChevronRight className="w-3 h-3 text-faint" />}
                 <span className="truncate">{row.label}</span>
-                <span className="font-mono tabular-nums text-gray-500">{row.picks.length}</span>
+                <span className="font-mono tabular-nums text-faint">{row.picks.length} picks</span>
                 {mode === "auction" && (
-                  <span className={`font-mono tabular-nums text-right ${row.teamId === -1 ? "text-gray-400" : left < 15 ? "text-rose-600" : "text-amber-700"}`}>
+                  <span className={`font-mono font-bold tabular-nums text-right w-9 ${row.teamId === -1 ? "text-faint" : left < 15 ? "text-rose-600" : "text-gold"}`}>
                     {row.teamId === -1 ? "—" : `$${left}`}
                   </span>
                 )}
               </button>
 
               {open && (
-                <div className="ml-5 mb-1.5 mt-0.5 space-y-0.5">
-                  {row.picks.length === 0 && <div className="text-xs text-gray-400 italic px-1">No picks yet.</div>}
+                <div className="pl-6 pr-1 mb-2 mt-0.5 flex flex-col gap-1">
+                  {row.picks.length === 0 && <div className="text-xs text-faint italic">No picks yet.</div>}
                   {row.picks.map((p) => {
                     const pl = p.playerId != null ? playerById.get(p.playerId) : undefined;
-                    const st = pl ? posStyle(pl.pos) : null;
                     return (
-                      <div key={p.pickId} className="flex items-center gap-1.5 text-xs px-1">
-                        <span className="font-mono text-2xs text-gray-400 w-6">#{p.overallPick}</span>
-                        {st && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${st.dot}`} />}
-                        <span className="truncate flex-1 text-gray-700">{pl ? pl.name : "Unknown player"}</span>
-                        {pl && <span className="font-mono text-2xs text-gray-400">{pl.pos}</span>}
+                      <div key={p.pickId} className="flex items-center gap-1.5 text-xs">
+                        <span className="font-mono text-2xs text-faint w-6">#{p.overallPick}</span>
+                        <span className="truncate flex-1 text-muted">{pl ? pl.name : "Unknown player"}</span>
+                        {pl && <span className="font-mono text-2xs text-faint">{pl.pos}</span>}
                         {mode === "auction" && p.price != null && (
-                          <span className="font-mono text-amber-700">${p.price}</span>
+                          <span className="font-mono font-semibold text-gold">${p.price}</span>
                         )}
                       </div>
                     );
                   })}
                   {mode === "auction" && row.teamId !== -1 && row.picks.length > 0 && (
-                    <div className="text-2xs font-mono text-gray-400 px-1 pt-0.5">
+                    <div className="text-2xs font-mono text-faint pt-0.5">
                       spent ${row.spent} of ${settings.budget}
                     </div>
                   )}
@@ -162,7 +157,7 @@ export default function DraftOverview({ picks, board, settings, mode, onEditLog 
       </div>
 
       {picks.length === 0 && (
-        <div className="text-xs text-gray-500 italic mt-1 px-1">Nothing drafted yet — picks show up here as they're logged.</div>
+        <div className="text-xs text-faint italic mt-1 px-1">Nothing drafted yet — picks show up here as they're logged.</div>
       )}
     </div>
   );

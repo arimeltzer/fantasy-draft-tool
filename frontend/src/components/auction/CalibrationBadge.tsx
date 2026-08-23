@@ -52,8 +52,8 @@ export default function CalibrationBadge({ cal }: { cal: AuctionCalibration | nu
   return (
     <div
       title={tip}
-      className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded border font-mono text-xs cursor-help ${
-        !on ? "bg-gray-50 border-gray-200 text-gray-400"
+      className={`hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-full border font-mono text-xs font-semibold cursor-help ${
+        !on ? "bg-surface border-line text-faint"
         : (thin || unstable) ? "bg-amber-50 border-amber-200 text-amber-700"
         : "bg-sky-50 border-sky-200 text-sky-700"
       }`}
