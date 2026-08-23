@@ -11,6 +11,7 @@
    ===================================================================== */
 import { DEFAULT_PARAMS } from "./engine-core.js";
 import { byeClash } from "./bye-weeks.js";
+import { benchDepthMult, FLEX_SIBLING } from "./budget-path.js";
 
 export {
   DEFAULT_PARAMS, SCORING_PRESETS, DEFAULT_SCORING, defaultScoring, resolveScoring,
@@ -137,7 +138,7 @@ export function maxUseful(pos, roster = {}, superflex = false) {
   return starters + (roster.FLEX || 0) + Math.max(2, roster.BENCH || 6);
 }
 
-function needMult(pos, have, roster, needs, flexEligible, superflex) {
+function needMult(pos, have, roster, needs, flexEligible, superflex, depthAware, siblingHave) {
   if (have === 0) return 1.30;
   const belowStarter = (needs?.[pos] || 0) > 0 || (flexEligible && (needs?.FLEX || 0) > 0);
   if (belowStarter) return 1.15;
@@ -146,7 +147,23 @@ function needMult(pos, have, roster, needs, flexEligible, superflex) {
   // positions that genuinely bank depth; a one-starter position's backup is
   // insurance, not depth, so it should not outrank a startable RB or WR.
   const insuranceOnly = (pos === "QB" && !superflex) || pos === "TE";
-  return insuranceOnly ? 0.60 : 0.88;
+  const base = insuranceOnly ? 0.60 : 0.88;
+  // Diminishing RB/WR bench depth — the snake-side port of roadmap 3.6f's
+  // auction benchDepthMult, same function, same policy: full 0.88 through a
+  // startable 4th body at one position (roster[pos] + roster.FLEX + 1),
+  // geometric decay past that, with an extra discount while the FLEX
+  // sibling (RB<->WR) hasn't reached ITS OWN capacity yet.
+  //
+  // OPT-IN via `depthAware` (liveState.benchDepthAware, threaded by the
+  // caller), defaulting OFF — UNLIKE 3.6f's auction port, this one is NOT
+  // wired into the shipped room yet. 3.6f shipped ahead of its own gate,
+  // which turned out to be a real process mistake once asked about
+  // directly; the snake port follows the corrected process from the start
+  // (build behind a flag, gate via draft-sim.mjs, wire in only if it
+  // clears) — the same discipline 2.4/3.9 already used. See
+  // docs/ROADMAP.md 3.6f-snake.
+  if (!depthAware) return base;
+  return base * benchDepthMult(pos, have, roster, siblingHave || 0);
 }
 
 /**
@@ -192,7 +209,10 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
     return { score: -Infinity, blocked: "high risk early" };
 
   // 1. Base = vbd × need_mult
-  const nm = needMult(pos, have, s.roster || {}, s.needs, flexEligible, superflex);
+  const siblingPos = FLEX_SIBLING[pos];
+  const siblingHave = siblingPos ? ((s.counts && s.counts[siblingPos]) || 0) : 0;
+  const nm = needMult(pos, have, s.roster || {}, s.needs, flexEligible, superflex,
+    s.benchDepthAware, siblingHave);
   let base = player.vbd * nm;
   if (nm >= 1.30) reasons.push(`no ${pos} yet`);
   else if (nm >= 1.15) reasons.push(`fills ${pos}`);

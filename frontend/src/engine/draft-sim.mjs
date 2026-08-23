@@ -192,6 +192,14 @@ export function simulateDraft({
           weeks: cfg.byeLineup.weeks || 17,
         }, cfg.byeLineup.clamp || {});
       }
+      // Roadmap 3.6f-snake, opt-in per agent for the same isolated-comparison
+      // reason every other flag here is opt-in: needMult()'s benchDepthMult
+      // step (diminishing RB/WR bench depth) only fires when this is set,
+      // so the paired comparison can run identical leagues with this as the
+      // ONLY difference.
+      if (cfg.benchDepth) {
+        live.benchDepthAware = true;
+      }
       let best = -Infinity;
       for (const p of avail) {
         const { score, blocked } = pickScore(p, live, cfg.params || P);

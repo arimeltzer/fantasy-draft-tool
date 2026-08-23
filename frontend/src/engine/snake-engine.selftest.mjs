@@ -356,6 +356,79 @@ check("a non-10-team league also uses it",
         !pickScore(rb, state(mildHeat)).reasons.includes("RB run"));
 }
 
+// ── roadmap 3.6f-snake: diminishing RB/WR bench depth (OPT-IN, ungated) ───
+// The snake-side port of the auction's benchDepthMult, reusing the same
+// budget-path.js function. Built opt-in from the start (liveState.
+// benchDepthAware) — NOT wired into SnakeRoom.tsx yet, pending its own
+// draft-sim.mjs gate. These assertions pin the opt-in contract itself
+// (default-off regression safety) plus the mechanism reproducing the
+// reported live scenario ("5 RB, 0 WR, starters full") in snake terms.
+{
+  const rb = player("RB", 100);
+
+  // ROSTER here (QB1/RB2/WR2/TE1/FLEX1/BENCH6): RB capacity = RB(2)+FLEX(1)
+  // = 3, so the depth slot (full value through) is have=4; a 5th body is
+  // the first to decay. Starters are already full at have>=2, so use
+  // have=4/5 to stay in the "past starters, still useful" branch that
+  // needMult's depthAware step lives in.
+  const filledStarters = { QB: 1, RB: 0, WR: 2, TE: 1 };
+
+  // Absent flag: byte-identical to the pre-3.6f-snake baseline, regardless
+  // of how deep the bench or how thin the sibling — opt-in, not a silent
+  // behavior change.
+  const deep = state({ counts: { ...filledStarters, RB: 5, WR: 0 } });
+  check("benchDepthAware absent leaves a deep RB bench unchanged",
+        pickScore(rb, deep).score
+          === pickScore(rb, state({ counts: { ...filledStarters, RB: 5, WR: 0 } })).score);
+  check("explicit benchDepthAware:false matches absent (no regression)",
+        pickScore(rb, { ...deep, benchDepthAware: false }).score === pickScore(rb, deep).score);
+
+  // At/below the depth slot (4th body), the flag changes nothing even when
+  // it IS on — full value through a startable 4th, same as the auction side.
+  const atSlot = state({ counts: { ...filledStarters, RB: 4, WR: 3 }, benchDepthAware: true });
+  const atSlotOff = state({ counts: { ...filledStarters, RB: 4, WR: 3 } });
+  check("a 4th RB (at the depth slot) scores the same on or off",
+        pickScore(rb, atSlot).score === pickScore(rb, atSlotOff).score,
+        `on=${pickScore(rb, atSlot).score} off=${pickScore(rb, atSlotOff).score}`);
+
+  // Past the depth slot with the sibling (WR) still empty: reproduces the
+  // reported live scenario ("I have 5 already and no backup QB or WR") —
+  // both the decay AND the imbalance discount should fire, so this must
+  // score below the flag-off case.
+  const fifthNoSibling = state({ counts: { ...filledStarters, RB: 5, WR: 0 }, benchDepthAware: true });
+  const fifthNoSiblingOff = state({ counts: { ...filledStarters, RB: 5, WR: 0 } });
+  check("a 5th RB with zero WR scores lower when depth-aware than the flat baseline",
+        pickScore(rb, fifthNoSibling).score < pickScore(rb, fifthNoSiblingOff).score,
+        `on=${pickScore(rb, fifthNoSibling).score} off=${pickScore(rb, fifthNoSiblingOff).score}`);
+
+  // Same 5th-RB depth, but WR has already caught up to ITS OWN capacity
+  // (3): only the decay applies, not the extra imbalance discount, so this
+  // must score HIGHER than the zero-WR case above despite identical RB
+  // depth — the whole point of the sibling-aware step.
+  const fifthSiblingCaughtUp = state({
+    counts: { ...filledStarters, RB: 5, WR: 3 }, benchDepthAware: true,
+  });
+  check("the same 5th RB is discounted less once WR has caught up to its own capacity",
+        pickScore(rb, fifthSiblingCaughtUp).score > pickScore(rb, fifthNoSibling).score,
+        `caughtUp=${pickScore(rb, fifthSiblingCaughtUp).score} thin=${pickScore(rb, fifthNoSibling).score}`);
+  check("...but still below the flag-off baseline (decay alone still discounts)",
+        pickScore(rb, fifthSiblingCaughtUp).score < pickScore(rb, fifthNoSiblingOff).score);
+
+  // Deeper still, the geometric decay keeps compounding.
+  const sixth = state({ counts: { ...filledStarters, RB: 6, WR: 0 }, benchDepthAware: true });
+  check("a 6th RB is discounted more than a 5th (geometric decay, not a one-time step)",
+        pickScore(rb, sixth).score < pickScore(rb, fifthNoSibling).score);
+
+  // K/DST/QB/TE are untouched by this step at all (FLEX_SIBLING only maps
+  // RB<->WR) — a deep QB or TE bench is governed entirely by maxUseful's
+  // hard cap already pinned above, never by benchDepthMult.
+  const qb = player("QB", 100);
+  const qbDeep = state({ counts: { QB: 1, RB: 2, WR: 2, TE: 1 }, benchDepthAware: true });
+  const qbDeepOff = state({ counts: { QB: 1, RB: 2, WR: 2, TE: 1 } });
+  check("QB is unaffected by benchDepthAware (not an RB/WR position)",
+        pickScore(qb, qbDeep).score === pickScore(qb, qbDeepOff).score);
+}
+
 console.log();
 if (fails.length) {
   console.error(`snake-engine.selftest: ${pass} passed, ${fails.length} FAILED — ${fails.join(", ")}`);

@@ -2847,8 +2847,7 @@ already-tuned constant (`needMult`'s 1.15) in a second consumer and encodes a
 roster-construction PREFERENCE the user stated directly, rather than testing
 a new predictive claim.
 
-**3.6f Diminishing RB/WR bench depth — SHIPPED, GATE PENDING (corrected
-process — see below).** Raised live after a real mid-draft moment 3.6c/3.6e
+**3.6f Diminishing RB/WR bench depth — GATE RUN, FAILED, REVERTED.** Raised live after a real mid-draft moment 3.6c/3.6e
 didn't cover: `$Max` pricing a 6th RB with a real, budget-capped number
 while sitting at ZERO QB and WR — 3.6c's "always value RB/WR depth" call is
 flat all the way down, never actually diminishing. The user's own
@@ -2869,10 +2868,13 @@ exact "at the expense of the other position" case. TE excluded — it already
 has its own hard `maxUseful` cap and isn't symmetrically part of the RB↔WR
 FLEX relationship this reasons about.
 
-Composed into `ceilingFor`'s bench-phase branch as a fourth multiplier
+Was composed into `ceilingFor`'s bench-phase branch as a fourth multiplier
 (`market * backupBoost * byeMult * depthMult`); a `depthCapped` flag (same
 "only claim it when it's actually binding" discipline as `backupBoosted`)
-drives a `↓` marker on the main board and in "targets to consider."
+drove a `↓` marker on the main board and in "targets to consider." **Now
+reverted** — see RESULT below — `ceilingFor` is back to
+`market * backupBoost * byeMult`, and the `depthCapped`/`↓` marker is gone
+from both `AuctionRoom.tsx` and `NominationPanel.tsx`.
 
 **Initial call ("no kill gate needed, same reasoning as 3.6c/3.6e") was
 WRONG, and corrected on direct question ("do we need to do a deeper test on
@@ -2903,10 +2905,30 @@ EACH BUCKET separately — same bar every gate in this phase uses, for
 comparability. Script: `auction-depth-mult-test.mjs`. Workflow:
 `.github/workflows/auction-depth-mult-test.yml`.
 
-**RESULT: pending — awaiting the GitHub Actions run.**
+**RESULT: FAILED both buckets — reverted.** Run 2026-08-23
+(github.com/arimeltzer/fantasy-draft-tool/actions/runs/32643430602), 10
+seeds x 4 slots x 9 seasons x 2 scenarios = 3,600 paired auctions:
+
+| bucket | mean diff | SE | mean/SE | wins |
+|---|---|---|---|---|
+| calm | -0.02 pts | 0.19 | **-0.08** | 7/360 |
+| early-overspend | -0.03 pts | 0.08 | **-0.33** | 6/360 |
+
+Both buckets landed near zero and NEGATIVE — not just short of the >2 bar,
+essentially indistinguishable from flipping a coin (7/360 and 6/360 wins).
+`benchDepthMult`'s shape (decay + imbalance penalty) does not measurably
+improve realized-season outcomes over the flat bench ceiling at these
+magnitudes. Per the pre-registered commitment above, the shipped default
+was reverted the same day the result came in: `AuctionRoom.tsx ceilingFor`
+no longer applies `depthMult`, and the `depthCapped`/`↓` marker is removed
+from both rooms' UI. `benchDepthMult` itself, `FLEX_SIBLING`, and
+`auction-sim.mjs`'s `"treatment-depth"` mode are left in place (dead code,
+not deleted) since the snake-side port (3.6f-snake, below) reuses the same
+function under its own gate, and a future re-tuned magnitude could reuse
+this harness without rebuilding it.
 
 **Status: 3.6c, 3.6d, and 3.6e SHIPPED (no gate needed — reused constants).
-3.6f SHIPPED, gate IN PROGRESS. 3.6a/3.6b SCOPED, NOT STARTED** —
+3.6f GATE FAILED, REVERTED — not shipped. 3.6a/3.6b SCOPED, NOT STARTED** —
 real follow-up work, now lower priority three times over: 3.6c removed the
 over-depth problem, 3.6d gave a lighter-weight answer to the bye-specific
 half, and 3.6e covers the under-depth half priority #2 asked for directly.
@@ -2918,6 +2940,64 @@ greedy-pick selection mechanism, not competitive bidding; see 2.4's own
 status for the reasoning. 3.6a is buildable with no precondition risk;
 3.6b needs its precondition checked before any kill-gate number is set.
 Neither is blocking anything the user has actually asked for at this point.
+
+**3.6f-snake — porting the same concept to the SNAKE recommender — GATE
+BUILT, RESULT PENDING.** Requested in the same message that authorized the
+3.6f auction gate ("we will also want to transfer a same roster
+construction concept to snake drafts"). Built CORRECTLY from the start,
+unlike the auction side: opt-in and gated BEFORE any wiring into
+`SnakeRoom.tsx`, not after — the auction side's premature ship was the
+whole reason this process exists.
+
+MECHANISM. `snake-engine.js needMult(pos, have, roster, needs,
+flexEligible, superflex, depthAware, siblingHave)` gained two new trailing
+parameters. Past the "still useful bench depth" branch (the tuned 0.88 for
+RB/WR), an opt-in final step multiplies by `budget-path.js
+benchDepthMult(pos, have, roster, siblingHave)` — the SAME function 3.6f
+used, reused rather than reimplemented, since the underlying claim (a
+startable 4th is full value, a 5th+ decays, doubly so while the FLEX
+sibling hasn't caught up) is position-construction logic independent of
+whether the mechanism pricing it is a dollar ceiling or a pick-priority
+score. `depthAware` defaults falsy — every existing call site, and
+`pickScore` itself, is byte-identical to pre-3.6f-snake behavior unless a
+caller explicitly sets `liveState.benchDepthAware = true`. `draft-sim.mjs`
+threads a matching `cfg.benchDepth` opt-in flag onto `live.benchDepthAware`
+for isolated paired comparisons, mirroring `cfg.byeLineup`'s existing
+shape exactly. `snake-engine.selftest.mjs` pins the opt-in contract
+(absent/false is a no-op regression check) and the mechanism (a 5th RB
+with zero WR scores below the flag-off baseline; the same 5th RB scores
+higher, though still below baseline, once WR has caught up to its own
+capacity; QB/TE are untouched since `FLEX_SIBLING` only maps RB↔WR).
+**NOT wired into `SnakeRoom.tsx`** — `live.benchDepthAware` is never set
+by the shipped room, so this has zero effect on any real draft today.
+
+**A REAL prior against this clearing the bar.** 3.6f's auction gate (same
+underlying concept, same `benchDepthMult` function, same magnitude
+constants) came back mean/SE -0.08 (calm) and -0.33 (early-overspend) —
+indistinguishable from noise, slightly negative, 3,600 paired auctions.
+The snake port uses a different SELECTION mechanism (which player gets
+picked next, not what price is paid), so it is not guaranteed to fail the
+same way — but it is testing materially the same claim about diminishing
+RB/WR bench value with the same untuned decay/imbalance constants, so a
+second null result would not be a surprise. Gating it for real rather than
+asserting a pattern from one data point either way.
+
+KILL GATE. `snake-bench-depth-test.mjs` (mirrors `bye-lineup-test.mjs`'s
+structure): paired comparison, common random numbers — `cfg.benchDepth`
+on vs off, otherwise identical league/seed/opponents. Scoring:
+`realizedWeeklyPoints` (real weekly outcomes replayed against real bye
+schedules), same yardstick every gate in this phase uses — never the
+projection-based hindsight score `draft-sim.mjs` uses elsewhere, which
+would let the treatment arm's own projection-shaped incentive grade its
+own homework. Stratified over `temperature` (the bot-noise knob
+`simulateDraft` already exposes — low = disciplined near-ADP bots, high =
+noisier ones), the snake-side analogue of the auction gate's calm/
+early-overspend split, since a real draft room's discipline varies the
+same way a real auction room's does. **Bar: mean/SE > 2 per bucket, same
+as every gate in this phase.** Workflow:
+`.github/workflows/snake-bench-depth-test.yml`.
+
+**RESULT: pending — awaiting the GitHub Actions run.**
 
 > **Prompt** — "Check whether draft-sim.mjs's auction simulator can score
 > bye-week-specific lineup completeness (3.6a), and separately run

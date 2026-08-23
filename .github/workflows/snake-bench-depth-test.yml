@@ -1,0 +1,81 @@
+name: Snake diminishing-bench-depth gate (roadmap 3.6f-snake)
+
+# Manual. Asks whether multiplying needMult's bench-depth score for RB/WR by
+# benchDepthMult (diminishing returns past a startable 4th body at one
+# position, doubly discounted while the FLEX-sibling position hasn't reached
+# its own capacity — liveState.benchDepthAware) drafts better rosters than
+# the shipped agent (the flat 0.88 bench multiplier, unchanged).
+# STRATIFIED over the bot-noise "temperature" knob (calm/chaotic), the
+# snake-side analogue of the auction gate's calm/early-overspend split.
+#
+# Scored on REALIZED weekly lineups.
+#
+# NOT wired into SnakeRoom.tsx yet — built and gated BEFORE shipping, unlike
+# 3.6f's auction port. See docs/ROADMAP.md 3.6f-snake.
+#
+# Needs FANTASYPROS_API_KEY: the opponent bots draft by that season's real
+# ADP. Without it they draft by our own model and both arms face a
+# strawman that shares our biases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      first:
+        description: "First season"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated drafts per slot per season per scenario"
+        required: false
+        default: "12"
+        type: string
+      slots:
+        description: "Draft slots to test (comma-separated)"
+        required: false
+        default: "1,4,7,10"
+        type: string
+
+jobs:
+  snake-bench-depth-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      - name: budget-path selftest (benchDepthMult itself)
+        run: node frontend/src/engine/budget-path.selftest.mjs
+      - name: snake-engine selftest (benchDepthAware opt-in)
+        run: node frontend/src/engine/snake-engine.selftest.mjs
+      - name: draft-sim selftest (realizedWeeklyPoints + cfg.benchDepth)
+        run: node frontend/src/engine/draft-sim.selftest.mjs
+
+      - name: Export boards + realized weekly outcomes + byes
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Run the 3.6f-snake gate
+        run: |
+          node frontend/src/engine/snake-bench-depth-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --seeds ${{ inputs.seeds }} \
+            --slots ${{ inputs.slots }} | tee data-pipeline/results/snake_bench_depth_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snake-bench-depth-test
+          path: data-pipeline/results/snake_bench_depth_test.txt
