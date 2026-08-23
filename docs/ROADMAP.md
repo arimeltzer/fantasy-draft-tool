@@ -2847,13 +2847,14 @@ already-tuned constant (`needMult`'s 1.15) in a second consumer and encodes a
 roster-construction PREFERENCE the user stated directly, rather than testing
 a new predictive claim.
 
-**3.6f Diminishing RB/WR bench depth — DONE, shipped.** Raised live after a
-real mid-draft moment 3.6c/3.6e didn't cover: `$Max` pricing a 6th RB with a
-real, budget-capped number while sitting at ZERO QB and WR — 3.6c's "always
-value RB/WR depth" call is flat all the way down, never actually diminishing.
-The user's own refinement, kept as the spec: "build a bench that is diverse
-and not overloaded at one position. With the flex position, 3 RBs or 3 WRs
-can start at once. A fourth player creates depth. A 5th and down has
+**3.6f Diminishing RB/WR bench depth — SHIPPED, GATE PENDING (corrected
+process — see below).** Raised live after a real mid-draft moment 3.6c/3.6e
+didn't cover: `$Max` pricing a 6th RB with a real, budget-capped number
+while sitting at ZERO QB and WR — 3.6c's "always value RB/WR depth" call is
+flat all the way down, never actually diminishing. The user's own
+refinement, kept as the spec: "build a bench that is diverse and not
+overloaded at one position. With the flex position, 3 RBs or 3 WRs can
+start at once. A fourth player creates depth. A 5th and down has
 diminishing returns — especially at the expense of a 3rd WR/RB [the other
 position]."
 
@@ -2872,15 +2873,40 @@ Composed into `ceilingFor`'s bench-phase branch as a fourth multiplier
 (`market * backupBoost * byeMult * depthMult`); a `depthCapped` flag (same
 "only claim it when it's actually binding" discipline as `backupBoosted`)
 drives a `↓` marker on the main board and in "targets to consider."
-`auction-sim.mjs`'s bench-phase branch updated in the same pass — the same
-harness-gap discipline 3.9 already established for this exact spot.
 
-No kill gate needed, same reasoning as 3.6c/3.6e: a roster-construction
-POLICY (what shape is worth), not a new predictive claim about a PLAYER
-(what nothing here backtests) — `BENCH_DEPTH_DECAY`/`BENCH_DEPTH_IMBALANCE_MULT`
-are therefore deliberately modest, not fitted.
+**Initial call ("no kill gate needed, same reasoning as 3.6c/3.6e") was
+WRONG, and corrected on direct question ("do we need to do a deeper test on
+this, or are you comfortable with it?").** The 3.6c/3.6e precedent only
+applies to REUSING an already-tuned constant in a second consumer
+(`maxUseful`'s caps, `needMult`'s 1.15 — both validated elsewhere first).
+`BENCH_DEPTH_DECAY = 0.85` and `BENCH_DEPTH_IMBALANCE_MULT = 0.85` are BRAND
+NEW numbers, never measured against anything — that puts this in 2.4/3.9's
+category (a new claim needing a real gate), not 3.6c/3.6e's. The *shape*
+(decay + imbalance penalty) is stood behind; the *magnitude* was a guess.
+Shipped ahead of the gate (a real process gap versus 2.4/3.9, which waited
+for a clean result before wiring into the room) — this run is retroactive
+validation of an already-live default, not a pre-ship check, and a failing
+result reverts the shipped default rather than leaving it live unvalidated.
 
-**Status: 3.6c, 3.6d, 3.6e, and 3.6f SHIPPED. 3.6a/3.6b SCOPED, NOT STARTED** —
+**Mechanism gated behind `auction-sim.mjs`'s `"treatment-depth"` mode**,
+identical shape to `"treatment-bye"` (3.9): `"treatment"` is the pre-3.6f
+baseline (`depthMult` forced to 1) so the comparison isolates this one
+change, not a moving target. `auction-sim.selftest.mjs` pins that
+`"treatment-depth"` tracks plain `"treatment"` in ordinary play (the depth
+discount rarely engages when bots aren't grossly stacking one position) and
+diverges in the exact reported 5-RB/0-WR shape.
+
+**Kill gate, same discipline and stratification as 3.7/3.8/3.9.** Agent A:
+`"treatment"`. Agent B: `"treatment-depth"`. Scoring: `realizedWeeklyPoints`.
+Stratified calm / early-overspend. Bar: mean/SE > 2 on realized points, IN
+EACH BUCKET separately — same bar every gate in this phase uses, for
+comparability. Script: `auction-depth-mult-test.mjs`. Workflow:
+`.github/workflows/auction-depth-mult-test.yml`.
+
+**RESULT: pending — awaiting the GitHub Actions run.**
+
+**Status: 3.6c, 3.6d, and 3.6e SHIPPED (no gate needed — reused constants).
+3.6f SHIPPED, gate IN PROGRESS. 3.6a/3.6b SCOPED, NOT STARTED** —
 real follow-up work, now lower priority three times over: 3.6c removed the
 over-depth problem, 3.6d gave a lighter-weight answer to the bye-specific
 half, and 3.6e covers the under-depth half priority #2 asked for directly.

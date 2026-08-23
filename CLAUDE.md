@@ -1367,10 +1367,7 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   discount (`BENCH_DEPTH_IMBALANCE_MULT = 0.85`) stacked on while the
   FLEX-sibling position (`FLEX_SIBLING`: RB↔WR) hasn't reached its own
   capacity yet — the exact "at the expense of the other position" case
-  reported. Same ship-without-a-backtest precedent 3.6c/3.6e already
-  established: a roster-construction POLICY (what shape is worth),
-  not a new predictive claim about a PLAYER (what nothing here
-  backtests). TE excluded — already has its own hard `maxUseful` cap and
+  reported. TE excluded — already has its own hard `maxUseful` cap and
   isn't symmetrically part of the RB↔WR FLEX relationship this reasons
   about. Composed into `AuctionRoom.tsx ceilingFor`'s bench-phase branch
   as a fourth multiplier (`market * backupBoost * byeMult * depthMult`);
@@ -1385,6 +1382,24 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   decay, the imbalance stacking (including the exact reported 5-RB/0-WR
   case), the sibling-caught-up no-penalty case, and that every other
   position is untouched.
+- **Initial call — "no kill gate needed, same reasoning as 3.6c/3.6e" —
+  was WRONG, caught on direct question ("do we need to do a deeper test on
+  this, or are you comfortable with it?").** 3.6c/3.6e's no-gate precedent
+  only covers REUSING an already-tuned constant in a second consumer
+  (`maxUseful`'s caps, `needMult`'s 1.15 — both validated elsewhere
+  first). `BENCH_DEPTH_DECAY`/`BENCH_DEPTH_IMBALANCE_MULT` (both 0.85) are
+  BRAND NEW numbers, never measured — the same category as 2.4/3.9, which
+  DID get real gates precisely because they introduced new numbers rather
+  than reusing validated ones. The *shape* (decay + imbalance penalty) is
+  stood behind; the *magnitude* was a guess. Unlike 2.4/3.9, this shipped
+  to `AuctionRoom.tsx` BEFORE the gate ran — a real process gap, corrected
+  going forward: `auction-sim.mjs` gained a `"treatment-depth"` mode
+  (identical shape to `"treatment-bye"`, `"treatment"` forced back to the
+  pre-3.6f baseline so the comparison isolates one change), pre-registered
+  in `docs/ROADMAP.md` 3.6f with the same mean/SE > 2, stratified
+  calm/early-overspend bar every gate in this phase uses. A failing result
+  reverts the shipped default rather than leaving it live unvalidated. See
+  `docs/ROADMAP.md` 3.6f for the pre-registration and result once run.
 
 ## Frontend visual refresh (shipped, both rooms and every page)
 

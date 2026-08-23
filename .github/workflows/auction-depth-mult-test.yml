@@ -1,0 +1,81 @@
+name: Auction diminishing-bench-depth gate (roadmap 3.6f)
+
+# Manual. Asks whether multiplying the auction bench-phase ceiling for RB/WR
+# by benchDepthMult (diminishing returns past a startable 4th body at one
+# position, with an extra discount while the FLEX-sibling position hasn't
+# reached its own capacity — "treatment-depth") drafts better rosters than
+# the bench-phase ceiling alone ("treatment", the pre-3.6f baseline).
+# STRATIFIED into the same calm / early-overspend buckets 3.7/3.8/3.9 used.
+#
+# Scored on REALIZED weekly lineups.
+#
+# SHIPPED AHEAD OF THIS GATE (a real process gap versus 2.4/3.9) — this run
+# is retroactive validation of an already-live default in AuctionRoom.tsx.
+# A failing result reverts it; see docs/ROADMAP.md 3.6f.
+#
+# Needs FANTASYPROS_API_KEY: the opponent bots draft by that season's real
+# ADP. Without it they draft by our own model and both arms face a
+# strawman that shares our biases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      first:
+        description: "First season"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated drafts per slot per season per scenario"
+        required: false
+        default: "10"
+        type: string
+      slots:
+        description: "Draft slots to test (comma-separated)"
+        required: false
+        default: "1,4,7,10"
+        type: string
+
+jobs:
+  auction-depth-mult-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      - name: budget-path selftest (benchDepthMult itself)
+        run: node frontend/src/engine/budget-path.selftest.mjs
+      - name: auction-sim selftest (treatment-depth mode)
+        run: node frontend/src/engine/auction-sim.selftest.mjs
+      - name: draft-sim selftest (realizedWeeklyPoints itself)
+        run: node frontend/src/engine/draft-sim.selftest.mjs
+
+      - name: Export boards + realized weekly outcomes + byes
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Run the 3.6f gate
+        run: |
+          node frontend/src/engine/auction-depth-mult-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --seeds ${{ inputs.seeds }} \
+            --slots ${{ inputs.slots }} | tee data-pipeline/results/auction_depth_mult_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: auction-depth-mult-test
+          path: data-pipeline/results/auction_depth_mult_test.txt

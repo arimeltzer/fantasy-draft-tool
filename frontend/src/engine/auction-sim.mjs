@@ -46,7 +46,14 @@
  *     BENCH-PHASE ceiling (once starters are full) is multiplied by
  *     `byeLineupMult` — 2.4's already gate-cleared value function, reused
  *     as a price multiplier the same way `firstBackupBoost` already is.
- *   A sixth mode, "passive" (never bids), exists only for the selftest's
+ *   - "treatment-depth" — roadmap 3.6f (shipped to the app AHEAD of this
+ *     gate — see docs/ROADMAP.md 3.6f for why, and treat this run as
+ *     retroactive validation of an already-live default, not a pre-ship
+ *     check). IDENTICAL to "treatment" except the BENCH-PHASE ceiling for
+ *     RB/WR is multiplied by `benchDepthMult` — diminishing returns past a
+ *     startable 4th body at one position, with an extra discount while the
+ *     FLEX-sibling position (RB<->WR) hasn't reached ITS OWN capacity yet.
+ *   A seventh mode, "passive" (never bids), exists only for the selftest's
  *   crippled-agent check and is not a real strategy.
  *
  * BENCH-PHASE CEILING, ROADMAP 3.9 FIX. Every mode's bench-phase ceiling
@@ -288,12 +295,15 @@ export function simulateAuction({
                     rosterCfg: roster,
                   })
                 : 1;
-              // diminishing RB/WR bench depth — mirrors AuctionRoom.tsx's
-              // ceilingFor exactly (same call shape), so this harness stays
-              // honest about what the shipped app actually does. See
-              // budget-path.js benchDepthMult's own header for the policy.
-              const depthMult = benchDepthMult(player.pos, counts[player.pos] || 0, roster,
-                counts[FLEX_SIBLING[player.pos]] || 0);
+              // roadmap 3.6f — "treatment-depth" multiplies the bench
+              // ceiling by benchDepthMult (diminishing RB/WR bench depth,
+              // gated behind its own mode exactly like "treatment-bye" is,
+              // so "treatment" stays the pre-3.6f baseline this gate
+              // measures AGAINST, not a moving target).
+              const depthMult = agentMode === "treatment-depth"
+                ? benchDepthMult(player.pos, counts[player.pos] || 0, roster,
+                    counts[FLEX_SIBLING[player.pos]] || 0)
+                : 1;
               return Math.round(market * backupBoost * byeMult * depthMult);
             })();
 

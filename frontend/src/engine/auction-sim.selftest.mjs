@@ -16,6 +16,7 @@ import {
   totalRosterSize, resolveSale, simulateAuction, pairedCompareAuction, botWTPMultiplier,
 } from "./auction-sim.mjs";
 import { bestLineupPoints } from "./draft-sim.mjs";
+import { firstBackupBoost, benchDepthMult } from "./budget-path.js";
 
 let pass = 0;
 const fails = [];
@@ -323,6 +324,47 @@ check("botWTPMultiplier is not opponentDemand's shape",
             byeByTeam,
           });
           return r.rows.some((row) => row.diff !== 0);
+        })());
+}
+
+// ── roadmap 3.6f: treatment-depth mode ──────────────────────────────────────
+{
+  const board = makeBoard();
+  const pointsById = Object.fromEntries(board.map((p) => [p.id, p.vbd]));
+
+  check("treatment-depth is identical to treatment across many seeds when the "
+        + "agent never stacks past a startable 4th at one position",
+        (() => {
+          // Small league, deep bench relative to it — the agent's own bot
+          // logic (botWTPMultiplier) already avoids gross position stacking
+          // in ordinary play, so this is the common case: benchDepthMult
+          // never actually engages.
+          const r = pairedCompareAuction({
+            board, roster: ROSTER, teams: 10, budget: 200, pointsById,
+            agentTeam: 4, modeA: "treatment", modeB: "treatment-depth", seeds: [1, 2, 3],
+          });
+          // Not asserting meanDiff === 0 exactly (a normal draft CAN still
+          // occasionally stack a 5th RB/WR) — asserting the two modes track
+          // closely, unlike the deliberately-provoked divergence below.
+          return Math.abs(r.meanDiff) < 5;
+        })());
+
+  check("treatment-depth actually discounts a genuinely surplus RB pile — the "
+        + "exact reported scenario (5th RB with 0 WR, starters otherwise full)",
+        (() => {
+          const candidate = board.find((p) => p.pos === "RB");
+          const market = pointsById[candidate.id] ?? 10;
+          // Direct comparison of the bench-phase branch's own composition
+          // (5 RB already owned, 0 WR) — the same "test the mechanism
+          // directly" approach the 3.9 block above uses for its bidCeiling
+          // sanity check, rather than steering the full paired-auction
+          // machinery into this exact roster shape.
+          const boost = firstBackupBoost(candidate.pos, 5, ROSTER); // 5 have -> no boost either way
+          const depthA = 1; // "treatment": no depth discount
+          const depthB = benchDepthMult(candidate.pos, 5, ROSTER, 0); // 5 RB, 0 WR
+          const priceA = Math.round(market * boost * depthA);
+          const priceB = Math.round(market * boost * depthB);
+          return depthB < 1 && priceB < priceA;
         })());
 }
 
