@@ -455,12 +455,12 @@ export default function KeeperPlanner({
                             if (e.key === "Enter") saveWaiver(r, (e.target as HTMLInputElement).value);
                             if (e.key === "Escape") setEditing(null);
                           }}
-                          className="w-14 rounded border border-brand bg-sunken px-1 py-0.5 text-right font-mono text-2xs text-ink focus:outline-none"
+                          className="w-14 rounded-lg border border-brand bg-sunken px-1 py-0.5 text-right font-mono text-2xs text-ink focus:outline-none"
                         />
                       ) : (
                         <button
                           onClick={() => setEditing({ pickId: r.pick.pickId, value: r.waiver?.toString() ?? "" })}
-                          className="w-14 rounded px-1 py-0.5 text-right font-mono text-2xs text-faint hover:bg-raised hover:text-ink"
+                          className="w-14 rounded-lg px-1 py-0.5 text-right font-mono text-2xs text-faint hover:bg-raised hover:text-ink"
                           title="Waiver / FAAB claim — click to edit"
                         >
                           {r.waiver != null ? `w$${r.waiver}` : "w$ –"}
@@ -480,7 +480,7 @@ export default function KeeperPlanner({
                     </span>
                     <button
                       onClick={() => removePick(r.pick.pickId)}
-                      className="rounded p-1 text-faint hover:bg-raised hover:text-rose-600"
+                      className="rounded-lg p-1 text-faint hover:bg-raised hover:text-rose-600"
                       title="Remove keeper"
                     >
                       <Trash2 className="h-3.5 w-3.5" />

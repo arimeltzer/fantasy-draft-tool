@@ -35,13 +35,13 @@ export default function Tip({ tip, children, className = "", underline = true }:
       onMouseEnter={show}
       onMouseLeave={() => setPos(null)}
       onClick={() => (pos ? setPos(null) : show())}
-      className={`cursor-help ${underline ? "underline decoration-dotted decoration-gray-300 underline-offset-2" : ""} ${className}`}
+      className={`cursor-help ${underline ? "underline decoration-dotted decoration-line underline-offset-2" : ""} ${className}`}
     >
       {children}
       {pos && (
         <span
           style={{ position: "fixed", left: pos.x, top: pos.top, bottom: pos.bottom, transform: "translateX(-50%)" }}
-          className="z-[100] w-max max-w-[16rem] rounded-md border border-gray-300 bg-white shadow-lg px-2.5 py-1.5 text-xs leading-snug text-gray-600 font-sans font-normal normal-case tracking-normal whitespace-normal text-left pointer-events-none"
+          className="z-[100] w-max max-w-[16rem] rounded-md border border-line bg-white shadow-lg px-2.5 py-1.5 text-xs leading-snug text-muted font-sans font-normal normal-case tracking-normal whitespace-normal text-left pointer-events-none"
         >
           {tip}
         </span>

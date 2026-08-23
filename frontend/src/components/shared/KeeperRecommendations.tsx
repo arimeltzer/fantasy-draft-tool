@@ -255,7 +255,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
               )}
               {reco && (<>
               {/* headline */}
-              <div className="rounded-lg border border-brand/30 bg-brand/5 px-3 py-2.5">
+              <div className="rounded-xl border border-brand/30 bg-brand/5 px-3 py-2.5">
                 <div className="flex items-center gap-2 text-sm">
                   <span className="font-semibold text-ink">
                     {reco.best.ids.length === 0
@@ -276,7 +276,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
               </div>
 
               {/* ranked candidates */}
-              <div className="overflow-hidden rounded-lg border border-line">
+              <div className="overflow-hidden rounded-xl border border-line">
                 <div className={`grid ${priceBasis ? "grid-cols-[1fr_46px_46px_46px_52px_56px]" : "grid-cols-[1fr_64px_46px_46px_52px_56px]"} gap-1 border-b border-line bg-raised px-2.5 py-1.5 font-mono text-2xs uppercase tracking-wider text-faint`}>
                   <span>Player</span>
                   <span className="text-right">{priceBasis ? "$cost" : "cost→pick"}</span>
@@ -345,7 +345,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                   <input
                     type="number" value={flexFloor} min={0}
                     onChange={(e) => setFlexFloor(Math.max(0, Number(e.target.value) || 0))}
-                    className="w-12 rounded border border-line bg-sunken px-1.5 py-0.5 text-right font-mono text-ink focus:border-brand focus:outline-none"
+                    className="w-12 rounded-lg border border-line bg-sunken px-1.5 py-0.5 text-right font-mono text-ink focus:border-brand focus:outline-none"
                     title="Minimum keeper value (KV) to bother keeping — higher = more selective"
                   />
                 </label>
@@ -361,7 +361,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
 
               {/* opponents' keepers: confirmed facts + predictions */}
               {(importedCandidates.length > 0 || confirmedOpp.length > 0) && (
-                <div className="rounded-lg border border-line">
+                <div className="rounded-xl border border-line">
                   <div className="flex items-center gap-2 border-b border-hair bg-raised/50 px-3 py-1.5">
                     <EyeOff className="h-3.5 w-3.5 text-faint" />
                     <span className="text-2xs font-semibold uppercase tracking-wider text-muted">Opponents' keepers</span>
@@ -389,7 +389,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                           <span className="w-14 text-right font-mono text-faint">
                             {c.cost.basis === "price" ? `$${c.cost.price}` : `R${c.cost.round}`}
                           </span>
-                          <button onClick={() => removePick(c.pickId)} className="w-16 rounded px-1 py-0.5 text-right font-mono text-faint hover:text-rose-600" title="Remove this keeper">
+                          <button onClick={() => removePick(c.pickId)} className="w-16 rounded-lg px-1 py-0.5 text-right font-mono text-faint hover:text-rose-600" title="Remove this keeper">
                             remove
                           </button>
                         </div>
@@ -410,14 +410,14 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                           </span>
                           <button
                             onClick={() => confirmOpp({ id: p.id, owner: p.owner, base: p.base, cost: p.cost })}
-                            className="w-16 rounded px-1 py-0.5 text-right font-mono text-brand hover:underline"
+                            className="w-16 rounded-lg px-1 py-0.5 text-right font-mono text-brand hover:underline"
                             title="Lock this in as that team's actual keeper"
                           >
                             confirm
                           </button>
                           <button
                             onClick={() => setPredictOverrides((s) => { const n = new Set(s); n.has(p.id) ? n.delete(p.id) : n.add(p.id); return n; })}
-                            className="w-14 rounded px-1 py-0.5 text-right font-mono text-faint hover:text-ink"
+                            className="w-14 rounded-lg px-1 py-0.5 text-right font-mono text-faint hover:text-ink"
                             title={off ? "Treat as available" : "This player won't actually be kept — put back in the pool"}
                           >
                             {off ? "undo" : "not kept"}
@@ -442,7 +442,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                   Shown even when reco is null (every candidate excluded) so a
                   wrong exclusion is always recoverable. */}
               {ineligibleCandidates.length > 0 && (
-                <div className="rounded-lg border border-amber-200">
+                <div className="rounded-xl border border-amber-200">
                   <div className="flex items-center gap-2 border-b border-amber-100 bg-amber-50/50 px-3 py-1.5">
                     <span className="text-2xs font-semibold uppercase tracking-wider text-amber-800">
                       Kept last year — not eligible
@@ -466,7 +466,7 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                           </span>
                           <button
                             onClick={() => c.ineligibleReason === "manual" ? clearOverride(c.id) : setEligible(c.id, true)}
-                            className="w-20 shrink-0 rounded px-1 py-0.5 text-right font-mono text-brand hover:underline"
+                            className="w-20 shrink-0 rounded-lg px-1 py-0.5 text-right font-mono text-brand hover:underline"
                             title="Not actually kept last year — put back in the pool"
                           >
                             eligible after all

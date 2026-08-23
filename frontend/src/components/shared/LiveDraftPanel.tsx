@@ -166,24 +166,24 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-gray-900/40 p-4">
-      <div className="mt-10 w-full max-w-lg rounded-xl border border-gray-200 bg-gray-50 shadow-xl">
-        <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-3">
-          <Radio className={`h-4 w-4 ${live.running ? "text-emerald-600" : "text-gray-400"}`} />
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4">
+      <div className="mt-10 w-full max-w-lg rounded-xl border border-line bg-surface shadow-xl">
+        <div className="flex items-center gap-2 border-b border-line px-4 py-3">
+          <Radio className={`h-4 w-4 ${live.running ? "text-emerald-600" : "text-faint"}`} />
           <h2 className="text-sm font-semibold tracking-tight">Live draft sync</h2>
           {live.running && (
             <span className="flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-2xs text-emerald-700">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" /> watching
             </span>
           )}
-          <button onClick={onClose} className="ml-auto rounded p-1 text-gray-500 hover:bg-gray-200">
+          <button onClick={onClose} className="ml-auto rounded-lg p-1 text-muted hover:bg-hover">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <div className="space-y-3 px-4 py-3">
-          <p className="text-2xs leading-snug text-gray-500">
-            Picks are <span className="text-gray-700">polled</span>, not pushed — neither platform
+          <p className="text-2xs leading-snug text-muted">
+            Picks are <span className="text-ink">polled</span>, not pushed — neither platform
             offers a live feed to outside apps, so new picks show up within one interval of being
             made. Everything you log by hand still works; syncing only adds picks that aren't
             already on the board. {live.running && "Closing this window does NOT stop it — "}
@@ -193,32 +193,32 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
 
           <div className="grid grid-cols-2 gap-2">
             <label className="block text-xs">
-              <span className="mb-1 block text-gray-500">Platform</span>
+              <span className="mb-1 block text-muted">Platform</span>
               <select
                 value={provider}
                 onChange={(e) => setProvider(e.target.value as "espn" | "yahoo")}
-                className="w-full rounded border border-gray-300 bg-gray-50 px-2 py-1 text-gray-700 focus:border-gray-400 focus:outline-none"
+                className="w-full rounded-lg border border-line bg-surface px-2 py-1 text-ink focus:border-faint focus:outline-none"
               >
                 <option value="espn">ESPN</option>
                 <option value="yahoo">Yahoo</option>
               </select>
             </label>
             <label className="block text-xs">
-              <span className="mb-1 block text-gray-500">
+              <span className="mb-1 block text-muted">
                 {provider === "yahoo" ? "League key" : "League ID"}
               </span>
               <input
                 value={extId}
                 onChange={(e) => setExtId(e.target.value)}
                 placeholder={provider === "yahoo" ? "461.l.82486" : "123456"}
-                className="w-full rounded border border-gray-300 bg-gray-50 px-2 py-1 font-mono text-gray-700 focus:border-gray-400 focus:outline-none"
+                className="w-full rounded-lg border border-line bg-surface px-2 py-1 font-mono text-ink focus:border-faint focus:outline-none"
               />
             </label>
           </div>
 
           <label className="block text-xs">
-            <span className="mb-1 block text-gray-500">
-              Your team <span className="text-gray-400">
+            <span className="mb-1 block text-muted">
+              Your team <span className="text-faint">
                 {provider === "yahoo" ? "(detected from your Yahoo login)" : "(name or team id — marks your picks)"}
               </span>
             </span>
@@ -227,11 +227,11 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
                 value={myTeam}
                 onChange={(e) => setMyTeam(e.target.value)}
                 placeholder="Team Ari"
-                className="w-full rounded border border-gray-300 bg-gray-50 px-2 py-1 text-gray-700 focus:border-gray-400 focus:outline-none"
+                className="w-full rounded-lg border border-line bg-surface px-2 py-1 text-ink focus:border-faint focus:outline-none"
               />
             )}
             {provider === "yahoo" && !yahooConnected() && (
-              <span className="block rounded border border-amber-200 bg-amber-50 px-2 py-1 text-2xs text-amber-800">
+              <span className="block rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-2xs text-amber-800">
                 Not connected to Yahoo — open Keepers → "Yahoo — pull last season from the API"
                 and connect once. The same session is used here.
               </span>
@@ -240,21 +240,21 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
 
           {provider === "espn" && (
             <details className="text-xs">
-              <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+              <summary className="cursor-pointer text-muted hover:text-ink">
                 Private ESPN league? Add cookies
               </summary>
               <div className="mt-2 grid gap-2">
                 <input value={s2} onChange={(e) => setS2(e.target.value)} placeholder="espn_s2"
-                  className="w-full rounded border border-gray-300 bg-gray-50 px-2 py-1 font-mono text-2xs text-gray-700 focus:border-gray-400 focus:outline-none" />
+                  className="w-full rounded-lg border border-line bg-surface px-2 py-1 font-mono text-2xs text-ink focus:border-faint focus:outline-none" />
                 <input value={swid} onChange={(e) => setSwid(e.target.value)} placeholder="{SWID}"
-                  className="w-full rounded border border-gray-300 bg-gray-50 px-2 py-1 font-mono text-2xs text-gray-700 focus:border-gray-400 focus:outline-none" />
+                  className="w-full rounded-lg border border-line bg-surface px-2 py-1 font-mono text-2xs text-ink focus:border-faint focus:outline-none" />
                 <EspnCredsNote />
               </div>
             </details>
           )}
 
           {provider === "espn" && (
-            <div className="rounded border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs">
               <div className="flex items-center gap-1.5 font-medium text-emerald-800">
                 <Download className="h-3.5 w-3.5" /> Tampermonkey script (recommended)
               </div>
@@ -271,7 +271,7 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
                 <button
                   onClick={() => void makeUserscript()}
                   disabled={!extId.trim() || userscriptBusy}
-                  className="flex items-center gap-1.5 rounded border border-emerald-300 bg-white px-2.5 py-1.5 text-2xs font-medium text-emerald-800 hover:border-emerald-400 disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-white px-2.5 py-1.5 text-2xs font-medium text-emerald-800 hover:border-emerald-400 disabled:opacity-50"
                 >
                   {userscriptBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Download className="h-3 w-3" />}
                   Download script
@@ -302,19 +302,19 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
               <button
                 onClick={() => void runBackfill()}
                 disabled={!formConfig || backfillBusy}
-                className="flex items-center gap-1.5 rounded border border-gray-300 bg-gray-50 px-2.5 py-1.5 text-2xs text-gray-600 hover:border-gray-400 disabled:opacity-50"
+                className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-2xs text-muted hover:border-faint disabled:opacity-50"
               >
                 {backfillBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                 Backfill prior picks
               </button>
-              <span className="text-2xs text-gray-400">
+              <span className="text-2xs text-faint">
                 For picks made before you connected — e.g. joining a draft already in progress.
                 One-shot, not automatic.
               </span>
             </div>
           )}
           {res?.meta.backfill_resolved !== undefined && (
-            <p className="text-2xs text-gray-500">
+            <p className="text-2xs text-muted">
               ESPN's roster view has {res.meta.backfill_resolved} pick{res.meta.backfill_resolved === 1 ? "" : "s"} resolved
               (new ones just added show below). Picks made very recently may not have caught up
               there yet — try again in a minute if any are still missing.
@@ -326,10 +326,10 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
 
           {provider === "espn" && (
             <details className="text-xs">
-              <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+              <summary className="cursor-pointer text-muted hover:text-ink">
                 Prefer a bookmarklet instead (no extension)?
               </summary>
-              <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2.5 py-2">
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2">
                 <p className="text-2xs leading-snug text-amber-900">
                   <span className="font-medium">Known limitation:</span> this only catches
                   connections opened AFTER you click it. If the draft room's socket is already
@@ -341,7 +341,7 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
                   <button
                     onClick={() => void makeBookmarklet()}
                     disabled={!extId.trim() || bookmarkletBusy}
-                    className="flex items-center gap-1.5 rounded border border-amber-300 bg-white px-2.5 py-1.5 text-2xs font-medium text-amber-800 hover:border-amber-400 disabled:opacity-50"
+                    className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-2.5 py-1.5 text-2xs font-medium text-amber-800 hover:border-amber-400 disabled:opacity-50"
                   >
                     {bookmarkletBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Link2 className="h-3 w-3" />}
                     {bookmarkletHref ? "Regenerate" : "Get bookmarklet"}
@@ -360,7 +360,7 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
                           + "the ESPN draft room tab — clicking it here won't do anything.");
                       }}
                       draggable
-                      className="cursor-grab rounded border border-amber-300 bg-amber-100 px-2.5 py-1.5 text-2xs font-medium text-amber-900 active:cursor-grabbing"
+                      className="cursor-grab rounded-lg border border-amber-300 bg-amber-100 px-2.5 py-1.5 text-2xs font-medium text-amber-900 active:cursor-grabbing"
                       title="Drag me to your bookmarks bar"
                     >
                       🖐 Drag to bookmarks bar: Fantasy Live Sync
@@ -376,21 +376,21 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
 
           {provider === "espn" && (
             <details className="text-xs">
-              <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+              <summary className="cursor-pointer text-muted hover:text-ink">
                 A server-side live connection kicked me out of ESPN
               </summary>
               <div className="mt-2 flex items-center gap-2">
                 <button
                   onClick={() => void stopBackendWatcher()}
                   disabled={stopBusy}
-                  className="flex items-center gap-1.5 rounded border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-2xs font-medium text-rose-700 hover:border-rose-400 disabled:opacity-50"
+                  className="flex items-center gap-1.5 rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1.5 text-2xs font-medium text-rose-700 hover:border-rose-400 disabled:opacity-50"
                 >
                   {stopBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
                   Stop it now
                 </button>
-                {stopMsg && <span className="text-2xs text-gray-500">{stopMsg}</span>}
+                {stopMsg && <span className="text-2xs text-muted">{stopMsg}</span>}
               </div>
-              <p className="mt-1.5 text-2xs leading-snug text-gray-500">
+              <p className="mt-1.5 text-2xs leading-snug text-muted">
                 Kills any backend-owned live connection for this league right now. The
                 bookmarklet above doesn't have this problem — use it instead going forward.
               </p>
@@ -398,12 +398,12 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
           )}
 
           <div className="flex items-center gap-2">
-            <div className="flex rounded border border-gray-300">
+            <div className="flex rounded-lg border border-line">
               {INTERVALS.map((i) => (
                 <button
                   key={i.ms}
                   onClick={() => onIntervalChange(i.ms)}
-                  className={`px-2 py-1 text-2xs ${intervalMs === i.ms ? "bg-gray-200 font-semibold text-gray-800" : "text-gray-500 hover:text-gray-700"}`}
+                  className={`px-2 py-1 text-2xs ${intervalMs === i.ms ? "bg-raised font-semibold text-ink" : "text-muted hover:text-ink"}`}
                 >
                   {i.label}
                 </button>
@@ -412,7 +412,7 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
             <button
               onClick={() => void live.syncOnce(true, formConfig ?? undefined)}
               disabled={!formConfig || live.busy}
-              className="flex items-center gap-1.5 rounded border border-gray-300 bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600 hover:border-gray-400 disabled:opacity-50"
+              className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-muted hover:border-faint disabled:opacity-50"
             >
               {live.busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Sync now
@@ -427,9 +427,9 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
                 }
               }}
               disabled={!formConfig || !yahooReady}
-              className={`ml-auto flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
+              className={`ml-auto flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
                 live.running
-                  ? "border border-gray-300 bg-gray-50 text-gray-700 hover:border-gray-400"
+                  ? "border border-line bg-surface text-ink hover:border-faint"
                   : "border border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700"}`}
             >
               {live.running ? <><Pause className="h-3.5 w-3.5" /> Stop</> : <><Play className="h-3.5 w-3.5" /> Start watching</>}
@@ -437,27 +437,27 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
           </div>
 
           {live.error && (
-            <p className="flex items-start gap-1.5 rounded border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-2xs text-rose-700">
+            <p className="flex items-start gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-2xs text-rose-700">
               <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
               {live.error}
             </p>
           )}
 
           {res?.meta.last_error?.includes("timed out") && (
-            <div className="rounded border border-amber-200 bg-amber-50 px-2.5 py-2 text-2xs text-amber-900">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-2xs text-amber-900">
               <div className="font-medium text-amber-800 mb-1">Live sync is using REST fallback</div>
               <p>ESPN's multi-location login protection is preventing the live WebSocket connection. For best results, close your draft page or avoid clicking while syncing.</p>
             </div>
           )}
 
           {res && (
-            <div className="space-y-2 rounded border border-gray-200 bg-gray-100 px-2.5 py-2">
-              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-2xs text-gray-600">
-                <span className="font-medium text-gray-800">Pick {res.on_the_clock} on the clock</span>
+            <div className="space-y-2 rounded-lg border border-line bg-raised px-2.5 py-2">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-2xs text-muted">
+                <span className="font-medium text-ink">Pick {res.on_the_clock} on the clock</span>
                 <span>{res.meta.resolved ?? 0} of {res.meta.drafted ?? 0} picks read</span>
                 <span>{live.totalAdded} logged this session</span>
                 {live.lastSyncAt && (
-                  <span className="ml-auto font-mono text-gray-400">
+                  <span className="ml-auto font-mono text-faint">
                     {new Date(live.lastSyncAt).toLocaleTimeString()}
                   </span>
                 )}
@@ -482,18 +482,18 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
               )}
 
               {res.meta.lookup && res.meta.lookup.lookup_attempted ? (
-                <p className="text-2xs text-gray-400">
+                <p className="text-2xs text-faint">
                   roster view behind: looked up {res.meta.lookup.lookup_attempted}, found{" "}
                   {res.meta.lookup.lookup_found} (status {String(res.meta.lookup.lookup_status)})
                 </p>
               ) : null}
 
               {res.meta.teams_by_id && (
-                <details className="text-2xs text-gray-500">
-                  <summary className="cursor-pointer hover:text-gray-700">
+                <details className="text-2xs text-muted">
+                  <summary className="cursor-pointer hover:text-ink">
                     Debug: team ID mapping (for a wrong-team-assignment report)
                   </summary>
-                  <div className="mt-1 space-y-1 rounded border border-gray-200 bg-white p-1.5">
+                  <div className="mt-1 space-y-1 rounded-lg border border-line bg-white p-1.5">
                     <div>
                       <span className="font-medium">my_team_id:</span> {String(res.meta.my_team_id)}
                     </div>
@@ -520,10 +520,10 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
                 <div className="space-y-0.5">
                   {res.added.slice(-6).map((a) => (
                     <div key={a.overall} className="flex items-center gap-1.5 text-2xs">
-                      <span className="w-7 font-mono text-gray-400">#{a.overall}</span>
-                      <span className="truncate text-gray-700">{a.name}</span>
-                      <span className="font-mono text-gray-400">{a.pos}</span>
-                      <span className="ml-auto truncate text-gray-500">{a.owner ?? "—"}</span>
+                      <span className="w-7 font-mono text-faint">#{a.overall}</span>
+                      <span className="truncate text-ink">{a.name}</span>
+                      <span className="font-mono text-faint">{a.pos}</span>
+                      <span className="ml-auto truncate text-muted">{a.owner ?? "—"}</span>
                       {a.price != null && <span className="font-mono text-amber-700">${a.price}</span>}
                     </div>
                   ))}
@@ -531,7 +531,7 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
               )}
 
               {res.unmatched.length > 0 && (
-                <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-2xs text-amber-900">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-2xs text-amber-900">
                   <span className="font-medium">Not in the player pool ({res.unmatched.length})</span>
                   {" — "}{res.unmatched.slice(0, 6).join(", ")}
                   {res.unmatched.length > 6 ? "…" : ""}

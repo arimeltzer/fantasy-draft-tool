@@ -17,12 +17,12 @@ export default function EspnCredsNote({ className = "" }: { className?: string }
   if (!creds) return null;
   const when = new Date(creds.savedAt).toLocaleDateString();
   return (
-    <p className={`text-2xs text-gray-500 ${className}`}>
+    <p className={`text-2xs text-muted ${className}`}>
       Saved in this browser on {when} — reused for import, keepers and live sync.{" "}
       <button
         type="button"
         onClick={clearEspnCreds}
-        className="underline hover:text-gray-700"
+        className="underline hover:text-ink"
         title="Remove the stored espn_s2/SWID cookies from this browser"
       >
         Forget

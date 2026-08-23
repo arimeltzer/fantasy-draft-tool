@@ -167,40 +167,40 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-gray-50">
-      <header className="sticky top-0 z-10 border-b border-gray-200 bg-gray-50/95 backdrop-blur">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-surface">
+      <header className="sticky top-0 z-10 border-b border-line bg-surface/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3 px-4 py-3">
-          <ListOrdered className="h-5 w-5 text-gray-500" />
+          <ListOrdered className="h-5 w-5 text-muted" />
           <div>
             <h1 className="text-sm font-semibold leading-none tracking-tight">Draft order</h1>
-            <p className="mt-0.5 font-mono text-xs leading-none text-gray-500">
+            <p className="mt-0.5 font-mono text-xs leading-none text-muted">
               {teams} teams · {rounds} rounds · {teams * rounds} picks
               {tradedCount > 0 ? ` · ${tradedCount} traded` : ""}
             </p>
           </div>
-          <label className="ml-3 flex items-center gap-1.5 text-xs text-gray-500">
+          <label className="ml-3 flex items-center gap-1.5 text-xs text-muted">
             Rounds
             <input
               type="number" min={1} max={40} value={rounds}
               onChange={(e) => changeRounds(parseInt(e.target.value, 10))}
-              className="w-14 rounded border border-gray-300 bg-gray-50 px-1.5 py-0.5 text-right font-mono text-gray-700 focus:border-gray-400 focus:outline-none"
+              className="w-14 rounded-lg border border-line bg-surface px-1.5 py-0.5 text-right font-mono text-ink focus:border-faint focus:outline-none"
             />
           </label>
           <div className="ml-auto flex items-center gap-2 text-xs">
             <button
               onClick={resetAll}
-              className="flex items-center gap-1.5 rounded border border-gray-200 bg-gray-50 px-2.5 py-1.5 text-gray-600 hover:border-gray-300"
+              className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-muted hover:border-line"
               title="Undo every trade and return to plain serpentine order"
             >
               <RotateCcw className="h-3.5 w-3.5" /> Reset trades
             </button>
             <button
               onClick={save}
-              className="flex items-center gap-1.5 rounded border border-emerald-600 bg-emerald-600 px-3 py-1.5 font-medium text-white hover:bg-emerald-700"
+              className="flex items-center gap-1.5 rounded-lg border border-emerald-600 bg-emerald-600 px-3 py-1.5 font-medium text-white hover:bg-emerald-700"
             >
               <Check className="h-3.5 w-3.5" /> Save order
             </button>
-            <button onClick={onClose} className="rounded p-1.5 text-gray-500 hover:bg-gray-200" title="Close without saving">
+            <button onClick={onClose} className="rounded-lg p-1.5 text-muted hover:bg-hover" title="Close without saving">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -209,7 +209,7 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
 
       <div className="mx-auto max-w-7xl px-4 py-4 space-y-4">
         {warnings.length > 0 && (
-          <ul className="space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+          <ul className="space-y-1 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
             {warnings.map((w, i) => (
               <li key={i} className="flex items-start gap-1.5 text-xs text-amber-900">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
@@ -220,7 +220,7 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
         )}
 
         {renames.length > 0 && (
-          <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+          <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
             <span className="font-medium">Renaming on save:</span>{" "}
             {renames.map((r) => `${r.from} → ${r.to}`).join(" · ")}
             <span className="text-sky-700"> — seats, trades, keepers and the import all follow.</span>
@@ -228,9 +228,9 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
         )}
 
         {/* ── Base order: who drafts where in round 1 ─────────────── */}
-        <section className="rounded-lg border border-gray-200 bg-gray-100 p-3">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Round 1 order</h2>
-          <p className="mt-0.5 mb-2 text-xs text-gray-500">
+        <section className="rounded-xl border border-line bg-raised p-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">Round 1 order</h2>
+          <p className="mt-0.5 mb-2 text-xs text-muted">
             Each team's seat. Changing one swaps it with whoever sits there; the board below
             re-flows serpentine around it, and any trades you've made stay put.
             Click a name to rename that team — the new name follows its seat, trades and keepers.
@@ -238,7 +238,7 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
           <div className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
             {labels.slice().sort((a, b) => order[a] - order[b]).map((team) => (
               <div key={team} className="flex items-center gap-2 text-xs">
-                <span className="w-5 shrink-0 text-right font-mono text-gray-400">{order[team]}.</span>
+                <span className="w-5 shrink-0 text-right font-mono text-faint">{order[team]}.</span>
                 {editing === team ? (
                   <input
                     autoFocus
@@ -249,18 +249,18 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
                       if (e.key === "Enter") commitRename(team);
                       if (e.key === "Escape") setEditing(null);
                     }}
-                    className="min-w-0 flex-1 rounded border border-gray-400 bg-gray-50 px-1.5 py-0.5 text-gray-800 focus:border-gray-500 focus:outline-none"
+                    className="min-w-0 flex-1 rounded-lg border border-faint bg-surface px-1.5 py-0.5 text-ink focus:border-faint focus:outline-none"
                   />
                 ) : team === MY_TEAM ? (
                   // Your own team has no name to edit — it's always "You".
-                  <span className={`min-w-0 flex-1 truncate rounded border px-1.5 py-0.5 ${tintOf(team)}`}>
+                  <span className={`min-w-0 flex-1 truncate rounded-lg border px-1.5 py-0.5 ${tintOf(team)}`}>
                     You
                   </span>
                 ) : (
                   <button
                     onClick={() => { setEditing(team); setDraftName(team); }}
                     title={`Rename "${team}"`}
-                    className={`group flex min-w-0 flex-1 items-center gap-1 truncate rounded border px-1.5 py-0.5 text-left ${tintOf(team)} hover:brightness-95`}
+                    className={`group flex min-w-0 flex-1 items-center gap-1 truncate rounded-lg border px-1.5 py-0.5 text-left ${tintOf(team)} hover:brightness-95`}
                   >
                     <span className="truncate">{team}</span>
                     <Pencil className="ml-auto h-2.5 w-2.5 shrink-0 opacity-0 transition group-hover:opacity-60" />
@@ -269,7 +269,7 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
                 <select
                   value={order[team]}
                   onChange={(e) => setSlot(team, parseInt(e.target.value, 10))}
-                  className="w-16 rounded border border-gray-300 bg-gray-50 px-1 py-0.5 font-mono text-gray-700 focus:border-gray-400 focus:outline-none"
+                  className="w-16 rounded-lg border border-line bg-surface px-1 py-0.5 font-mono text-ink focus:border-faint focus:outline-none"
                 >
                   {Array.from({ length: teams }, (_, i) => i + 1).map((s) => (
                     <option key={s} value={s}>{s}</option>
@@ -281,10 +281,10 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
         </section>
 
         {/* ── The board ───────────────────────────────────────────── */}
-        <section className="rounded-lg border border-gray-200 bg-gray-100 p-3">
+        <section className="rounded-xl border border-line bg-raised p-3">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-gray-600">Every pick</h2>
-            <span className="rounded-full border border-gray-300 bg-gray-50 px-2 py-0.5 text-2xs text-gray-500">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">Every pick</h2>
+            <span className="rounded-full border border-line bg-surface px-2 py-0.5 text-2xs text-muted">
               click a pick to give it to another team
             </span>
           </div>
@@ -292,9 +292,9 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
             <table className="w-full border-separate border-spacing-0.5 text-2xs">
               <thead>
                 <tr>
-                  <th className="w-8 px-1 text-right font-mono font-normal text-gray-400">rd</th>
+                  <th className="w-8 px-1 text-right font-mono font-normal text-faint">rd</th>
                   {Array.from({ length: teams }, (_, i) => i + 1).map((s) => (
-                    <th key={s} className="px-1 pb-1 text-center font-normal text-gray-400">
+                    <th key={s} className="px-1 pb-1 text-center font-normal text-faint">
                       <div className="font-mono">{s}</div>
                     </th>
                   ))}
@@ -303,7 +303,7 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
               <tbody>
                 {Array.from({ length: rounds }, (_, r) => r + 1).map((round) => (
                   <tr key={round}>
-                    <td className="px-1 text-right align-middle font-mono text-gray-400">{round}</td>
+                    <td className="px-1 text-right align-middle font-mono text-faint">{round}</td>
                     {Array.from({ length: teams }, (_, i) => i + 1).map((col) => {
                       // Column = draft seat. In even rounds the seat that picks
                       // first is the last one, so the pick number runs backwards.
@@ -316,9 +316,9 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
                         <td key={col} className="relative p-0 align-top">
                           <button
                             onClick={() => setSelected(open ? null : pick)}
-                            className={`w-full rounded border px-1 py-1 text-left leading-tight transition
-                              ${tintOf(owner)} ${traded ? "ring-1 ring-gray-900/40" : ""}
-                              ${open ? "ring-2 ring-gray-900" : ""} hover:brightness-95`}
+                            className={`w-full rounded-lg border px-1 py-1 text-left leading-tight transition
+                              ${tintOf(owner)} ${traded ? "ring-1 ring-ink/40" : ""}
+                              ${open ? "ring-2 ring-ink" : ""} hover:brightness-95`}
                             title={traded
                               ? `Pick ${pick} (${pickLabel(pick, teams)}) — traded from ${nameOf(base[pick])} to ${nameOf(owner)}`
                               : `Pick ${pick} (${pickLabel(pick, teams)}) — ${nameOf(owner)}`}
@@ -331,8 +331,8 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
                           </button>
 
                           {open && (
-                            <div className="absolute left-0 top-full z-20 mt-1 w-44 rounded-lg border border-gray-300 bg-gray-50 p-1 shadow-lg">
-                              <div className="px-1.5 py-1 text-2xs text-gray-500">
+                            <div className="absolute left-0 top-full z-20 mt-1 w-44 rounded-xl border border-line bg-surface p-1 shadow-lg">
+                              <div className="px-1.5 py-1 text-2xs text-muted">
                                 Pick {pick} · {pickLabel(pick, teams)} → give to
                               </div>
                               <div className="max-h-56 overflow-y-auto">
@@ -340,8 +340,8 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
                                   <button
                                     key={team}
                                     onClick={() => assign(pick, team)}
-                                    className={`flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs hover:bg-gray-200
-                                      ${team === owner ? "font-semibold text-gray-900" : "text-gray-600"}`}
+                                    className={`flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left text-xs hover:bg-hover
+                                      ${team === owner ? "font-semibold text-ink" : "text-muted"}`}
                                   >
                                     <span className={`h-2 w-2 shrink-0 rounded-full border ${tintOf(team)}`} />
                                     <span className="truncate">{nameOf(team)}</span>
@@ -352,7 +352,7 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
                               {traded && (
                                 <button
                                   onClick={() => resetPick(pick)}
-                                  className="mt-1 flex w-full items-center gap-1.5 border-t border-gray-200 px-1.5 pt-1.5 text-xs text-gray-500 hover:text-gray-800"
+                                  className="mt-1 flex w-full items-center gap-1.5 border-t border-line px-1.5 pt-1.5 text-xs text-muted hover:text-ink"
                                 >
                                   <RotateCcw className="h-3 w-3" /> back to {nameOf(base[pick])}
                                 </button>
@@ -370,19 +370,19 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
         </section>
 
         {/* ── Who ends up with what ───────────────────────────────── */}
-        <section className="rounded-lg border border-gray-200 bg-gray-100 p-3">
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-600">Picks by team</h2>
+        <section className="rounded-xl border border-line bg-raised p-3">
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted">Picks by team</h2>
           <div className="space-y-1">
             {labels.slice().sort((a, b) => order[a] - order[b]).map((team) => {
               const mine = team === MY_TEAM;
               const list = held[team] ?? [];
               return (
-                <div key={team} className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded px-1.5 py-1 text-xs ${mine ? "bg-emerald-50" : ""}`}>
-                  <span className={`w-36 shrink-0 truncate ${mine ? "font-semibold text-gray-800" : "text-gray-600"}`}>
+                <div key={team} className={`flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg px-1.5 py-1 text-xs ${mine ? "bg-emerald-50" : ""}`}>
+                  <span className={`w-36 shrink-0 truncate ${mine ? "font-semibold text-ink" : "text-muted"}`}>
                     {nameOf(team)}
                   </span>
-                  <span className="w-8 shrink-0 font-mono text-gray-400">{list.length}</span>
-                  <span className="min-w-0 flex-1 font-mono text-2xs text-gray-500">
+                  <span className="w-8 shrink-0 font-mono text-faint">{list.length}</span>
+                  <span className="min-w-0 flex-1 font-mono text-2xs text-muted">
                     {list.map((p) => {
                       const traded = owners[p] !== base[p];
                       return (
@@ -396,7 +396,7 @@ export default function DraftOrderBoard({ settings, onSave, onClose, onRenames }
               );
             })}
           </div>
-          <p className="mt-2 text-2xs text-gray-400">
+          <p className="mt-2 text-2xs text-faint">
             * acquired by trade. Keeper costs and the pick clock use these lists.
           </p>
         </section>

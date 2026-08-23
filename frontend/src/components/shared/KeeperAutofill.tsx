@@ -185,7 +185,7 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
   const selCount = rows.filter((r) => r.selectable && sel.has(r.i)).length;
 
   return (
-    <div className="mt-3 rounded-lg border border-line bg-raised/40">
+    <div className="mt-3 rounded-xl border border-line bg-raised/40">
       <button
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-muted hover:text-ink"

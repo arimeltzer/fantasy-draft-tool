@@ -17,7 +17,7 @@ const TONE: Record<InjuryInfo["severity"], string> = {
   out: "border-rose-600 bg-rose-600 text-white",
   doubtful: "border-rose-300 bg-rose-50 text-rose-700",
   questionable: "border-amber-300 bg-amber-50 text-amber-800",
-  note: "border-gray-300 bg-gray-100 text-gray-600",
+  note: "border-line bg-raised text-muted",
 };
 
 export default function InjuryBadge({ injury }: { injury: InjuryInfo | null | undefined }) {
@@ -33,7 +33,7 @@ export default function InjuryBadge({ injury }: { injury: InjuryInfo | null | un
     <span
       title={detail}
       aria-label={`Injury: ${detail}`}
-      className={`shrink-0 rounded border px-1 text-2xs font-semibold leading-tight ${TONE[injury.severity] ?? TONE.note}`}
+      className={`shrink-0 rounded-md border px-1.5 py-px text-2xs font-bold leading-tight ${TONE[injury.severity] ?? TONE.note}`}
     >
       {label}
     </span>

@@ -48,17 +48,17 @@ const STAGES: Stage[] = [
 export default function Methodology() {
   const nav = useNavigate();
   return (
-    <div className="min-h-screen bg-gray-50 px-4 py-8">
+    <div className="min-h-screen bg-paper px-4 py-10 font-sans">
       <div className="max-w-2xl mx-auto">
         <button
           onClick={() => (window.history.length > 1 ? nav(-1) : nav("/"))}
-          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-600 mb-6"
+          className="flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-ink mb-6"
         >
           <ArrowLeft className="w-3.5 h-3.5" /> Back
         </button>
 
-        <h1 className="text-lg font-semibold tracking-tight">How projections are built</h1>
-        <p className="text-sm text-gray-500 mt-1 mb-8">
+        <h1 className="text-xl font-extrabold tracking-tight text-ink">How projections are built</h1>
+        <p className="text-sm text-muted mt-1 mb-8">
           Hovering the projected-points number ("Proj") on any player row shows the exact waterfall
           below for that player — only the stages that actually changed their number, in the order
           they ran. This page explains what each stage does and when it fires. Every stage is
@@ -68,22 +68,22 @@ export default function Methodology() {
 
         <div className="space-y-5">
           {STAGES.map((s, i) => (
-            <div key={s.label} className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+            <div key={s.label} className="rounded-2xl border border-line bg-surface px-4 py-3.5 shadow-card">
               <div className="flex items-baseline gap-2">
-                <span className="text-xs font-mono text-gray-400">{i + 1}</span>
+                <span className="text-xs font-mono text-faint">{i + 1}</span>
                 <h2 className="font-medium text-sm">{s.label}</h2>
               </div>
-              <p className="text-xs text-gray-500 font-mono mt-1">{s.when}</p>
-              <p className="text-sm text-gray-600 mt-2 leading-relaxed">{s.what}</p>
+              <p className="text-xs text-muted font-mono mt-1">{s.when}</p>
+              <p className="text-sm text-muted mt-2 leading-relaxed">{s.what}</p>
             </div>
           ))}
         </div>
 
         <h2 className="text-sm font-semibold tracking-tight mt-10">Other columns</h2>
         <div className="space-y-3 mt-3">
-          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+          <div className="rounded-2xl border border-line bg-surface px-4 py-3.5 shadow-card">
             <h3 className="font-medium text-sm">VBD</h3>
-            <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+            <p className="text-sm text-muted mt-1 leading-relaxed">
               Value Based Drafting: projected points above a replacement-level player at the same
               position — a bench/waiver-wire fill-in. Computed LAST, after every stage above has
               finished adjusting the projection, from wherever that leaves each position's
@@ -91,35 +91,35 @@ export default function Methodology() {
               alternative of just leaving that roster spot to the waiver wire.
             </p>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+          <div className="rounded-2xl border border-line bg-surface px-4 py-3.5 shadow-card">
             <h3 className="font-medium text-sm">$Par / $Live (auction)</h3>
-            <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+            <p className="text-sm text-muted mt-1 leading-relaxed">
               $Par is the player's fair auction price before the draft starts — the league's total
               budget split among draftable players in proportion to VBD. $Live reprices that par
               value for how the room is actually spending: if teams have overpaid so far, the
               remaining players are worth more (inflation), and vice versa.
             </p>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+          <div className="rounded-2xl border border-line bg-surface px-4 py-3.5 shadow-card">
             <h3 className="font-medium text-sm">Tier</h3>
-            <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+            <p className="text-sm text-muted mt-1 leading-relaxed">
               Players in the same tier at a position are roughly interchangeable in value; a new
               tier number means a real drop-off, a useful cue for when it's worth reaching versus
               waiting.
             </p>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+          <div className="rounded-2xl border border-line bg-surface px-4 py-3.5 shadow-card">
             <h3 className="font-medium text-sm">'25 pace</h3>
-            <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+            <p className="text-sm text-muted mt-1 leading-relaxed">
               Last season's scoring pace projected over a full season — a reality check next to the
               projection, not an input to it. "no '25" means the player has no usable prior-season
               stats (rookie, or missed the season), which is also why their base model projection
               leans on market rank instead of a pace blend.
             </p>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-white px-4 py-3">
+          <div className="rounded-2xl border border-line bg-surface px-4 py-3.5 shadow-card">
             <h3 className="font-medium text-sm">mkt +/-</h3>
-            <p className="text-sm text-gray-600 mt-1 leading-relaxed">
+            <p className="text-sm text-muted mt-1 leading-relaxed">
               How many spots this tool ranks the player above (+) or below (−) expert consensus.
               Positive means the market likes them more than we do (they'll cost extra); negative
               is a potential bargain the market is sleeping on.

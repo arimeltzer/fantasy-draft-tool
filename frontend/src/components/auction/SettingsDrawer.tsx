@@ -66,22 +66,22 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
 
   const numField = (label: string, value: number, onChange: (v: number) => void, step = 1) => (
     <label key={label} className="flex items-center justify-between gap-2 text-xs">
-      <span className="text-gray-500">{label}</span>
+      <span className="text-muted">{label}</span>
       <input
         type="number"
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-        className="w-20 px-2 py-1 rounded bg-gray-50 border border-gray-300 text-right font-mono text-gray-700 focus:outline-none focus:border-gray-400"
+        className="w-20 px-2 py-1 rounded-lg bg-surface border border-line text-right font-mono text-ink focus:outline-none focus:border-faint"
       />
     </label>
   );
 
   return (
-    <div className="border-b border-gray-200 bg-gray-50">
+    <div className="border-b border-line bg-surface">
       <div className="max-w-6xl mx-auto px-4 py-4 grid sm:grid-cols-3 gap-5">
         <div className="space-y-2">
-          <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">
+          <h3 className="text-xs uppercase tracking-wider text-muted font-semibold">
             {isAuction ? "Auction" : "League"}
           </h3>
           {numField("Teams", local.teams, (v) => set({ teams: v }))}
@@ -90,7 +90,7 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
           {isAuction && numField("Budget / team ($)", local.budget, (v) => set({ budget: v }))}
           {numField("Points / reception", local.ppr, (v) => set({ ppr: v }), 0.5)}
           <label className="flex items-center justify-between gap-2 text-xs">
-            <span className="text-gray-500">Superflex</span>
+            <span className="text-muted">Superflex</span>
             <input
               type="checkbox"
               checked={local.superflex}
@@ -100,7 +100,7 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
           </label>
           <label className="flex items-center justify-between gap-2 text-xs">
             <Tip tip="Pulls projections toward expert consensus order for players the market ranks, and leaves the rest to the model. Backtested 2017–2025, this ranked the full board better than the model alone at every position. Turn it off only if this pool has no ADP/ECR data.">
-              <span className="text-gray-500">Anchor to market ranks</span>
+              <span className="text-muted">Anchor to market ranks</span>
             </Tip>
             <input
               type="checkbox"
@@ -112,7 +112,7 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
           {isAuction && (
             <label className="flex items-center justify-between gap-2 text-xs">
               <Tip tip="Adjusts predicted auction PRICES for how your league actually spends, learned from the prior-season draft you imported for keepers. Does nothing until that history exists, and never changes your own $Value — the gap between the two is the bargain signal.">
-                <span className="text-gray-500">Calibrate prices to this league</span>
+                <span className="text-muted">Calibrate prices to this league</span>
               </Tip>
               <input
                 type="checkbox"
@@ -125,20 +125,20 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
           {local.marketAnchor !== false && (
             <label className="flex items-center justify-between gap-2 text-xs">
               <Tip tip="How much of YOUR model survives the anchor. 1 = ignore the market, 0 = follow it exactly. 0.3 is the backtested optimum and the curve is flat from about 0.2 to 0.5, so small changes here matter little.">
-                <span className="text-gray-500 pl-3">↳ model weight</span>
+                <span className="text-muted pl-3">↳ model weight</span>
               </Tip>
               <input
                 type="number" min={0} max={1} step={0.1}
                 value={local.marketAnchorWeight ?? 0.3}
                 onChange={(e) => set({ marketAnchorWeight: Math.min(1, Math.max(0, Number(e.target.value))) })}
-                className="w-16 px-2 py-1 rounded bg-gray-50 border border-gray-300 text-right font-mono text-xs"
+                className="w-16 px-2 py-1 rounded-lg bg-surface border border-line text-right font-mono text-xs"
               />
             </label>
           )}
         </div>
 
         <div className="space-y-2">
-          <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Roster (per team)</h3>
+          <h3 className="text-xs uppercase tracking-wider text-muted font-semibold">Roster (per team)</h3>
           {(["QB","RB","WR","TE","FLEX","K","DST","BENCH"] as const).map((k) =>
             numField(k, local.roster[k] ?? 0, (v) => setRoster(k, v))
           )}
@@ -148,7 +148,7 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
           {/* Draft slot / pick order only mean something in a snake draft. */}
           {!isAuction && (
             <>
-              <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Your draft slot</h3>
+              <h3 className="text-xs uppercase tracking-wider text-muted font-semibold">Your draft slot</h3>
               {numField("Draft slot", local.draftSlot ?? 1, (v) => set({ draftSlot: v }))}
 
               {/* Traded picks are authored on the draft-order board, where the
@@ -156,13 +156,13 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
                   pick numbers, which meant doing the arithmetic by hand. */}
               {onOpenDraftOrder && (
                 <>
-                  <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold pt-2">Draft order</h3>
-                  <p className="text-xs text-gray-400 leading-snug">
+                  <h3 className="text-xs uppercase tracking-wider text-muted font-semibold pt-2">Draft order</h3>
+                  <p className="text-xs text-faint leading-snug">
                     Everyone's seat and every pick in the draft, including any that were traded.
                   </p>
                   <button
                     onClick={onOpenDraftOrder}
-                    className="flex w-full items-center justify-center gap-1.5 rounded border border-gray-300 bg-gray-50 px-2 py-1.5 text-xs text-gray-600 hover:border-gray-400 hover:text-gray-800"
+                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-muted hover:border-faint hover:text-ink"
                   >
                     <ListOrdered className="h-3.5 w-3.5" />
                     Open draft order
@@ -178,8 +178,8 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
             </>
           )}
 
-          <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold pt-2">Opponent teams</h3>
-          <p className="text-xs text-gray-400 leading-snug">
+          <h3 className="text-xs uppercase tracking-wider text-muted font-semibold pt-2">Opponent teams</h3>
+          <p className="text-xs text-faint leading-snug">
             One name per line{isAuction ? " (for budget tracking)" : ""}. Leave blank to auto-name.
           </p>
           <textarea
@@ -190,7 +190,7 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
               setOppText(e.target.value);
               set({ opponents: parseOpponents(e.target.value) });
             }}
-            className="w-full px-2 py-1 rounded bg-gray-50 border border-gray-300 font-mono text-xs text-gray-700 focus:outline-none focus:border-gray-400"
+            className="w-full px-2 py-1 rounded-lg bg-surface border border-line font-mono text-xs text-ink focus:outline-none focus:border-faint"
           />
         </div>
       </div>
@@ -303,12 +303,12 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
       </div>
 
       <div className="max-w-6xl mx-auto px-4 pb-3 flex items-center justify-between">
-        <button onClick={onClose} className="flex items-center gap-1 text-gray-500 hover:text-gray-600 text-xs">
+        <button onClick={onClose} className="flex items-center gap-1 text-muted hover:text-ink text-xs">
           <X className="w-3.5 h-3.5" /> Cancel
         </button>
         <button
           onClick={() => { save(); onClose(); }}
-          className="text-xs px-3 py-1.5 rounded bg-amber-50 border border-amber-300 text-amber-700 hover:bg-amber-100"
+          className="text-xs px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-300 text-amber-700 hover:bg-amber-100"
         >
           Save settings
         </button>

@@ -207,7 +207,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
 
         {report ? (
           <div className="space-y-3">
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
               <div className="flex items-center gap-2 font-medium">
                 <Check className="h-4 w-4" /> Imported {report.teams} teams
               </div>
@@ -222,7 +222,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
               </div>
             </div>
             {report.team_names && report.team_names.length > 0 && (
-              <div className="rounded-lg border border-line bg-sunken p-3">
+              <div className="rounded-xl border border-line bg-sunken p-3">
                 <div className="mb-1 text-2xs font-semibold uppercase tracking-wide text-faint">
                   Opponent teams imported
                 </div>
@@ -230,12 +230,12 @@ export default function ImportLeagueModal({ onClose }: Props) {
               </div>
             )}
             {report.scoring_note && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                 {report.scoring_note}
               </div>
             )}
             {pasteReport && Object.keys(pasteReport.draft_slots).length > 0 && (
-              <div className="rounded-lg border border-line bg-sunken p-3 text-2xs text-muted">
+              <div className="rounded-xl border border-line bg-sunken p-3 text-2xs text-muted">
                 <div className="mb-1 font-semibold uppercase tracking-wide text-faint">
                   Draft order (from round 1)
                 </div>
@@ -248,7 +248,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
               </div>
             )}
             {pasteReport && pasteReport.warnings.length > 0 && (
-              <ul className="space-y-1 rounded-lg border border-line bg-sunken p-3">
+              <ul className="space-y-1 rounded-xl border border-line bg-sunken p-3">
                 {pasteReport.warnings.map((w, i) => (
                   <li key={i} className="flex items-start gap-1.5 text-2xs text-muted">
                     <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" /> {w}
@@ -257,7 +257,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
               </ul>
             )}
             {report.players_unmatched > 0 && (
-              <div className="rounded-lg border border-line bg-sunken p-3">
+              <div className="rounded-xl border border-line bg-sunken p-3">
                 <div className="mb-1 flex items-center gap-1.5 text-2xs font-semibold uppercase tracking-wide text-faint">
                   <AlertTriangle className="h-3 w-3 text-amber-500" /> Unmatched (left off the board)
                 </div>
@@ -279,7 +279,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
                 <button
                   key={p}
                   onClick={() => setProvider(p)}
-                  className={`flex-1 rounded-lg border py-2 text-sm font-medium capitalize transition-colors ${
+                  className={`flex-1 rounded-xl border py-2 text-sm font-medium capitalize transition-colors ${
                     provider === p ? "border-brand bg-brand/10 text-brand" : "border-line bg-surface text-muted hover:bg-raised"
                   }`}
                 >
@@ -300,7 +300,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
                   {showPrivate ? "Hide" : "Private league? Add cookies"}
                 </button>
                 {showPrivate && (
-                  <div className="space-y-3 rounded-lg border border-line bg-sunken p-3">
+                  <div className="space-y-3 rounded-xl border border-line bg-sunken p-3">
                     <p className="text-2xs text-faint">Copy from a logged-in espn.com browser session (DevTools → Application → Cookies).</p>
                     <Field label="espn_s2"><input className="field font-mono text-xs" value={espnS2} onChange={(e) => setEspnS2(e.target.value)} /></Field>
                     <Field label="SWID"><input className="field font-mono text-xs" value={swid} onChange={(e) => setSwid(e.target.value)} placeholder="{XXXX-...}" /></Field>
@@ -310,7 +310,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
               </>
             ) : yahooMode === "paste" ? (
               <div className="space-y-3">
-                <p className="rounded-lg border border-line bg-sunken px-3 py-2 text-2xs leading-snug text-muted">
+                <p className="rounded-xl border border-line bg-sunken px-3 py-2 text-2xs leading-snug text-muted">
                   Yahoo's API needs developer access they no longer reliably grant (it fails with
                   <span className="font-mono"> 401 Unauthorized</span>). This path needs no credentials —
                   open your league's pages, select all, copy, paste here.
@@ -341,7 +341,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
                 </Field>
               </div>
             ) : !accessToken ? (
-              <div className="space-y-2 rounded-lg border border-line bg-sunken p-3">
+              <div className="space-y-2 rounded-xl border border-line bg-sunken p-3">
                 <button onClick={() => setYahooMode("paste")} className="w-full text-left text-2xs text-brand hover:underline">
                   ← No API access? Import by pasting your league pages instead
                 </button>
@@ -362,7 +362,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                <div className="flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
                   <Check className="h-3.5 w-3.5" /> Yahoo connected
                 </div>
                 {yahooList.length > 0 ? (
@@ -394,7 +394,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
               <Field label="Name (optional)"><input className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="keep imported" /></Field>
             </div>
 
-            <label className="flex items-start gap-2 rounded-lg border border-line bg-sunken px-3 py-2 text-xs text-muted">
+            <label className="flex items-start gap-2 rounded-xl border border-line bg-sunken px-3 py-2 text-xs text-muted">
               <input type="checkbox" checked={seedRosters} onChange={(e) => setSeedRosters(e.target.checked)} className="mt-0.5 h-4 w-4 accent-brand" />
               <span>
                 <span className="font-medium text-ink">Load rosters onto the draft board</span>
@@ -406,7 +406,7 @@ export default function ImportLeagueModal({ onClose }: Props) {
             </label>
 
             {error && (
-              <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>
+              <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-600">{error}</p>
             )}
 
             <button onClick={submit} disabled={!canSubmit || loading} className="btn-brand w-full py-2.5">

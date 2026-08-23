@@ -17,12 +17,12 @@ export default function ProjTip({ steps, value }: { steps: ProjBreakdownStep[] |
   }
   const tip = (
     <div className="space-y-1">
-      <div className="font-medium text-gray-700">How this projection was built</div>
+      <div className="font-medium text-ink">How this projection was built</div>
       {steps.map((s, i) => (
         <div key={i}>
-          <span className="text-gray-500">{i === 0 ? "" : "→ "}{s.label}: </span>
+          <span className="text-muted">{i === 0 ? "" : "→ "}{s.label}: </span>
           <span className="font-mono">{s.value}pt</span>
-          {s.detail && <div className="text-gray-400">{s.detail}</div>}
+          {s.detail && <div className="text-faint">{s.detail}</div>}
         </div>
       ))}
     </div>

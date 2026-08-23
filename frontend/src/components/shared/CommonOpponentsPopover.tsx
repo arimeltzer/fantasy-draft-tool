@@ -42,7 +42,7 @@ export default function CommonOpponentsPopover({ playerId, season = 2026 }: Prop
       <button
         ref={btnRef}
         onClick={toggle}
-        className="text-gray-500 hover:text-gray-600 p-0.5"
+        className="text-muted hover:text-ink p-0.5"
         title="Common opponents (2025 → 2026)"
       >
         <Info className="w-3.5 h-3.5" />
@@ -50,29 +50,29 @@ export default function CommonOpponentsPopover({ playerId, season = 2026 }: Prop
 
       {open && pos && (
         <div
-          className="fixed z-50 w-64 max-h-72 overflow-y-auto rounded-lg border border-gray-300 bg-gray-50 shadow-xl p-3"
+          className="fixed z-50 w-64 max-h-72 overflow-y-auto rounded-xl border border-line bg-surface shadow-xl p-3"
           style={{ top: pos.top, left: pos.left }}
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Common Opponents</span>
-            <button onClick={() => setOpen(false)}><X className="w-3.5 h-3.5 text-gray-500" /></button>
+            <span className="text-xs uppercase tracking-wider text-muted font-semibold">Common Opponents</span>
+            <button onClick={() => setOpen(false)}><X className="w-3.5 h-3.5 text-muted" /></button>
           </div>
 
-          {isLoading && <div className="text-xs text-gray-500 py-2">Loading…</div>}
+          {isLoading && <div className="text-xs text-muted py-2">Loading…</div>}
 
           {data && (
             <>
               {data.count === 0 ? (
-                <div className="text-xs text-gray-500 py-2">No 2025 overlap with 2026 schedule.</div>
+                <div className="text-xs text-muted py-2">No 2025 overlap with 2026 schedule.</div>
               ) : (
                 <>
-                  <div className="text-xs text-gray-500 mb-2 font-mono">
+                  <div className="text-xs text-muted mb-2 font-mono">
                     {data.count} {data.count === 1 ? "game" : "games"} · avg {data.avgFp} fp
                   </div>
                   <div className="space-y-1">
                     {data.games.map((g) => (
                       <div key={g.opp + g.week} className="flex items-center justify-between text-xs">
-                        <span className="font-mono text-gray-600">vs {g.opp}</span>
+                        <span className="font-mono text-muted">vs {g.opp}</span>
                         <span className="font-mono text-emerald-600">{g.fp2025.toFixed(1)}</span>
                       </div>
                     ))}

@@ -68,19 +68,19 @@ export default function AavPasteImport({ settings, onSave, onClose, season = CUR
   };
 
   return (
-    <div className="border-b border-gray-200 bg-gray-50">
+    <div className="border-b border-line bg-surface">
       <div className="max-w-6xl mx-auto px-4 py-4 space-y-3">
         <div className="flex items-center gap-2">
-          <ClipboardPaste className="w-4 h-4 text-gray-500" />
-          <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">
+          <ClipboardPaste className="w-4 h-4 text-muted" />
+          <h3 className="text-xs uppercase tracking-wider text-muted font-semibold">
             Real auction values — paste from FantasyPros
           </h3>
-          <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} className="ml-auto text-faint hover:text-muted">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <p className="text-xs text-gray-500 leading-snug max-w-2xl">
+        <p className="text-xs text-muted leading-snug max-w-2xl">
           FantasyPros' API has no auction-values endpoint, but the site's auction values cheat sheet can be
           copied out as text. Copy the whole table (one player per line — rank, name, position, points, $
           value) and paste it below. Nothing is saved until you review the match and apply it, and it only
@@ -105,14 +105,14 @@ export default function AavPasteImport({ settings, onSave, onClose, season = CUR
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder={"1.\tJahmyr Gibbs (DET - RB)\t302\t$63\n2.\tPuka Nacua (LAR - WR)DTD\t223\t$61\n..."}
-          className="w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 font-mono text-2xs text-gray-700 focus:outline-none focus:border-amber-500"
+          className="w-full rounded-md border border-line bg-white px-2 py-1.5 font-mono text-2xs text-ink focus:outline-none focus:border-amber-500"
         />
 
         <div className="flex items-center gap-2">
           <button
             onClick={preview}
             disabled={loading || !text.trim()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 disabled:opacity-50"
           >
             {loading && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             Preview match
@@ -120,7 +120,7 @@ export default function AavPasteImport({ settings, onSave, onClose, season = CUR
           {result && !applied && result.matched > 0 && (
             <button
               onClick={apply}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700"
             >
               Apply {result.matched} value{result.matched === 1 ? "" : "s"} to this league
             </button>
@@ -139,12 +139,12 @@ export default function AavPasteImport({ settings, onSave, onClose, season = CUR
         )}
 
         {result && (
-          <div className="rounded-md border border-gray-200 bg-white px-2.5 py-2 text-2xs text-gray-600 space-y-1">
+          <div className="rounded-md border border-line bg-white px-2.5 py-2 text-2xs text-muted space-y-1">
             <div>
               Parsed {result.parsed} rows · matched {result.matched} · unmatched {result.unmatched}
             </div>
             {result.unmatchedNames.length > 0 && (
-              <div className="flex items-start gap-1.5 text-gray-500">
+              <div className="flex items-start gap-1.5 text-muted">
                 <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0 text-amber-500" />
                 <span>Not found in this season's pool: {result.unmatchedNames.join(", ")}</span>
               </div>
