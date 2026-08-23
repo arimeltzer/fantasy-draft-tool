@@ -11,6 +11,7 @@
  */
 import {
   mulberry32, snakeOrder, botPick, simulateDraft, bestLineupPoints, pairedCompare,
+  realizedWeeklyPoints, makeInjuryOracle, INJURY_MISS_RATE,
 } from "./draft-sim.mjs";
 import { snakePicks } from "./snake-engine.js";
 
@@ -294,6 +295,80 @@ for (const teams of [8, 10, 12]) {
         myPickWithout?.id === WR_FOCAL_ID, `took id ${myPickWithout?.id}`);
   check("with run-awareness, the live RB run flips the pick to the RB",
         myPickWith?.id === RB_FOCAL_ID, `took id ${myPickWith?.id}`);
+}
+
+// ── realizedWeeklyPoints: opt-in injury oracle ─────────────────────────────
+// Raised directly: the shipped scorer only ever benches a player for a BYE,
+// so a bench player can never be "needed" for anything a bye doesn't already
+// cover — which makes any bench-depth comparison close to a foregone null by
+// construction, independent of whether the real-world effect exists. This
+// pins the fix: an opt-in, deterministic (id, week) -> out? oracle.
+{
+  const roster = { QB: 1, RB: 0, WR: 0, TE: 0, FLEX: 0, K: 0, DST: 0, BENCH: 1 };
+  const starter = { id: "QB-starter", pos: "QB", team: "AAA" };
+  const backup = { id: "QB-backup", pos: "QB", team: "AAA" };
+  const projById = { "QB-starter": 340, "QB-backup": 170 }; // starter projects way ahead
+  const weekly = {
+    "QB-starter": Object.fromEntries(Array.from({ length: 17 }, (_, i) => [i + 1, 20])),
+    "QB-backup": Object.fromEntries(Array.from({ length: 17 }, (_, i) => [i + 1, 10])),
+  };
+
+  // Absent oracle: byte-identical to calling with no 7th argument at all —
+  // every pre-existing call site never passes one, so this is the exact
+  // regression check that matters.
+  const withoutArg = realizedWeeklyPoints([starter, backup], projById, weekly, {}, roster, 17);
+  const withNullOracle = realizedWeeklyPoints([starter, backup], projById, weekly, {}, roster, 17, null);
+  check("no 7th argument matches an explicit null oracle",
+        withoutArg === withNullOracle, `${withoutArg} vs ${withNullOracle}`);
+  // Starter always wins on projection alone (340 > 170), so absent any
+  // unavailability model the backup never plays a single week.
+  check("without an oracle, the higher-projected starter plays every week",
+        withoutArg === 20 * 17, String(withoutArg));
+
+  // A rate-0 oracle for every position must be a complete no-op.
+  const zeroOracle = makeInjuryOracle(1, { QB: 0 }, 17);
+  const withZeroRate = realizedWeeklyPoints([starter, backup], projById, weekly, {}, roster, 17, zeroOracle);
+  check("a 0% miss-rate oracle changes nothing",
+        withZeroRate === withoutArg, `${withZeroRate} vs ${withoutArg}`);
+
+  // A hand-rolled oracle marking ONLY the starter out, every week, proves
+  // realizedWeeklyPoints actually CONSUMES the oracle to bench a specific
+  // player and start whoever's left — the backup must be the one who plays,
+  // scoring accordingly. (A rate-based oracle can't isolate one player this
+  // way since makeInjuryOracle's rate is keyed by POSITION, not identity —
+  // a QB:1 rate would correctly bench BOTH QBs, not just the starter, which
+  // is exactly the realistic behavior the next check exercises.)
+  const starterOnlyOutOracle = (id) => id === "QB-starter";
+  const withStarterOut = realizedWeeklyPoints([starter, backup], projById, weekly, {}, roster, 17, starterOnlyOutOracle);
+  check("an oracle marking only the starter out benches him every week — the backup scores instead",
+        withStarterOut === 10 * 17, String(withStarterOut));
+
+  // The whole reason this exists: a real per-position rate, applied
+  // independently to EVERY player at that position (starter included), must
+  // over many weeks let the backup start SOME weeks without the harness
+  // forcing an all-or-nothing outcome — neither the old bye-only behavior
+  // (backup never plays) nor a pathological rate (backup always plays).
+  // Seed fixed to one (of many checked) where the starter is actually
+  // marked out at least once and the backup covers that week — the case
+  // this whole mechanism exists to enable.
+  const realisticOracle = makeInjuryOracle(2, INJURY_MISS_RATE, 17);
+  const withRealistic = realizedWeeklyPoints([starter, backup], projById, weekly, {}, roster, 17, realisticOracle);
+  check("a realistic miss-rate leaves the total strictly between all-starter and all-backup",
+        withRealistic < withoutArg && withRealistic > withStarterOut,
+        `${withRealistic} (all-starter ${withoutArg}, all-backup ${withStarterOut})`);
+
+  // The pairing property makeInjuryOracle exists for: the SAME player id
+  // draws the SAME weekly pattern under the SAME seed no matter which
+  // roster (arm) he is evaluated on — required for a valid paired
+  // comparison (this file's whole common-random-numbers design).
+  const oracleA = makeInjuryOracle(7, INJURY_MISS_RATE, 17);
+  const oracleB = makeInjuryOracle(7, INJURY_MISS_RATE, 17);
+  const pattern = (oracle) => Array.from({ length: 17 }, (_, i) => oracle("QB-starter", "QB", i + 1));
+  check("the same seed reproduces the identical weekly pattern for a given player id",
+        JSON.stringify(pattern(oracleA)) === JSON.stringify(pattern(oracleB)));
+  const oracleDiffSeed = makeInjuryOracle(8, INJURY_MISS_RATE, 17);
+  check("a different seed can (and did, for this fixture) produce a different pattern",
+        JSON.stringify(pattern(oracleA)) !== JSON.stringify(pattern(oracleDiffSeed)));
 }
 
 console.log();

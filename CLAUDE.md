@@ -1435,6 +1435,37 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   prior against this clearing the bar too, not asserted as a foregone
   conclusion either way. See `docs/ROADMAP.md` 3.6f-snake for the
   pre-registration and result once run.
+- **A design-issue objection to BOTH 3.6f gates, raised directly and
+  confirmed correct: "bench players by definition won't move the needle
+  much [in the harness], but [bench depth] provides the injury protection
+  we skipped. If you randomized injuries to starters, I'll bet we would
+  see a different result."** Checked against the actual scorer, not
+  assumed: `realizedWeeklyPoints` benches a rostered player for exactly
+  one reason, a BYE — the lineup is otherwise set by static season
+  projection, so a bench player can NEVER start because a starter got
+  hurt. Since bye coverage is already priced separately, any bench-depth
+  comparison run on this harness is close to a foregone null by
+  construction — a null there is not evidence the real-world effect is
+  absent. **Precondition checked first** (same discipline as
+  `injury_probe.py`/0.3, and exactly roadmap 3.6b's own named blocking
+  precondition — "does nflverse distinguish started vs inactive at the
+  player level"): checked directly against `nflreadpy
+  .load_player_stats()`, 2019-2024 — real weekly OUT rates among startable
+  players (a zero-stat-line week that isn't a bye) are QB 5.2%, RB 10.1%,
+  WR 7.7%, TE 8.5% (1,983-4,980 player-weeks each), matching the known
+  RB-misses-most/QB-misses-least NFL pattern. `draft-sim.mjs
+  realizedWeeklyPoints` gained an optional `injuryOracle` argument (`
+  makeInjuryOracle(seed, missRateByPos, weeks)`, `INJURY_MISS_RATE` holds
+  the real rates) — absent by default, byte-identical to every existing
+  call site (2.4, 3.9, both plain 3.6f gates). ONE oracle is built per
+  gate run and shared across every roster scored in it — load-bearing:
+  the same real player must draw the SAME weekly pattern on whichever
+  arm's roster he lands on, or the draws themselves would inject noise
+  the paired-comparison design can't tell apart from the treatment.
+  `auction-depth-mult-injury-test.mjs` / `snake-bench-depth-injury-test.mjs`
+  re-run the EXACT already-decided 3.6f/3.6f-snake comparisons under this
+  oracle — robustness checks, not new gates, same bar for comparability.
+  See `docs/ROADMAP.md` 3.6f-injury-check for the full writeup and result.
 
 ## Frontend visual refresh (shipped, both rooms and every page)
 

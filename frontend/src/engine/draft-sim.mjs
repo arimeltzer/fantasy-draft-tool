@@ -252,6 +252,57 @@ export function bestLineupPoints(rosterPlayers, pointsById, roster) {
   return +total.toFixed(1);
 }
 
+// Deterministic per-(seed, id) draw stream, one uniform[0,1) value per week.
+// A weekly-injury draw needs to depend ONLY on the player and the seed, not
+// on which roster he's being evaluated in or where he sits in that array —
+// otherwise the same real player could roll a DIFFERENT "out" pattern in the
+// treatment arm than in the control arm of a paired comparison, which would
+// inject noise unrelated to whatever the two arms actually differ on. That
+// breaks the common-random-numbers design this whole file is built around
+// (see the file header). Folding the id into the seed via a cheap string
+// hash, then running mulberry32 from the combined seed, gives exactly that:
+// the same (seed, id) always produces the same week-by-week stream, however
+// many different rosters that id happens to appear on across a run.
+function injuryDraws(seed, id, weeks) {
+  let h = (seed >>> 0) ^ 0x9e3779b9;
+  const s = String(id);
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0;
+  const rng = mulberry32(h >>> 0);
+  const draws = [];
+  for (let w = 0; w < weeks; w++) draws.push(rng());
+  return draws;
+}
+
+// Real weekly OUT rate among STARTABLE players (top 20 QB/TE, top 40 RB, top
+// 50 WR by season PPR points — roughly the startable depth of a 10-team
+// league), 2019-2024 nflverse `load_player_stats`: a player counted as
+// "missed" a week his team did NOT have a bye and he recorded zero stat
+// lines that week (can't separate injury from a healthy scratch from this
+// data alone — both are "the bench had to cover him", which is the only
+// thing that matters here). n = 1,983 QB / 3,967 RB / 4,980 WR / 1,984 TE
+// player-weeks. K/DST were not in this pull (no clean "startable" pool
+// concept for either) and default to 0 — untested, not asserted safe.
+export const INJURY_MISS_RATE = { QB: 0.052, RB: 0.101, WR: 0.077, TE: 0.085, K: 0, DST: 0 };
+
+/**
+ * Builds a reusable, deterministic (seed, missRateByPos) -> per-(player,
+ * week) OUT oracle. Build ONE of these per gate run and hand it to every
+ * `realizedWeeklyPoints` call in that run (both arms, every roster) — that
+ * is what guarantees a shared real player draws the identical weekly
+ * pattern everywhere he appears. Memoizes per player id since the same
+ * player is typically scored many times (multiple seeds/slots reuse ids
+ * across a full gate sweep).
+ */
+export function makeInjuryOracle(seed = 1, missRateByPos = INJURY_MISS_RATE, weeks = 17) {
+  const cache = new Map();
+  return (id, pos, week) => {
+    let draws = cache.get(id);
+    if (!draws) { draws = injuryDraws(seed, id, weeks); cache.set(id, draws); }
+    const rate = missRateByPos[pos] || 0;
+    return draws[week - 1] < rate;
+  };
+}
+
 /**
  * REALIZED weekly-lineup points — roadmap 2.4's scorer.
  *
@@ -266,11 +317,21 @@ export function bestLineupPoints(rosterPlayers, pointsById, roster) {
  * behaviour under test. Setting by projection is also what a manager
  * actually does on Sunday morning.
  *
- * KNOWN LIMITATION, stated because it bounds what the gate can conclude: the
- * only unavailability modelled is a BYE. A player who was injured or inactive
- * is still started and simply scores his real 0. That understates the value
- * of bench depth in general — but it applies identically to both arms, so it
- * does not bias the comparison, only its magnitude.
+ * INJURY-AWARE, OPT-IN (`injuryOracle`, see `makeInjuryOracle` above).
+ * ABSENT — the default, and every caller before this — the ONLY
+ * unavailability modelled is a BYE, and a player who was actually injured
+ * or inactive that week is still started and simply scores his real 0.
+ * That was flagged here as understating bench depth's value "but applying
+ * identically to both arms, so not biasing the comparison" — true as far
+ * as it goes, but incomplete for a comparison that is SPECIFICALLY about
+ * whether extra bench depth is worth drafting: with unavailability limited
+ * to byes, a bench player can NEVER be needed for anything byes don't
+ * already cover, so any such comparison is close to a foregone conclusion
+ * by construction, not genuine evidence the real-world effect is absent.
+ * Raised directly (with the correct diagnosis) after 3.6f's gate came back
+ * null — see docs/ROADMAP.md 3.6f-injury-check. Passing an oracle built
+ * from real per-position weekly OUT rates (`INJURY_MISS_RATE`) gives bench
+ * depth an actual, calibrated chance to be needed.
  *
  * @param rosterPlayers drafted roster, each {id, pos, team}
  * @param projById      projected SEASON points, for setting the lineup
@@ -278,9 +339,11 @@ export function bestLineupPoints(rosterPlayers, pointsById, roster) {
  * @param byeByTeam     {TEAM: bye week | null}
  * @param roster        slot config
  * @param weeks         weeks to score (default 17)
+ * @param injuryOracle  optional (id, pos, week) => out?, from makeInjuryOracle()
  */
 export function realizedWeeklyPoints(
   rosterPlayers, projById, weeklyActual, byeByTeam, roster, weeks = 17,
+  injuryOracle = null,
 ) {
   const byeOf = (p) => (p.team && byeByTeam ? byeByTeam[p.team] ?? null : null);
   // Per-week PROJECTION drives the start/sit decision. Divide by weeks
@@ -294,7 +357,8 @@ export function realizedWeeklyPoints(
 
   let total = 0;
   for (let week = 1; week <= weeks; week++) {
-    const avail = rosterPlayers.filter((p) => byeOf(p) !== week);
+    const avail = rosterPlayers.filter((p) =>
+      byeOf(p) !== week && !(injuryOracle && injuryOracle(p.id, p.pos, week)));
     const byPos = {};
     for (const p of avail) (byPos[p.pos] ||= []).push(p);
     // Sorted by PROJECTION — never by what actually happened.

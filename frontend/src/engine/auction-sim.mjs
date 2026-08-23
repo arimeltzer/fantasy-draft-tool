@@ -376,9 +376,14 @@ export function pairedCompareAuction({
   // supplied together (real byes need real weekly outcomes to score
   // against); absent, scoring is the original bestLineupPoints, unchanged.
   weeklyActual, byeByTeam, weeks = 17,
+  // 3.6f-injury-check — optional (id, pos, week) => out? from
+  // draft-sim.mjs's makeInjuryOracle(). Only meaningful alongside
+  // weeklyActual/byeByTeam; ignored otherwise (bestLineupPoints has no
+  // week-by-week concept to apply it to).
+  injuryOracle = null,
 }) {
   const scoreOf = (weeklyActual && byeByTeam)
-    ? (rosterPlayers) => realizedWeeklyPoints(rosterPlayers, pointsById, weeklyActual, byeByTeam, roster, weeks)
+    ? (rosterPlayers) => realizedWeeklyPoints(rosterPlayers, pointsById, weeklyActual, byeByTeam, roster, weeks, injuryOracle)
     : (rosterPlayers) => bestLineupPoints(rosterPlayers, pointsById, roster);
 
   const rows = [];

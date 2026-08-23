@@ -1,0 +1,95 @@
+name: Bench-depth injury-aware robustness check (roadmap 3.6f-injury-check)
+
+# Manual. NOT a new pre-registered kill gate — a robustness check on 3.6f's
+# and 3.6f-snake's ALREADY-DECIDED comparisons, re-scored with a randomized
+# starter-injury model instead of the plain bye-only harness.
+#
+# THE ISSUE: realizedWeeklyPoints only ever benches a rostered player for a
+# BYE, so a bench player can never be needed for anything a bye doesn't
+# already cover (and byes are priced separately). Any bench-depth comparison
+# run on that harness is close to a foregone null by construction. Raised
+# directly by the user after 3.6f's auction gate came back null.
+#
+# THE FIX: draft-sim.mjs's realizedWeeklyPoints takes an optional
+# injuryOracle (makeInjuryOracle), calibrated to REAL weekly absence rates
+# among startable players (nflverse load_player_stats, 2019-2024). Both the
+# auction ("treatment-depth", dead code kept specifically for this) and
+# snake (benchDepth opt-in, never shipped) sides are re-run under it.
+#
+# Needs FANTASYPROS_API_KEY: the opponent bots draft by that season's real
+# ADP. Without it they draft by our own model and both arms face a
+# strawman that shares our biases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      first:
+        description: "First season"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated drafts/auctions per slot per season per scenario"
+        required: false
+        default: "10"
+        type: string
+      slots:
+        description: "Draft slots to test (comma-separated)"
+        required: false
+        default: "1,4,7,10"
+        type: string
+
+jobs:
+  bench-depth-injury-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      - name: budget-path selftest (benchDepthMult itself)
+        run: node frontend/src/engine/budget-path.selftest.mjs
+      - name: draft-sim selftest (injuryOracle mechanism)
+        run: node frontend/src/engine/draft-sim.selftest.mjs
+      - name: snake-engine selftest (benchDepthAware opt-in)
+        run: node frontend/src/engine/snake-engine.selftest.mjs
+      - name: auction-sim selftest (treatment-depth mode)
+        run: node frontend/src/engine/auction-sim.selftest.mjs
+
+      - name: Export boards + realized weekly outcomes + byes
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Run the auction-side injury-aware re-test
+        run: |
+          node frontend/src/engine/auction-depth-mult-injury-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --seeds ${{ inputs.seeds }} \
+            --slots ${{ inputs.slots }} | tee data-pipeline/results/auction_depth_mult_injury_test.txt
+
+      - name: Run the snake-side injury-aware re-test
+        run: |
+          node frontend/src/engine/snake-bench-depth-injury-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --seeds ${{ inputs.seeds }} \
+            --slots ${{ inputs.slots }} | tee data-pipeline/results/snake_bench_depth_injury_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-depth-injury-check
+          path: |
+            data-pipeline/results/auction_depth_mult_injury_test.txt
+            data-pipeline/results/snake_bench_depth_injury_test.txt

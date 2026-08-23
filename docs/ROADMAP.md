@@ -2999,6 +2999,97 @@ as every gate in this phase.** Workflow:
 
 **RESULT: pending — awaiting the GitHub Actions run.**
 
+**3.6f-injury-check — a design-issue objection to BOTH 3.6f gates above,
+raised directly and confirmed correct.** Quoted in full because the
+diagnosis is exactly right: "bench players by definition won't move the
+needle much [in the harness], but [bench depth] provides the injury
+protection we skipped. If you randomized injuries to starters, I'll bet we
+would see a different result."
+
+**THE GAP, confirmed by reading the scorer.** `realizedWeeklyPoints` (every
+3.6f-family gate's scoring function, and 2.4/3.9's before it) sets each
+week's `avail` roster as `byeOf(p) !== week` — the ONLY unavailability
+modeled is a BYE. The lineup itself is chosen by static SEASON projection,
+never by anything week-specific beyond that. So a bench player can be
+started for exactly one reason: a same-position starter is on a bye THAT
+week. He can never be started because a starter got hurt, benched, or
+otherwise missed a game — that path simply does not exist in the harness.
+Since bye coverage is ALREADY priced separately (`byeLineupMult`/
+`byeClash`), the marginal contribution `benchDepthMult` is being tested
+against is close to zero BY CONSTRUCTION, independent of whether the
+real-world effect it claims (injury insurance) exists. The function's own
+docstring already flagged half of this — "the only unavailability modelled
+is a BYE... understates the value of bench depth... but applies identically
+to both arms, so it does not bias the comparison, only its magnitude" — but
+that framing undersells it for THIS specific comparison: it's not simply
+smaller in magnitude, the harness cannot express the effect at all, so a
+null here is not evidence the real-world effect is absent.
+
+**PRECONDITION CHECKED FIRST, not assumed** (same discipline `injury_probe.py`
+established for roadmap 0.3, and exactly what roadmap 3.6b already named as
+its own blocking precondition: "does nflverse distinguish started vs
+inactive at the player level"). Checked directly against `nflreadpy
+.load_player_stats()`, 2019-2024, REG season only: for the STARTABLE pool
+per position per season (top 20 QB, top 40 RB, top 50 WR, top 20 TE by
+season PPR points — roughly a 10-team league's startable depth), a player
+counted as "missed" a week if his team did NOT have a bye and he recorded
+ZERO stat lines that week (can't separate injury from a healthy scratch
+from this data alone — both are "the bench had to cover him," which is all
+that matters here). Real, measured weekly OUT rates:
+
+| position | weekly OUT rate | player-weeks (n) |
+|---|---|---|
+| QB | 5.2% | 1,983 |
+| RB | 10.1% | 3,967 |
+| WR | 7.7% | 4,980 |
+| TE | 8.5% | 1,984 |
+
+Matches known NFL injury patterns (RBs miss the most, QBs the fewest) —
+not asserted blind, sanity-checked against that prior.
+
+**THE FIX.** `draft-sim.mjs realizedWeeklyPoints` gained an optional 7th
+argument, `injuryOracle` — absent by default, so every existing call site
+(2.4, 3.9, both plain 3.6f gates above) is byte-identical to before.
+`makeInjuryOracle(seed, missRateByPos, weeks)` returns a deterministic
+`(id, pos, week) => out?` function; `INJURY_MISS_RATE` holds the real rates
+above (K/DST default 0 — not in the startable-pool pull, not asserted
+safe). Built ONE oracle per gate run and shared across every roster
+scored in that run — load-bearing for the pairing to stay valid: the same
+real player must draw the SAME weekly pattern whichever arm's roster he
+lands on, or the injury draws themselves would inject noise unrelated to
+the treatment under test (the exact common-random-numbers discipline this
+whole file is built around). `draft-sim.selftest.mjs` pins the contract:
+absent/null-oracle regression safety, a hand-rolled oracle correctly
+benches a targeted player and starts whoever's left, and a realistic-rate
+run lands strictly between the all-starter and all-backup bounds.
+`pairedCompareAuction` (auction-sim.mjs) threads the same oracle through
+to its own `realizedWeeklyPoints` call.
+
+**TWO re-test scripts, NOT new pre-registered gates in their own right —
+robustness checks on the two comparisons already decided above, same bar
+(mean/SE > 2 per bucket) for comparability:**
+- `auction-depth-mult-injury-test.mjs` — re-runs 3.6f's exact comparison
+  (`"treatment"` vs `"treatment-depth"`, the mode kept as dead code in
+  `auction-sim.mjs` specifically so this could run without re-adding
+  anything to `AuctionRoom.tsx`) with the injury oracle applied.
+- `snake-bench-depth-injury-test.mjs` — re-runs 3.6f-snake's exact
+  comparison (`benchDepth` on/off) the same way.
+
+Workflow: `.github/workflows/bench-depth-injury-check.yml` (runs both).
+
+**RESULT: pending — awaiting the GitHub Actions run.** Read honestly
+either way: clearing the bar here means the plain-harness null WAS an
+artifact and the underlying claim deserves a real re-evaluation (possibly
+un-reverting 3.6f, and/or wiring 3.6f-snake); still null under real
+injury rates means the gap the user identified, real as it is, was not
+in fact where THIS effect's absence comes from — a genuine finding either
+way, not a foregone conclusion baked into building the check.
+
+> **Prompt** — "do we have a design issue in the testing? bench players by
+> definition won't move the needle much. but this provides the injury
+> protection we skipped. if you randomized injuries to starters, I'll bet
+> we would see a different result."
+
 > **Prompt** — "Check whether draft-sim.mjs's auction simulator can score
 > bye-week-specific lineup completeness (3.6a), and separately run
 > injury_probe-style verification of nflverse's player-level started/inactive
