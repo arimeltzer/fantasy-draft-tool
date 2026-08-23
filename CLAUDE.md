@@ -1426,15 +1426,28 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   no-op) and the mechanism (a 5th RB with zero WR scores below the
   flag-off baseline; the same 5th RB scores higher, though still below
   baseline, once WR reaches its own capacity; QB/TE are untouched since
-  `FLEX_SIBLING` only maps RB↔WR). **NOT wired into `SnakeRoom.tsx`** —
-  gated via `snake-bench-depth-test.mjs` (paired comparison,
-  `realizedWeeklyPoints`, stratified over the bot-`temperature` knob as
-  the snake-side analogue of calm/early-overspend) BEFORE any such wiring
-  is considered, precisely because the auction side's gate came back
-  negative for the identical underlying claim and constants — a real
-  prior against this clearing the bar too, not asserted as a foregone
-  conclusion either way. See `docs/ROADMAP.md` 3.6f-snake for the
-  pre-registration and result once run.
+  `FLEX_SIBLING` only maps RB↔WR). Gated via `snake-bench-depth-test.mjs`
+  (paired comparison, `realizedWeeklyPoints`, stratified over the
+  bot-`temperature` knob as the snake-side analogue of calm/
+  early-overspend) BEFORE any wiring into `SnakeRoom.tsx` was considered —
+  precisely because the auction side's gate came back negative for the
+  identical underlying claim and constants, a real prior against this
+  clearing the bar too.
+- **RESULT: FAILED both buckets — WORSE than shipped, not merely null,
+  never wired.** 864 paired drafts (12 seeds x 4 slots x 9 seasons x 2
+  scenarios): calm mean/SE **-10.14** (-29.14 pts, only 12/432 wins),
+  chaotic mean/SE **-6.80** (-18.65 pts, 13/432 wins) — every one of 18
+  season/scenario cells individually negative. A materially worse result
+  than the auction side's near-zero null. **Likely mechanism** (consistent
+  with the result, not separately isolated): the auction's discount only
+  changes the PRICE paid for a player — you can still win him, just for
+  less, so a wrong discount mostly reallocates spend. `needMult`'s
+  identical discount instead lands on the SELECTION score that decides
+  which player gets drafted next — a genuinely valuable 5th RB can score
+  below a worse alternative at another position and get skipped outright,
+  directly corrupting roster construction rather than shifting cash. Never
+  wired into `SnakeRoom.tsx`, and per this result, never should be with
+  these constants. See `docs/ROADMAP.md` 3.6f-snake for the full numbers.
 - **A design-issue objection to BOTH 3.6f gates, raised directly and
   confirmed correct: "bench players by definition won't move the needle
   much [in the harness], but [bench depth] provides the injury protection
@@ -1465,7 +1478,25 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   `auction-depth-mult-injury-test.mjs` / `snake-bench-depth-injury-test.mjs`
   re-run the EXACT already-decided 3.6f/3.6f-snake comparisons under this
   oracle — robustness checks, not new gates, same bar for comparability.
-  See `docs/ROADMAP.md` 3.6f-injury-check for the full writeup and result.
+- **RESULT: both sides confirm their plain-harness verdicts — the design
+  gap was real, but it is not where either effect's absence or harm comes
+  from.** Auction, injury-aware: calm mean/SE **+0.83** (flipped sign from
+  the plain run's -0.08, still nowhere near the bar), early-overspend
+  **-0.31** (was -0.33) — still indistinguishable from noise over 3,600
+  injury-aware paired auctions with real per-position OUT rates giving
+  bench depth many genuine chances to be needed. Snake, injury-aware: calm
+  **-10.29** (was -10.14), chaotic **-7.00** (was -6.80) — still decisively
+  WORSE, at essentially the SAME magnitude as the plain-harness result;
+  injuries didn't rescue it even slightly, consistent with the mechanism
+  theory above — the harm comes from the roster already being built wrong
+  by draft's end, which giving bench players more chances to play in the
+  SCORING step does nothing to fix. **The user's hypothesis was worth
+  testing and the reasoning was correct** — the harness genuinely could
+  not see injury-insurance value before this fix — **but the empirical
+  answer is that neither 3.6f result was actually caused by that gap.**
+  Both stay unshipped exactly as already decided; `injuryOracle` itself is
+  a real, validated addition to the harness, kept for any future gate that
+  needs it. See `docs/ROADMAP.md` 3.6f-injury-check for the full numbers.
 
 ## Frontend visual refresh (shipped, both rooms and every page)
 

@@ -2942,7 +2942,7 @@ status for the reasoning. 3.6a is buildable with no precondition risk;
 Neither is blocking anything the user has actually asked for at this point.
 
 **3.6f-snake — porting the same concept to the SNAKE recommender — GATE
-BUILT, RESULT PENDING.** Requested in the same message that authorized the
+RUN, FAILED DECISIVELY, NOT WIRED.** Requested in the same message that authorized the
 3.6f auction gate ("we will also want to transfer a same roster
 construction concept to snake drafts"). Built CORRECTLY from the start,
 unlike the auction side: opt-in and gated BEFORE any wiring into
@@ -2997,7 +2997,35 @@ same way a real auction room's does. **Bar: mean/SE > 2 per bucket, same
 as every gate in this phase.** Workflow:
 `.github/workflows/snake-bench-depth-test.yml`.
 
-**RESULT: pending — awaiting the GitHub Actions run.**
+**RESULT: FAILED both buckets — WORSE than shipped, not merely null.** Run
+2026-08-23 (github.com/arimeltzer/fantasy-draft-tool/actions/runs/32644154646),
+12 seeds x 4 slots x 9 seasons x 2 scenarios = 864 paired drafts:
+
+| bucket | mean diff | SE | mean/SE | wins |
+|---|---|---|---|---|
+| calm | -29.14 pts | 2.87 | **-10.14** | 12/432 |
+| chaotic | -18.65 pts | 2.74 | **-6.80** | 13/432 |
+
+This is a materially DIFFERENT result from the auction side's near-zero
+null — a large, confidently negative effect (only 12-13 of 432 drafts won
+in each bucket), every one of the 18 season/scenario cells individually
+negative. **The likely mechanism, not separately isolated but consistent
+with how the two engines consume the same multiplier differently:** in
+the auction, `benchDepthMult` only discounts the PRICE ceiling — a
+discounted player can still be WON, just for less money, so a wrong
+discount mostly reallocates spend rather than roster quality. In
+`needMult`, the identical discount lands on the SELECTION SCORE that
+decides which player gets drafted next — a real, still-valuable 5th RB
+can score below a clearly worse alternative at another position and get
+skipped outright, directly corrupting roster construction rather than
+just shifting cash. Consistent with the direction (not the auction's
+"basically inert"): suppressing a used-for-DRAFTING score is a much
+sharper lever than suppressing a price. Not wired into `SnakeRoom.tsx`,
+and per this result, never should be with these constants — `needMult`'s
+`depthAware`/`siblingHave` parameters and `benchDepthMult` itself stay in
+the codebase (the auction side, `3.6f-injury-check` below, and any future
+re-tuned attempt all still use the shared function), but the opt-in flag
+is never set by the shipped room.
 
 **3.6f-injury-check — a design-issue objection to BOTH 3.6f gates above,
 raised directly and confirmed correct.** Quoted in full because the
@@ -3077,13 +3105,41 @@ robustness checks on the two comparisons already decided above, same bar
 
 Workflow: `.github/workflows/bench-depth-injury-check.yml` (runs both).
 
-**RESULT: pending — awaiting the GitHub Actions run.** Read honestly
-either way: clearing the bar here means the plain-harness null WAS an
-artifact and the underlying claim deserves a real re-evaluation (possibly
-un-reverting 3.6f, and/or wiring 3.6f-snake); still null under real
-injury rates means the gap the user identified, real as it is, was not
-in fact where THIS effect's absence comes from — a genuine finding either
-way, not a foregone conclusion baked into building the check.
+**RESULT: BOTH sides confirm their plain-harness verdicts — the design
+gap was real, but it is not where either effect's absence (auction) or
+harm (snake) comes from.** Run 2026-08-23
+(github.com/arimeltzer/fantasy-draft-tool/actions/runs/32644871827), same
+seeds/slots as each plain gate, real per-position injury rates applied:
+
+| | bucket | plain-harness mean/SE | injury-aware mean/SE |
+|---|---|---|---|
+| auction | calm | -0.08 | **+0.83** |
+| auction | early-overspend | -0.33 | **-0.31** |
+| snake | calm | -10.14 | **-10.29** |
+| snake | chaotic | -6.80 | **-7.00** |
+
+**Auction: still indistinguishable from noise** — even flipping sign in
+the calm bucket (+0.83), nowhere close to the >2 bar in either. Randomizing
+starter unavailability gave bench depth many real chances to be needed
+(QB 5.2%/RB 10.1%/WR 7.7%/TE 8.5% weekly, over 3,600 injury-aware paired
+auctions) and the discount's price impact still didn't move realized
+outcomes. **Snake: still decisively WORSE, at essentially the same
+magnitude as the plain-harness result** (calm -10.29 vs -10.14, chaotic
+-7.00 vs -6.80) — injuries didn't rescue it even slightly, consistent
+with the mechanism theory above: the harm comes from suppressing a
+SELECTION score and causing worse picks outright, a failure mode that
+giving bench players more chances to play does nothing to fix, because
+the roster was already built wrong by the time any week is scored.
+
+**The user's hypothesis was worth testing and the reasoning behind it was
+correct — the harness genuinely could not see injury-insurance value
+before this fix — but the empirical answer is that neither 3.6f result
+was actually caused by that gap.** Both stay unshipped: `AuctionRoom.tsx`
+remains reverted to its pre-3.6f pricing (already done), and
+`benchDepthAware` remains unset by `SnakeRoom.tsx` (never was set). The
+`injuryOracle` mechanism itself is a real, validated addition to the
+harness — kept in `draft-sim.mjs` for any future gate that needs it,
+independent of this particular result.
 
 > **Prompt** — "do we have a design issue in the testing? bench players by
 > definition won't move the needle much. but this provides the injury
