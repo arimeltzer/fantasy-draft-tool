@@ -1328,6 +1328,45 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     different one appearing under more samples. Shipped as the default;
     `firstBackupBoost` and `atCap` are unchanged.
 
+## Frontend visual refresh (shipped, both rooms and every page)
+
+- A full "card-forward" restyle: warmer palette (`tailwind.config.ts`'s
+  `paper`/`surface`/`raised`/`line`/`ink`/`muted`/`faint`/`gold` tokens
+  retinted, token NAMES unchanged so every existing class repaints for
+  free), JetBrains Mono for numerics, rounded-2xl cards, solid-color
+  position badges, pill-shaped header/filter/action controls. Started as a
+  Claude Design canvas mockup (two sketched directions, "card-forward"
+  chosen over "refined terminal"), then built into the real app: both
+  rooms' headers/board rows/side panels, `BoardControls`, and every
+  remaining page/modal (mechanical `gray-*` → semantic-token sweep +
+  radius bump, `Login`/`LeagueList` hand-restyled in full since they're
+  the first screens a user sees).
+- **A real live bug, not caught by any existing test: the auction room's
+  "Nominated" badge appeared to swallow the player name — reported as
+  "only happens full screen, fixed when I make the window smaller."**
+  That direction is the opposite of ordinary responsive truncation (more
+  width usually means MORE room), which is what made it worth actually
+  reproducing rather than guessing: built a static repro from the
+  compiled Tailwind bundle and screenshotted it with Playwright at both
+  widths. The real cause is the 3-column main grid
+  (`lg:grid-cols-[280px_minmax(0,1fr)]` →
+  `xl:grid-cols-[280px_minmax(0,1fr)_300px]`): crossing the `xl` (1280px)
+  breakpoint ADDS a fixed 300px right rail while the whole page stays
+  capped at `max-w-[1400px]` — so the center board column gets
+  **narrower**, not wider, exactly at "full screen" on a display wide
+  enough to clear `xl`. A "smaller" window below `xl` drops the right
+  rail and hands the center column all the remaining space instead.
+  Repro confirmed a real player-name row over-truncates (`Chri…`) at the
+  narrower `xl` width and shows far more (`Christopher W…`) just below
+  it, with the exact same content. Fixed by letting the name+badge line
+  wrap (`flex-wrap` on the row it lives in, both rooms) instead of
+  forcing the "Nominated"/tier badges and the player name onto one
+  unbreakable line — badges flow to a second line under pressure, the
+  name gets whatever room is left on the first, and `truncate`/`min-w-0`
+  on the name span stay as a safety net for a name that still doesn't
+  fit alone. Verified against the real compiled CSS bundle, not a
+  from-scratch approximation, before shipping the fix.
+
 ## Gotchas
 
 - Auth uses `bcrypt` directly (NOT passlib — breaks on Python 3.13).

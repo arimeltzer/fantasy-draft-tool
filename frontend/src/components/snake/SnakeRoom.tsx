@@ -568,7 +568,7 @@ const PlayerRow = memo(function PlayerRow({
                     </span>
 
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         {mine && <Crown className="w-3 h-3 text-emerald-600 shrink-0" />}
                         <span className="font-semibold truncate">{p.name}</span>
                         <InjuryBadge injury={p.injury} />

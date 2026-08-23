@@ -714,14 +714,14 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                     </span>
 
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         {nominatedNow && (
-                          <span className="flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-2xs font-medium text-amber-800" title="Currently up for auction in your live draft">
+                          <span className="flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-2xs font-medium text-amber-800 shrink-0" title="Currently up for auction in your live draft">
                             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" /> Nominated
                           </span>
                         )}
                         {pickEntry?.mine && <Crown className="w-3 h-3 text-gold shrink-0" />}
-                        <span className="font-semibold truncate">{p.name}</span>
+                        <span className="font-semibold truncate min-w-0 shrink">{p.name}</span>
                         <InjuryBadge injury={p.injury} />
                         <span className="font-mono text-xs text-faint">{p.team}</span>
                         {p.tier && <span className="text-2xs font-mono font-bold bg-raised border border-line px-1.5 py-0.5 rounded-md text-muted" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
