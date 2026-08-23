@@ -964,6 +964,21 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   projection the rest of the board already trusts (the ADP/ECR curve
   1.4 tried and failed to beat). A tooltip says so, so the numbers
   aren't mistaken for a stats-based measurement they can't be.
+- **Reported live: "over broad — pulling in defenses and kickers."**
+  `BoardPlayer.rookie` means "no `last`/`last2` to project from," which is
+  the right signal for VALUATION (it drives risk and gates the expert
+  blend) but is broader than "rookie" in the sense a drafter means when
+  clicking this filter. A DST hits the same no-stats branch every year for
+  reasons that have nothing to do with being a rookie — it's a standing
+  team-level entity, there is no such thing as a rookie defense — and a
+  statless K is almost always a journeyman cycling rosters, not the rare
+  true rookie kicker. `engine-core.js isRookieFilterMatch(player)` narrows
+  it to `rookie && pos !== "K" && pos !== "DST"`, re-exported through both
+  `auction-engine.js`/`snake-engine.js` (the "convenience re-export"
+  pattern already used for `rankByAdp` etc.) and used by both rooms' filter
+  predicate AND their rookie count — display-only, `BoardPlayer.rookie`
+  itself and everything downstream of it (risk, `blendExpertAll`'s skip)
+  is untouched.
 
 ## Outcome distributions (built + validated, roadmap 2.1 — NOT wired in)
 

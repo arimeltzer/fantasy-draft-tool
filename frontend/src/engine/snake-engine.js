@@ -15,7 +15,7 @@ import { byeClash } from "./bye-weeks.js";
 export {
   DEFAULT_PARAMS, SCORING_PRESETS, DEFAULT_SCORING, defaultScoring, resolveScoring,
   points, ageMultiplier, projectPoints, projectValue, replacementRanks, valueBoard,
-  rankByAdp,
+  rankByAdp, isRookieFilterMatch,
 } from "./engine-core.js";
 
 /* ------------------------------------------------------------------ *

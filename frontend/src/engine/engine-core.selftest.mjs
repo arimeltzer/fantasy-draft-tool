@@ -6,6 +6,7 @@ import {
   DEFAULT_SCORING, defaultScoring, resolveScoring, points, projectValue, valueBoard,
   marketAnchor, finalizeBoard, blendExpert, blendExpertAll, EXPERT_BLEND_W,
   injuryMultiplier, applyInjuryDiscount, INJURY_K, INJURY_GAMES_MISSED,
+  isRookieFilterMatch,
 } from "./engine-core.js";
 
 let pass = 0, fail = 0;
@@ -96,6 +97,23 @@ ok(projected > deepEcr, "a real projection overrides the rank curve");
 const rookieRow = valueBoard([rookie("WR", { ecr: 20 })],
   { teams: 12, roster: { QB:1,RB:2,WR:2,TE:1,FLEX:1,K:1,DST:1,BENCH:6 } }, standard)[0];
 ok(rookieRow.risk >= 0.2, "rookie risk is flagged, not treated as a known quantity");
+
+/* ── isRookieFilterMatch: the board's "rookies only" filter is narrower
+ *    than the `rookie` flag itself. Reported live: the filter was "over
+ *    broad — pulling in defenses and kickers." A statless K/DST hits the
+ *    same rookie:true fallback as a real rookie (no last-season data to
+ *    project from), but neither is actually a rookie in the sense the
+ *    filter means — a DST is a standing team unit, and a statless K is
+ *    almost always a journeyman, not the rare true rookie kicker. ────── */
+ok(isRookieFilterMatch({ pos: "RB", rookie: true }), "a statless RB matches the rookies filter");
+ok(isRookieFilterMatch({ pos: "QB", rookie: true }), "a statless QB matches the rookies filter");
+ok(isRookieFilterMatch({ pos: "WR", rookie: true }), "a statless WR matches the rookies filter");
+ok(isRookieFilterMatch({ pos: "TE", rookie: true }), "a statless TE matches the rookies filter");
+ok(!isRookieFilterMatch({ pos: "K", rookie: true }), "a statless K does NOT match — journeyman, not a rookie");
+ok(!isRookieFilterMatch({ pos: "DST", rookie: true }), "a statless DST does NOT match — no such thing as a rookie defense");
+ok(!isRookieFilterMatch({ pos: "RB", rookie: false }), "a veteran never matches regardless of position");
+ok(!isRookieFilterMatch({ pos: "RB" }), "a missing rookie flag is treated as false, not a match");
+
 /* ── market anchor ────────────────────────────────────────────────────────
    Ported from projection_backtest.blend_with_market; `anchor_parity.py`
    asserts the two stay numerically identical. These cover the STRUCTURAL

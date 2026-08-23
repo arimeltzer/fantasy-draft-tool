@@ -5,6 +5,7 @@ import {
   auctionValues, applyInflation, maxBid,
   dollarValues, marketPrice, nominationScore, nominationPhase, suggestBid, rankByAdp,
 } from "@/engine/auction-engine.js";
+import { isRookieFilterMatch } from "@/engine/auction-engine.js";
 import type { BoardPlayer } from "@/engine/auction-engine.js";
 import { LeagueSettings, ApiLeague } from "@/lib/api";
 import {
@@ -279,7 +280,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     const base = inflation.board.filter((p) => {
       if (hideDrafted && draftedIds.has(p.id as number)) return false;
       if (posFilter !== "ALL" && p.pos !== posFilter) return false;
-      if (rookiesOnly && !p.rookie) return false;
+      if (rookiesOnly && !isRookieFilterMatch(p)) return false;
       if (query && !p.name.toLowerCase().includes(query.toLowerCase()) && !p.team.toLowerCase().includes(query.toLowerCase())) return false;
       return true;
     });
@@ -295,7 +296,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
 
   /** Rookies still available — the count shown on the toggle. */
   const rookieCount = useMemo(
-    () => inflation.board.filter((p) => p.rookie && !draftedIds.has(p.id as number)).length,
+    () => inflation.board.filter((p) => isRookieFilterMatch(p) && !draftedIds.has(p.id as number)).length,
     [inflation.board, draftedIds],
   );
 

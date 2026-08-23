@@ -200,6 +200,27 @@ export function projectPoints(player, sc, P = DEFAULT_PARAMS) {
   return { proj, pace1, pace2, trend, durMult, ageMult, rookie: false };
 }
 
+/**
+ * Is this row worth surfacing in the "rookies only" board filter?
+ *
+ * `player.rookie` (set above) means "no prior-season stats to project from" —
+ * that's the right signal for valuation (it drives risk and gates the expert
+ * blend), but it is broader than "rookie" in the sense a drafter means when
+ * they click this filter. K and DST hit the same no-stats fallback for
+ * reasons that have nothing to do with being a rookie: a DST is a standing
+ * team-level entity that fields one every year (there is no such thing as a
+ * rookie defense), and a statless K is almost always a journeyman cycling
+ * rosters, not the rare true rookie kicker. Nobody drafting late for "an
+ * unproven rookie's upside" (the filter's own stated purpose) means a
+ * kicker or a defense. Reported live: the filter was "over broad — pulling
+ * in defenses and kickers." Valuation (risk, blendExpertAll's skip) is left
+ * alone — this is a display-only distinction, same as the rookies filter
+ * itself.
+ */
+export function isRookieFilterMatch(player) {
+  return !!player.rookie && player.pos !== "K" && player.pos !== "DST";
+}
+
 export function projectValue(player, sc, P = DEFAULT_PARAMS) {
   const pp = projectPoints(player, sc, P);
   const valuePoints = pp.proj;

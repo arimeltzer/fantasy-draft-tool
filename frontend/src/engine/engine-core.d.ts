@@ -132,6 +132,10 @@ export declare function projectPoints(
 export declare function projectValue(
   player: Player, sc: Scoring, P?: EngineParams
 ): { projPts: number; priorEquiv: number | null; valuePoints: number; ageMult: number; trend: number | null; rookie: boolean; risk: number };
+/** Is this row worth surfacing in the "rookies only" board filter? Narrower
+ *  than the `rookie` flag itself: excludes K/DST, where "no prior-season
+ *  stats" is a data-completeness artifact rather than an actual rookie. */
+export declare function isRookieFilterMatch(player: { pos: string; rookie?: boolean }): boolean;
 /** Per-position weight on OUR model when blending with the FantasyPros expert
  *  projection (roadmap 0.1). QB/RB/TE/WR are backtested; K/DST stay at 1.0
  *  (pure model — never tested). */

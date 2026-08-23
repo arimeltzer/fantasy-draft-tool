@@ -1,7 +1,7 @@
 import { memo, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio, HelpCircle, CalendarX } from "lucide-react";
-import { myPickNumbers, rankByAdp } from "@/engine/snake-engine.js";
+import { myPickNumbers, rankByAdp, isRookieFilterMatch } from "@/engine/snake-engine.js";
 import { byeCollisions } from "@/engine/bye-weeks.js";
 import { byeLineupMult } from "@/engine/bye-lineup-value.js";
 import { runHotness } from "@/engine/positional-run.js";
@@ -251,14 +251,14 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   const filtered = useMemo(() => board.filter((p) => {
     if (hideTaken && draftedIds.has(p.id as number)) return false;
     if (posFilter !== "ALL" && p.pos !== posFilter) return false;
-    if (rookiesOnly && !p.rookie) return false;
+    if (rookiesOnly && !isRookieFilterMatch(p)) return false;
     if (query && !p.name.toLowerCase().includes(query.toLowerCase()) && !p.team.toLowerCase().includes(query.toLowerCase())) return false;
     return true;
   }), [board, hideTaken, draftedIds, posFilter, rookiesOnly, query]);
 
   /** Rookies still undrafted — the count shown on the toggle. */
   const rookieCount = useMemo(
-    () => board.filter((p) => p.rookie && !draftedIds.has(p.id as number)).length,
+    () => board.filter((p) => isRookieFilterMatch(p) && !draftedIds.has(p.id as number)).length,
     [board, draftedIds],
   );
 
