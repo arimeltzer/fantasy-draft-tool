@@ -688,7 +688,7 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   treatment as `anchor_parity.py`, 1,080+ values over a coverage × weight
   sweep plus the rookie-skip and zero-as-no-opinion edge cases.
 
-## Second expert source: The Athletic (roadmap 0.1b — IN PROGRESS, not shipped)
+## Second expert source: The Athletic (roadmap 0.1b — tried, NOT shipped)
 
 - User-supplied: The Athletic (Jake's model) publishes a downloadable,
   user-customizable `.xlsx` cheat sheet — bottom-up team-share model to
@@ -724,18 +724,30 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
      consistently favors trusting The Athletic heavily — best mean weight
      ON OUR MODEL: QB≈0.1, RB≈0.2, WR≈0.2, TE≈0.4 (same convention as
      `EXPERT_BLEND_W`).
-- **NOT YET GATED THE SECOND WAY THIS CODEBASE REQUIRES**: every prior
-  signal here that passed "vs pure model" was RE-MEASURED against the
-  actual live board (with FantasyPros' own expert blend already applied)
-  before shipping, because a second expert-like source can be mostly
-  re-discovering what the first already covers (this happened to the
-  Opportunity model's QB/WR result in Phase 1). That check needs real
-  historical ADP + FantasyPros projections for 2024/2025
-  (`FANTASYPROS_API_KEY`), unavailable in the sandbox that ran the
-  analysis above — in progress. **Do not ship any weight from this
-  section until that result lands.** Two seasons is also a thin base next
-  to `EXPERT_BLEND_W`'s own 7-season (2019-2025) fit; the user has offered
-  to go back further if the signal warrants it.
+- **GATED THE SECOND WAY THIS CODEBASE REQUIRES, AND FAILED IT.** Every
+  prior signal here that passed "vs pure model" was RE-MEASURED against
+  the actual live board (with FantasyPros' own expert blend already
+  applied) before shipping, because a second expert-like source can be
+  mostly re-discovering what the first already covers (this happened to
+  the Opportunity model's QB/WR result in Phase 1) — this is the same
+  finding again. Real historical FantasyPros projections, run via GitHub
+  Actions (the sandbox that ran the solo analysis above hits a hard
+  egress-proxy policy block on `api.fantasypros.com`, confirmed via the
+  proxy's own diagnostics — not a key problem; the repo's own working
+  secret does the real fetch): 413/405 players matched, 2024/2025. Once
+  FantasyPros is already blended in, Athletic's own contribution ON TOP
+  of it is under +0.01 Spearman at every position — an order of magnitude
+  below the +0.02 to +0.044 merged gains that actually justified shipping
+  FantasyPros in 0.1 — and QB/TE flip sign entirely between the two
+  seasons. **NOT SHIPPED — no `EXPERT_BLEND`-style weight for The
+  Athletic is wired into `engine-core.js`.** The strong solo-vs-model
+  numbers above were real, not a measurement artifact; they just don't
+  survive contact with the board this app actually ships. Two seasons is
+  also a thin base next to `EXPERT_BLEND_W`'s own 7-season (2019-2025)
+  fit — the user has offered to go back further, which would be needed
+  before revisiting this at all. `athletic_projections.py`/
+  `athletic_blend_backtest.py` stay in the repo, reusable for that or for
+  the unrelated auction-value-import path this was never contingent on.
 
 ## Injury-aware expected games (shipped for QB/RB only; roadmap 0.3)
 

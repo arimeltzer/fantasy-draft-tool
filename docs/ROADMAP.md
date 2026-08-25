@@ -162,7 +162,47 @@ not just vs ADP) must clear what's already shipped, AND the full-board
 merged number (model → injury → FantasyPros blend → **Athletic blend** →
 anchor) must beat the CURRENT live board — not the pre-0.1 one.
 
-**RESULT: pending.**
+**RESULT: FAILED the full-stack check — NOT shipped.** Run 2026-08-25
+(github.com/arimeltzer/fantasy-draft-tool/actions/runs/32911278467), real
+FantasyPros historical projections (413/405 players matched, 2024/2025):
+
+| pos | 2024 delta | 2025 delta | consistency |
+|---|---|---|---|
+| QB | +0.0093 | +0.0000 | **flips direction** |
+| RB | +0.0021 | +0.0017 | consistent, but negligible |
+| WR | +0.0002 | +0.0049 | consistent, but negligible |
+| TE | +0.0053 | +0.0000 | **flips direction** |
+
+(`delta` = best-achievable Spearman with Athletic blended on top of the
+already-shipped FantasyPros blend, minus the FantasyPros-only number, on
+the full population our model covers — the same construction 0.1's own
+merged-number gate used.)
+
+Once FantasyPros is already in the blend, Athletic adds essentially
+nothing on top: every delta is under 0.01 — an order of magnitude below
+the +0.020 to +0.044 merged gains that actually justified shipping
+FantasyPros in 0.1 — and QB/TE flip sign entirely between the only two
+seasons available. This does not clear the kill gate above by any
+reading of it.
+
+**Read together with the earlier solo-vs-model result, this is the SAME
+lesson the Opportunity model's Phase 1 QB/WR result already taught**: a
+second expert-like source can look strongly predictive in isolation
+(disagreement signal +0.3 to +0.66, solo accuracy 8-for-8 vs our own
+model) while turning out to be mostly REDISCOVERING what the first
+expert source (FantasyPros) already knows, rather than contributing
+genuinely new information. The strong "vs pure model" numbers were real
+and not a measurement error — they just don't survive contact with the
+board this app actually ships, which already has FantasyPros in it.
+
+**NOT SHIPPED. No `EXPERT_BLEND`-style weight for The Athletic is wired
+into `engine-core.js`, and none should be based on this result.** The
+parser (`athletic_projections.py`) and backtest harness
+(`athletic_blend_backtest.py`) stay in the repo — reusable if the user
+takes up the standing offer of more historical seasons (two is thin
+regardless of direction), or for the unrelated import paths (auction-
+value override, roadmap 0.1b's option A) that were never contingent on
+this blend question.
 
 ### 0.2 Collapse the overfit snake slot configs — DONE, collapsed
 
