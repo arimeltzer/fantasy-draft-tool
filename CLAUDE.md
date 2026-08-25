@@ -688,6 +688,55 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   treatment as `anchor_parity.py`, 1,080+ values over a coverage × weight
   sweep plus the rookie-skip and zero-as-no-opinion edge cases.
 
+## Second expert source: The Athletic (roadmap 0.1b — IN PROGRESS, not shipped)
+
+- User-supplied: The Athletic (Jake's model) publishes a downloadable,
+  user-customizable `.xlsx` cheat sheet — bottom-up team-share model to
+  full stat-line projections (attempts/yards/TDs by category) per player,
+  with a `Settings` tab that mirrors this app's own scoring/roster config
+  almost field-for-field. Explicitly requested as **fluid, not static** —
+  the workbook is refreshed on The Athletic's own schedule, so nothing
+  about a specific copy's numbers may be baked into the repo as
+  production data; only re-uploadable, same discipline the Yahoo-paste
+  and FantasyPros-AAV-paste importers already follow.
+- `data-pipeline/athletic_projections.py` parses the workbook's
+  `QB`/`RB`/`WR`/`TE` sheets into the SAME `proj` shape FantasyPros
+  already fills (`passYd`/`passTD`/`int`/`rushYd`/`rushTD`/`rec`/`recYd`/
+  `recTD`) — columns are looked up BY HEADER TEXT (mirrors
+  `projections.py`'s `PROJ_SYN` table), not fixed indices, so a future
+  year's reordered/added columns don't silently break it. K/DST are out
+  of scope, matching `EXPERT_BLEND_W`'s own K/DST=1.0 (pure model, never
+  backtested) policy.
+- **Precondition-checked before any weight was picked, not assumed**: the
+  user supplied historical copies of the SAME workbook for 2024 and 2025
+  (both now fully realized seasons), enabling a real backtest — the
+  identical discipline `injury_probe.py` established for 0.3.
+  `data-pipeline/athletic_blend_backtest.py` measures, using ONLY
+  nflverse data (no `FANTASYPROS_API_KEY` needed for this half):
+  1. **Disagreement signal** (adapted from `projection_backtest
+     .disagreement_signal`, controlling for OUR MODEL instead of ADP):
+     strongly positive at every position, both seasons — QB +0.66/+0.36,
+     RB +0.41/+0.40, WR +0.43/+0.34, TE +0.31/+0.38 (partial Spearman).
+  2. **Matched-population solo accuracy**: The Athletic beats our own
+     model outright at every position in both seasons (8/8) — e.g. QB
+     .802 vs .620 (2024), .711 vs .663 (2025).
+  3. **Blend sweep** (pooled 2024+2025): flat near the optimum but
+     consistently favors trusting The Athletic heavily — best mean weight
+     ON OUR MODEL: QB≈0.1, RB≈0.2, WR≈0.2, TE≈0.4 (same convention as
+     `EXPERT_BLEND_W`).
+- **NOT YET GATED THE SECOND WAY THIS CODEBASE REQUIRES**: every prior
+  signal here that passed "vs pure model" was RE-MEASURED against the
+  actual live board (with FantasyPros' own expert blend already applied)
+  before shipping, because a second expert-like source can be mostly
+  re-discovering what the first already covers (this happened to the
+  Opportunity model's QB/WR result in Phase 1). That check needs real
+  historical ADP + FantasyPros projections for 2024/2025
+  (`FANTASYPROS_API_KEY`), unavailable in the sandbox that ran the
+  analysis above — in progress. **Do not ship any weight from this
+  section until that result lands.** Two seasons is also a thin base next
+  to `EXPERT_BLEND_W`'s own 7-season (2019-2025) fit; the user has offered
+  to go back further if the signal warrants it.
+
 ## Injury-aware expected games (shipped for QB/RB only; roadmap 0.3)
 
 - `InjuryBadge` used to report status without touching valuation at all.

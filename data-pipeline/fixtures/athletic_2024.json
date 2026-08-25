@@ -1,0 +1,3677 @@
+{
+  "season": 2024,
+  "players": {
+    "kyler murray|QB": {
+      "passYd": 3930.50077683219,
+      "passTD": 23.61529935,
+      "int": 7.213699739981747,
+      "rushYd": 451.92105630000003,
+      "rushTD": 4.26467417165593,
+      "_name": "Kyler Murray",
+      "_team": "ARI"
+    },
+    "clayton tune|QB": {
+      "passYd": 280.55452194,
+      "passTD": 1.6326024684650131,
+      "int": 0.644952924,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Clayton Tune",
+      "_team": "ARI"
+    },
+    "kirk cousins|QB": {
+      "passYd": 4296.598370313381,
+      "passTD": 29.50450770566582,
+      "int": 6.149348598950915,
+      "rushYd": 78.24431187137468,
+      "rushTD": 1.2190807392656713,
+      "_name": "Kirk Cousins",
+      "_team": "ATL"
+    },
+    "taylor heinicke|QB": {
+      "passYd": 79.354484352,
+      "passTD": 0.5164473599999999,
+      "int": 0.114990525936,
+      "rushYd": 12.221810496000002,
+      "rushTD": 0.023668999200000002,
+      "_name": "Taylor Heinicke",
+      "_team": "ATL"
+    },
+    "lamar jackson|QB": {
+      "passYd": 3938.502507540293,
+      "passTD": 27.00731983910633,
+      "int": 6.52858550027258,
+      "rushYd": 855.4577071679732,
+      "rushTD": 5.464757583408181,
+      "_name": "Lamar Jackson",
+      "_team": "BAL"
+    },
+    "josh johnson|QB": {
+      "passYd": 155.59096621381255,
+      "passTD": 1.133631850193759,
+      "int": 0.3174357808091443,
+      "rushYd": 9.93774765124311,
+      "rushTD": 0.08590367353119045,
+      "_name": "Josh Johnson",
+      "_team": "BAL"
+    },
+    "josh allen|QB": {
+      "passYd": 4459.091069830332,
+      "passTD": 30.678911999999997,
+      "int": 8.25700274793759,
+      "rushYd": 596.9271157312098,
+      "rushTD": 8.683074345331145,
+      "_name": "Josh Allen",
+      "_team": "BUF"
+    },
+    "mitch trubisky|QB": {
+      "passYd": 36.79238246400003,
+      "passTD": 0.2107238400000002,
+      "int": 0.04642667642880004,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Mitch Trubisky",
+      "_team": "BUF"
+    },
+    "bryce young|QB": {
+      "passYd": 3887.8572420645523,
+      "passTD": 21.8961795,
+      "int": 6.444607082217527,
+      "rushYd": 321.3935769222453,
+      "rushTD": 2.0065941,
+      "_name": "Bryce Young",
+      "_team": "CAR"
+    },
+    "andy dalton|QB": {
+      "passYd": 196.77815340596754,
+      "passTD": 1.1305911558294797,
+      "int": 0.2985517312655488,
+      "rushYd": 7.644689341958248,
+      "rushTD": 0.038342828255850676,
+      "_name": "Andy Dalton",
+      "_team": "CAR"
+    },
+    "caleb williams|QB": {
+      "passYd": 4041.9896357962643,
+      "passTD": 26.186551776,
+      "int": 7.727970341530031,
+      "rushYd": 344.97150911999995,
+      "rushTD": 3.6961233119999997,
+      "_name": "Caleb Williams",
+      "_team": "CHI"
+    },
+    "tyson bagent|QB": {
+      "passYd": 80.5294067051516,
+      "passTD": 0.4859973311436821,
+      "int": 0.1806599655258878,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Tyson Bagent",
+      "_team": "CHI"
+    },
+    "joe burrow|QB": {
+      "passYd": 4524.446039342442,
+      "passTD": 32.0374029,
+      "int": 7.053831499284132,
+      "rushYd": 189.84159137213015,
+      "rushTD": 2.2254943124328137,
+      "_name": "Joe Burrow",
+      "_team": "CIN"
+    },
+    "jake browning|QB": {
+      "passYd": 221.75122917517385,
+      "passTD": 1.4634762000000012,
+      "int": 0.4562483965432937,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Jake Browning",
+      "_team": "CIN"
+    },
+    "deshaun watson|QB": {
+      "passYd": 3828.25886627128,
+      "passTD": 23.018994227050147,
+      "int": 7.223524694788899,
+      "rushYd": 420.1600388331582,
+      "rushTD": 3.2251469249999998,
+      "_name": "Deshaun Watson",
+      "_team": "CLE"
+    },
+    "jameis winston|QB": {
+      "passYd": 75.9094606843438,
+      "passTD": 0.41878439108182036,
+      "int": 0.21422733386578013,
+      "rushYd": 16.58864069559735,
+      "rushTD": 0.08707605486399338,
+      "_name": "Jameis Winston",
+      "_team": "CLE"
+    },
+    "dak prescott|QB": {
+      "passYd": 4556.658190875703,
+      "passTD": 32.93095175999999,
+      "int": 7.5420368362322785,
+      "rushYd": 209.70028208640002,
+      "rushTD": 1.82551584852,
+      "_name": "Dak Prescott",
+      "_team": "DAL"
+    },
+    "trey lance|QB": {
+      "passYd": 82.1849502524558,
+      "passTD": 0.5040441463970162,
+      "int": 0.27825469245695994,
+      "rushYd": 7.713066943925632,
+      "rushTD": 0.016828437336013292,
+      "_name": "Trey Lance",
+      "_team": "DAL"
+    },
+    "bo nix|QB": {
+      "passYd": 3815.4041540649005,
+      "passTD": 22.301586775,
+      "int": 7.265602953421843,
+      "rushYd": 273.43925259927005,
+      "rushTD": 3.5363401038,
+      "_name": "Bo Nix",
+      "_team": "DEN"
+    },
+    "zach wilson|QB": {
+      "passYd": 148.147078848,
+      "passTD": 0.8854228,
+      "int": 0.20415053696,
+      "rushYd": 3.9116861700000007,
+      "rushTD": 0.024612856800000003,
+      "_name": "Zach Wilson",
+      "_team": "DEN"
+    },
+    "jared goff|QB": {
+      "passYd": 4482.246389070086,
+      "passTD": 30.819079199999994,
+      "int": 6.423921385486531,
+      "rushYd": 60.704217478589875,
+      "rushTD": 1.23216195363023,
+      "_name": "Jared Goff",
+      "_team": "DET"
+    },
+    "hendon hooker|QB": {
+      "passYd": 82.32317993923728,
+      "passTD": 0.5138062556060327,
+      "int": 0.1847338677164752,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Hendon Hooker",
+      "_team": "DET"
+    },
+    "jordan love|QB": {
+      "passYd": 4322.621308675572,
+      "passTD": 31.9691988,
+      "int": 6.8428246578237495,
+      "rushYd": 217.5806760396356,
+      "rushTD": 2.2176831599999995,
+      "_name": "Jordan Love",
+      "_team": "GB"
+    },
+    "sean clifford|QB": {
+      "passYd": 40.48607109346907,
+      "passTD": 0.3037761099870921,
+      "int": 0.09167665644347156,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Sean Clifford",
+      "_team": "GB"
+    },
+    "case keenum|QB": {
+      "passYd": 40.8627664792416,
+      "passTD": 0.29103359999999995,
+      "int": 0.09872544463851798,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Case Keenum",
+      "_team": "HOU"
+    },
+    "cj stroud|QB": {
+      "passYd": 4705.340401794817,
+      "passTD": 31.513481999999993,
+      "int": 5.654318337127609,
+      "rushYd": 158.51481338402735,
+      "rushTD": 1.9242119760818577,
+      "_name": "C.J. Stroud",
+      "_team": "HOU"
+    },
+    "anthony richardson|QB": {
+      "passYd": 3655.8084668775996,
+      "passTD": 22.368643,
+      "int": 6.035761103685243,
+      "rushYd": 686.0347124891172,
+      "rushTD": 8.510551423759887,
+      "_name": "Anthony Richardson",
+      "_team": "IND"
+    },
+    "joe flacco|QB": {
+      "passYd": 195.17699964440982,
+      "passTD": 1.1600043658534644,
+      "int": 0.3895123976354186,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Joe Flacco",
+      "_team": "IND"
+    },
+    "trevor lawrence|QB": {
+      "passYd": 4420.340441692928,
+      "passTD": 26.76683592,
+      "int": 7.453085363728048,
+      "rushYd": 279.35918862580735,
+      "rushTD": 3.0753953496000004,
+      "_name": "Trevor Lawrence",
+      "_team": "JAX"
+    },
+    "mac jones|QB": {
+      "passYd": 44.10653551698841,
+      "passTD": 0.25808244000000025,
+      "int": 0.12025715801226826,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Mac Jones",
+      "_team": "JAX"
+    },
+    "patrick mahomes|QB": {
+      "passYd": 4871.2115232,
+      "passTD": 35.65900799999999,
+      "int": 6.991873013915021,
+      "rushYd": 311.806208,
+      "rushTD": 2.0002662400000006,
+      "_name": "Patrick Mahomes",
+      "_team": "KC"
+    },
+    "carson wentz|QB": {
+      "passYd": 43.69064066268822,
+      "passTD": 0.33696536097145974,
+      "int": 0.1147235772256726,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Carson Wentz",
+      "_team": "KC"
+    },
+    "justin herbert|QB": {
+      "passYd": 3740.9387252689944,
+      "passTD": 24.024284297131754,
+      "int": 5.036170960978244,
+      "rushYd": 252.48270172272572,
+      "rushTD": 2.3015913562728687,
+      "_name": "Justin Herbert",
+      "_team": "LAC"
+    },
+    "easton stick|QB": {
+      "passYd": 383.0954906880001,
+      "passTD": 2.5944222342420766,
+      "int": 0.6381608440149497,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Easton Stick",
+      "_team": "LAC"
+    },
+    "matthew stafford|QB": {
+      "passYd": 4473.377622951824,
+      "passTD": 28.567046591999997,
+      "int": 7.171650345874322,
+      "rushYd": 54.71061728567436,
+      "rushTD": 0.44237327400000004,
+      "_name": "Matthew Stafford",
+      "_team": "LAR"
+    },
+    "jimmy garoppolo|QB": {
+      "passYd": 184.32597815797246,
+      "passTD": 1.1488446127976062,
+      "int": 0.4082859544001006,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Jimmy Garoppolo",
+      "_team": "LAR"
+    },
+    "gardner minshew|QB": {
+      "passYd": 2490.113434133473,
+      "passTD": 14.151877824588276,
+      "int": 4.512804626322268,
+      "rushYd": 54.293457007236555,
+      "rushTD": 0.7363239903512705,
+      "_name": "Gardner Minshew",
+      "_team": "LV"
+    },
+    "aidan oconnell|QB": {
+      "passYd": 1619.418160344386,
+      "passTD": 9.0364,
+      "int": 3.355077768224951,
+      "rushYd": 11.564294717776551,
+      "rushTD": 0.12144320779311012,
+      "_name": "Aidan O'Connell",
+      "_team": "LV"
+    },
+    "tua tagovailoa|QB": {
+      "passYd": 4620.5862909289335,
+      "passTD": 29.017355999999996,
+      "int": 7.943681404194515,
+      "rushYd": 92.45458397997953,
+      "rushTD": 0.6737758720000001,
+      "_name": "Tua Tagovailoa",
+      "_team": "MIA"
+    },
+    "mike white|QB": {
+      "passYd": 123.4619881246482,
+      "passTD": 0.6406802628619854,
+      "int": 0.34553974779714297,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Mike White",
+      "_team": "MIA"
+    },
+    "sam darnold|QB": {
+      "passYd": 3954.0418454194637,
+      "passTD": 22.903584,
+      "int": 10.676980680700622,
+      "rushYd": 163.32030723064193,
+      "rushTD": 2.32666896,
+      "_name": "Sam Darnold",
+      "_team": "MIN"
+    },
+    "nick mullens|QB": {
+      "passYd": 571.4723519999999,
+      "passTD": 2.9708639999999997,
+      "int": 1.4641027199999999,
+      "rushYd": 10.783136,
+      "rushTD": 0.0829472,
+      "_name": "Nick Mullens",
+      "_team": "MIN"
+    },
+    "drake maye|QB": {
+      "passYd": 2671.2153697923213,
+      "passTD": 14.49670943766038,
+      "int": 5.02952658996316,
+      "rushYd": 283.10063132322045,
+      "rushTD": 2.3124818528000004,
+      "_name": "Drake Maye",
+      "_team": "NE"
+    },
+    "jacoby brissett|QB": {
+      "passYd": 1260.8779406569522,
+      "passTD": 6.579891500000001,
+      "int": 2.4981379886509005,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Jacoby Brissett",
+      "_team": "NE"
+    },
+    "derek carr|QB": {
+      "passYd": 4006.9905147315835,
+      "passTD": 25.27487763406326,
+      "int": 6.4497544319124875,
+      "rushYd": 62.031989982224346,
+      "rushTD": 0.21989044000000005,
+      "_name": "Derek Carr",
+      "_team": "NO"
+    },
+    "spencer rattler|QB": {
+      "passYd": 80.0680509816,
+      "passTD": 0.47990008,
+      "int": 0.1467791952,
+      "rushYd": 6.640691288,
+      "rushTD": 0.043978088,
+      "_name": "Spencer Rattler",
+      "_team": "NO"
+    },
+    "daniel jones|QB": {
+      "passYd": 3022.952269414254,
+      "passTD": 15.248493414589323,
+      "int": 5.8884208901017745,
+      "rushYd": 334.76764807714903,
+      "rushTD": 3.223313688,
+      "_name": "Daniel Jones",
+      "_team": "NYG"
+    },
+    "drew lock|QB": {
+      "passYd": 1032.7073406171248,
+      "passTD": 5.699772193794555,
+      "int": 1.5225259845351338,
+      "rushYd": 32.349426792818555,
+      "rushTD": 0.30698225600000006,
+      "_name": "Drew Lock",
+      "_team": "NYG"
+    },
+    "aaron rodgers|QB": {
+      "passYd": 4261.125310391933,
+      "passTD": 29.625595999999998,
+      "int": 5.456156611385855,
+      "rushYd": 101.92927358707342,
+      "rushTD": 1.1587367853837653,
+      "_name": "Aaron Rodgers",
+      "_team": "NYJ"
+    },
+    "tyrod taylor|QB": {
+      "passYd": 79.92739122827027,
+      "passTD": 0.5581840077481378,
+      "int": 0.14707058056687605,
+      "rushYd": 8.969249864526564,
+      "rushTD": 0.03354443429939807,
+      "_name": "Tyrod Taylor",
+      "_team": "NYJ"
+    },
+    "jalen hurts|QB": {
+      "passYd": 4243.844792051022,
+      "passTD": 25.64723704164253,
+      "int": 7.2849514790596315,
+      "rushYd": 563.07613824,
+      "rushTD": 9.725860569599998,
+      "_name": "Jalen Hurts",
+      "_team": "PHI"
+    },
+    "kenny pickett|QB": {
+      "passYd": 80.7043240550459,
+      "passTD": 0.49671990302767033,
+      "int": 0.19025843666186737,
+      "rushYd": 8.416841661163053,
+      "rushTD": 0.06936017278488643,
+      "_name": "Kenny Pickett",
+      "_team": "PHI"
+    },
+    "russell wilson|QB": {
+      "passYd": 2933.1413931963207,
+      "passTD": 18.03864073367736,
+      "int": 4.921619485369649,
+      "rushYd": 197.74346573314693,
+      "rushTD": 1.6176543938223806,
+      "_name": "Russell Wilson",
+      "_team": "PIT"
+    },
+    "justin fields|QB": {
+      "passYd": 982.3181812500001,
+      "passTD": 5.757937500000001,
+      "int": 2.3471319375,
+      "rushYd": 188.57125338129816,
+      "rushTD": 1.4124877200000001,
+      "_name": "Justin Fields",
+      "_team": "PIT"
+    },
+    "geno smith|QB": {
+      "passYd": 3905.268881782207,
+      "passTD": 24.547322032075023,
+      "int": 6.977033994552031,
+      "rushYd": 171.10632306721794,
+      "rushTD": 1.2131256232199998,
+      "_name": "Geno Smith",
+      "_team": "SEA"
+    },
+    "sam howell|QB": {
+      "passYd": 410.07288672727765,
+      "passTD": 2.5049663933148976,
+      "int": 1.0350363508504383,
+      "rushYd": 25.78155149486927,
+      "rushTD": 0.12622213791413409,
+      "_name": "Sam Howell",
+      "_team": "SEA"
+    },
+    "brock purdy|QB": {
+      "passYd": 4552.496046259269,
+      "passTD": 30.88696968,
+      "int": 6.933358669694722,
+      "rushYd": 133.43717465042084,
+      "rushTD": 1.437584181966457,
+      "_name": "Brock Purdy",
+      "_team": "SF"
+    },
+    "josh dobbs|QB": {
+      "passYd": 71.70830604359999,
+      "passTD": 0.36951336000000007,
+      "int": 0.08008636939919998,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Josh Dobbs",
+      "_team": "SF"
+    },
+    "baker mayfield|QB": {
+      "passYd": 4151.390442618114,
+      "passTD": 26.562103720590617,
+      "int": 6.652737749881756,
+      "rushYd": 145.32301606830376,
+      "rushTD": 0.9798767748000001,
+      "_name": "Baker Mayfield",
+      "_team": "TB"
+    },
+    "kyle trask|QB": {
+      "passYd": 195.47625204549624,
+      "passTD": 1.3221907651230136,
+      "int": 0.3314568966632518,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Kyle Trask",
+      "_team": "TB"
+    },
+    "will levis|QB": {
+      "passYd": 4037.8119541719893,
+      "passTD": 24.112570349999995,
+      "int": 6.637496496769507,
+      "rushYd": 148.26717505603435,
+      "rushTD": 1.7873073197129588,
+      "_name": "Will Levis",
+      "_team": "TEN"
+    },
+    "mason rudolph|QB": {
+      "passYd": 195.53891869097635,
+      "passTD": 1.1577646694624721,
+      "int": 0.39208804466841635,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Mason Rudolph",
+      "_team": "TEN"
+    },
+    "jayden daniels|QB": {
+      "passYd": 3836.8404372175146,
+      "passTD": 24.276098600000005,
+      "int": 7.868354463108068,
+      "rushYd": 721.73333232,
+      "rushTD": 5.6134814736,
+      "_name": "Jayden Daniels",
+      "_team": "WSH"
+    },
+    "marcus mariota|QB": {
+      "passYd": 192.98012616920033,
+      "passTD": 1.0816178234964848,
+      "int": 0.43381455056679014,
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "_name": "Marcus Mariota",
+      "_team": "WSH"
+    },
+    "james conner|RB": {
+      "rushYd": 907.1109810000002,
+      "rushTD": 7.2119409075,
+      "rec": 40.499943540000004,
+      "recYd": 275.4781858561336,
+      "recTD": 1.6604976851400002,
+      "_name": "James Conner",
+      "_team": "ARI"
+    },
+    "trey benson|RB": {
+      "rushYd": 647.2359432000002,
+      "rushTD": 4.898399297400001,
+      "rec": 17.619952140000002,
+      "recYd": 128.09008415144487,
+      "recTD": 0.6966502880586671,
+      "_name": "Trey Benson",
+      "_team": "ARI"
+    },
+    "deejay dallas|RB": {
+      "rushYd": 39.259643773836316,
+      "rushTD": 0.28602598500000004,
+      "rec": 4.42267875,
+      "recYd": 29.094790592495798,
+      "recTD": 0.17690715,
+      "_name": "DeeJay Dallas",
+      "_team": "ARI"
+    },
+    "emari demercado|RB": {
+      "rushYd": 27.989685675000004,
+      "rushTD": 0.204304275,
+      "rec": 4.54061685,
+      "recYd": 30.694569906,
+      "recTD": 0.181624674,
+      "_name": "Emari Demercado",
+      "_team": "ARI"
+    },
+    "bijan robinson|RB": {
+      "rushYd": 1198.3646580486595,
+      "rushTD": 9.7128965808,
+      "rec": 38.56277224799999,
+      "recYd": 320.68214668517703,
+      "recTD": 2.696938438413479,
+      "_name": "Bijan Robinson",
+      "_team": "ATL"
+    },
+    "tyler allgeier|RB": {
+      "rushYd": 493.82139240000004,
+      "rushTD": 4.066764408000001,
+      "rec": 26.19335326608,
+      "recYd": 210.5185780174637,
+      "recTD": 1.3485057381283587,
+      "_name": "Tyler Allgeier",
+      "_team": "ATL"
+    },
+    "jase mcclellan|RB": {
+      "rushYd": 99.40979664000001,
+      "rushTD": 0.7574079744000001,
+      "rec": 7.6653934156800005,
+      "recYd": 58.14183283429164,
+      "recTD": 0.2970183492048505,
+      "_name": "Jase McClellan",
+      "_team": "ATL"
+    },
+    "derrick henry|RB": {
+      "rushYd": 1168.9415810283683,
+      "rushTD": 13.723039415904001,
+      "rec": 23.8207032,
+      "recYd": 192.4622986944302,
+      "recTD": 0.863709826784361,
+      "_name": "Derrick Henry",
+      "_team": "BAL"
+    },
+    "rasheen ali|RB": {
+      "rushYd": 229.37850225896884,
+      "rushTD": 2.2685660927999995,
+      "rec": 3.9701172,
+      "recYd": 32.04335790901215,
+      "recTD": 0.15086445359999998,
+      "_name": "Rasheen Ali",
+      "_team": "BAL"
+    },
+    "keaton mitchell|RB": {
+      "rushYd": 158.71783172949858,
+      "rushTD": 1.3548380831999998,
+      "rec": 10.282603548000003,
+      "recYd": 85.25332247872267,
+      "recTD": 0.4365621864005894,
+      "_name": "Keaton Mitchell",
+      "_team": "BAL"
+    },
+    "justice hill|RB": {
+      "rushYd": 120.1320346716457,
+      "rushTD": 1.076518632,
+      "rec": 8.141387004799999,
+      "recYd": 61.79312736643199,
+      "recTD": 0.2846489749903214,
+      "_name": "Justice Hill",
+      "_team": "BAL"
+    },
+    "james cook|RB": {
+      "rushYd": 947.6274326400002,
+      "rushTD": 5.1440328083671965,
+      "rec": 39.87331375104001,
+      "recYd": 343.2534683281684,
+      "recTD": 2.3008943159581885,
+      "_name": "James Cook",
+      "_team": "BUF"
+    },
+    "ty johnson|RB": {
+      "rushYd": 47.608422314384725,
+      "rushTD": 0.33532464000000006,
+      "rec": 4.2516633599999984,
+      "recYd": 39.16518379538545,
+      "recTD": 0.15731154431999994,
+      "_name": "Ty Johnson",
+      "_team": "BUF"
+    },
+    "ray davis|RB": {
+      "rushYd": 388.19179678162135,
+      "rushTD": 3.1418739197821406,
+      "rec": 13.319853926399999,
+      "recYd": 109.47065962537322,
+      "recTD": 0.532794157056,
+      "_name": "Ray Davis",
+      "_team": "BUF"
+    },
+    "chuba hubbard|RB": {
+      "rushYd": 662.9786906400001,
+      "rushTD": 5.136880896000001,
+      "rec": 35.44521623999999,
+      "recYd": 262.29460017599996,
+      "recTD": 0.9112720841516115,
+      "_name": "Chuba Hubbard",
+      "_team": "CAR"
+    },
+    "jonathon brooks|RB": {
+      "rushYd": 785.58159015,
+      "rushTD": 6.140177946000001,
+      "rec": 17.027603879999997,
+      "recYd": 132.1342061088,
+      "recTD": 0.6118132308701518,
+      "_name": "Jonathon Brooks",
+      "_team": "CAR"
+    },
+    "miles sanders|RB": {
+      "rushYd": 118.7433617215006,
+      "rushTD": 0.6012287082701278,
+      "rec": 5.838035615999998,
+      "recYd": 35.673317986073414,
+      "recTD": 0.04767883485033541,
+      "_name": "Miles Sanders",
+      "_team": "CAR"
+    },
+    "raheem blackshear|RB": {
+      "rushYd": 53.39775317072367,
+      "rushTD": 0.33299916821033004,
+      "rec": 4.100525015999999,
+      "recYd": 31.238003412631166,
+      "recTD": 0.08241458160726818,
+      "_name": "Raheem Blackshear",
+      "_team": "CAR"
+    },
+    "dandre swift|RB": {
+      "rushYd": 951.502649524559,
+      "rushTD": 7.0773916751999995,
+      "rec": 34.0085088,
+      "recYd": 246.22160371200002,
+      "recTD": 1.588917596392908,
+      "_name": "D'Andre Swift",
+      "_team": "CHI"
+    },
+    "khalil herbert|RB": {
+      "rushYd": 391.7594832473635,
+      "rushTD": 2.97880160256,
+      "rec": 9.190799503199997,
+      "recYd": 63.87605654723998,
+      "recTD": 0.3837951801496338,
+      "_name": "Khalil Herbert",
+      "_team": "CHI"
+    },
+    "roschon johnson|RB": {
+      "rushYd": 357.38318246399996,
+      "rushTD": 2.8428207696,
+      "rec": 20.971913759999996,
+      "recYd": 151.20749820959998,
+      "recTD": 0.7652672484924139,
+      "_name": "Roschon Johnson",
+      "_team": "CHI"
+    },
+    "zack moss|RB": {
+      "rushYd": 862.9602547104001,
+      "rushTD": 7.611960737304001,
+      "rec": 32.1012868176,
+      "recYd": 216.25152106147826,
+      "recTD": 1.4124566199743998,
+      "_name": "Zack Moss",
+      "_team": "CIN"
+    },
+    "chase brown|RB": {
+      "rushYd": 533.7180124563265,
+      "rushTD": 4.391370454212,
+      "rec": 19.629924417599998,
+      "recYd": 148.009630108704,
+      "recTD": 0.9029765232095999,
+      "_name": "Chase Brown",
+      "_team": "CIN"
+    },
+    "trayveon williams|RB": {
+      "rushYd": 57.117666607577085,
+      "rushTD": 0.4015453176,
+      "rec": 4.364976839999999,
+      "recYd": 27.714019948893263,
+      "recTD": 0.11839988502176813,
+      "_name": "Trayveon Williams",
+      "_team": "CIN"
+    },
+    "nick chubb|RB": {
+      "rushYd": 783.1804749999999,
+      "rushTD": 6.980521625,
+      "rec": 19.634531647499994,
+      "recYd": 149.22244052099995,
+      "recTD": 0.7067294814581485,
+      "_name": "Nick Chubb",
+      "_team": "CLE"
+    },
+    "jerome ford|RB": {
+      "rushYd": 931.0605150000001,
+      "rushTD": 7.702409715000001,
+      "rec": 19.489903124999998,
+      "recYd": 143.64058603125,
+      "recTD": 0.8770456406249999,
+      "_name": "Jerome Ford",
+      "_team": "CLE"
+    },
+    "pierre strong|RB": {
+      "rushYd": 50.833763749999996,
+      "rushTD": 0.42564156250000007,
+      "rec": 7.3550862,
+      "recYd": 53.986332708,
+      "recTD": 0.27213818939999995,
+      "_name": "Pierre Strong",
+      "_team": "CLE"
+    },
+    "donta foreman|RB": {
+      "rushYd": 19.99299225,
+      "rushTD": 0.17998557499999998,
+      "rec": 3.984005024999999,
+      "recYd": 29.840197637249997,
+      "recTD": 0.15936020099999998,
+      "_name": "D'Onta Foreman",
+      "_team": "CLE"
+    },
+    "ezekiel elliott|RB": {
+      "rushYd": 638.3897543856,
+      "rushTD": 5.81783766312,
+      "rec": 29.006680008599986,
+      "recYd": 203.59727080790125,
+      "recTD": 1.171857915199617,
+      "_name": "Ezekiel Elliott",
+      "_team": "DAL"
+    },
+    "rico dowdle|RB": {
+      "rushYd": 463.27747609080006,
+      "rushTD": 3.8332651686000005,
+      "rec": 26.445383760599984,
+      "recYd": 206.27399333267988,
+      "recTD": 1.3222691880299993,
+      "_name": "Rico Dowdle",
+      "_team": "DAL"
+    },
+    "dalvin cook|RB": {
+      "rushYd": 474.4932418716001,
+      "rushTD": 4.3027094980800005,
+      "rec": 8.221760956079997,
+      "recYd": 58.95002605509358,
+      "recTD": 0.3288704382431999,
+      "_name": "Dalvin Cook",
+      "_team": "DAL"
+    },
+    "deuce vaughn|RB": {
+      "rushYd": 40.0913637432,
+      "rushTD": 0.26994185064000004,
+      "rec": 5.025019305599997,
+      "recYd": 38.45522030103381,
+      "recTD": 0.19095073361279988,
+      "_name": "Deuce Vaughn",
+      "_team": "DAL"
+    },
+    "javonte williams|RB": {
+      "rushYd": 863.1640976699999,
+      "rushTD": 6.5263626897,
+      "rec": 38.79585026532663,
+      "recYd": 266.52749132279394,
+      "recTD": 1.3966506095517586,
+      "_name": "Javonte Williams",
+      "_team": "DEN"
+    },
+    "audric estime|RB": {
+      "rushYd": 401.77053929659263,
+      "rushTD": 2.9957362848000004,
+      "rec": 4.607078935678392,
+      "recYd": 31.5124199200402,
+      "recTD": 0.11978405232763818,
+      "_name": "Audric Estime",
+      "_team": "DEN"
+    },
+    "jaleel mclaughlin|RB": {
+      "rushYd": 308.447442387,
+      "rushTD": 2.1391209651,
+      "rec": 39.67939965025124,
+      "recYd": 298.78587936639184,
+      "recTD": 1.4284583874090446,
+      "_name": "Jaleel McLaughlin",
+      "_team": "DEN"
+    },
+    "jahmyr gibbs|RB": {
+      "rushYd": 850.9406022205354,
+      "rushTD": 7.844341372762872,
+      "rec": 53.340714000000006,
+      "recYd": 383.88051025592694,
+      "recTD": 2.4003321300000002,
+      "_name": "Jahmyr Gibbs",
+      "_team": "DET"
+    },
+    "david montgomery|RB": {
+      "rushYd": 889.3462932480002,
+      "rushTD": 10.13534289152,
+      "rec": 17.377219271999998,
+      "recYd": 129.2344336827511,
+      "recTD": 0.6950887708799999,
+      "_name": "David Montgomery",
+      "_team": "DET"
+    },
+    "craig reynolds|RB": {
+      "rushYd": 91.30190110187007,
+      "rushTD": 0.778628434750325,
+      "rec": 4.1487222,
+      "recYd": 31.22544280265268,
+      "recTD": 0.124461666,
+      "_name": "Craig Reynolds",
+      "_team": "DET"
+    },
+    "josh jacobs|RB": {
+      "rushYd": 1020.6270720799998,
+      "rushTD": 8.54592046,
+      "rec": 41.331178952,
+      "recYd": 313.8315827726469,
+      "recTD": 1.4756245863746227,
+      "_name": "Josh Jacobs",
+      "_team": "GB"
+    },
+    "emanuel wilson|RB": {
+      "rushYd": 56.109624032,
+      "rushTD": 0.43054414480000003,
+      "rec": 4.458989024,
+      "recYd": 31.525052399680003,
+      "recTD": 0.13376967072,
+      "_name": "Emanuel Wilson",
+      "_team": "GB"
+    },
+    "marshawn lloyd|RB": {
+      "rushYd": 522.7409811039594,
+      "rushTD": 4.173724508800001,
+      "rec": 12.5148198336,
+      "recYd": 99.6116149678702,
+      "recTD": 0.4755631536768,
+      "_name": "MarShawn Lloyd",
+      "_team": "GB"
+    },
+    "joe mixon|RB": {
+      "rushYd": 1081.2162816000002,
+      "rushTD": 9.69014592,
+      "rec": 35.7336147168,
+      "recYd": 267.39757649317,
+      "recTD": 1.78668073584,
+      "_name": "Joe Mixon",
+      "_team": "HOU"
+    },
+    "dameon pierce|RB": {
+      "rushYd": 260.34192038400005,
+      "rushTD": 1.9380291840000001,
+      "rec": 4.230658431999999,
+      "recYd": 30.55030787608496,
+      "recTD": 0.10198107656411776,
+      "_name": "Dameon Pierce",
+      "_team": "HOU"
+    },
+    "cam akers|RB": {
+      "rushYd": 206.62111142400002,
+      "rushTD": 1.4543719008000002,
+      "rec": 18.4200016,
+      "recYd": 133.54501159999998,
+      "recTD": 0.644700056,
+      "_name": "Cam Akers",
+      "_team": "HOU"
+    },
+    "jonathan taylor|RB": {
+      "rushYd": 1318.4647511290004,
+      "rushTD": 11.114352479999997,
+      "rec": 39.7824098056,
+      "recYd": 313.48538926812796,
+      "recTD": 1.98912049028,
+      "_name": "Jonathan Taylor",
+      "_team": "IND"
+    },
+    "trey sermon|RB": {
+      "rushYd": 179.16653108141364,
+      "rushTD": 1.2430525799999999,
+      "rec": 11.2691964,
+      "recYd": 82.26513372,
+      "recTD": 0.338075892,
+      "_name": "Trey Sermon",
+      "_team": "IND"
+    },
+    "tyler goodson|RB": {
+      "rushYd": 71.6455452613004,
+      "rushTD": 0.51184518,
+      "rec": 7.652320984000001,
+      "recYd": 57.46033216328196,
+      "recTD": 0.2706825089080062,
+      "_name": "Tyler Goodson",
+      "_team": "IND"
+    },
+    "travis etienne|RB": {
+      "rushYd": 976.8902875200001,
+      "rushTD": 8.48555960845326,
+      "rec": 32.87970285600001,
+      "recYd": 252.51611793408006,
+      "recTD": 0.9397912710842594,
+      "_name": "Travis Etienne",
+      "_team": "JAX"
+    },
+    "tank bigsby|RB": {
+      "rushYd": 382.28370232919997,
+      "rushTD": 3.17790852792,
+      "rec": 4.2334122908,
+      "recYd": 30.49533806835178,
+      "recTD": 0.1312357810148,
+      "_name": "Tank Bigsby",
+      "_team": "JAX"
+    },
+    "dernest johnson|RB": {
+      "rushYd": 130.04767663581285,
+      "rushTD": 1.0061797670400001,
+      "rec": 4.600749630399999,
+      "recYd": 32.75141564894375,
+      "recTD": 0.1375117635998339,
+      "_name": "D'Ernest Johnson",
+      "_team": "JAX"
+    },
+    "keillan robinson|RB": {
+      "rushYd": 34.716647784,
+      "rushTD": 0.26705113680000003,
+      "rec": 8.4668245816,
+      "recYd": 59.860449791911996,
+      "recTD": 0.25400473744799995,
+      "_name": "Keillan Robinson",
+      "_team": "JAX"
+    },
+    "isiah pacheco|RB": {
+      "rushYd": 1115.69472,
+      "rushTD": 8.924208220210122,
+      "rec": 32.76171359999999,
+      "recYd": 223.43488675199995,
+      "recTD": 1.7036091071999995,
+      "_name": "Isiah Pacheco",
+      "_team": "KC"
+    },
+    "clyde edwards helaire|RB": {
+      "rushYd": 80.66166704937527,
+      "rushTD": 0.61224123248061,
+      "rec": 5.393154815999999,
+      "recYd": 39.63968789759999,
+      "recTD": 0.258871431168,
+      "_name": "Clyde Edwards-Helaire",
+      "_team": "KC"
+    },
+    "carson steele|RB": {
+      "rushYd": 22.83497216,
+      "rushTD": 0.15932459105706268,
+      "rec": 4.4123519999999985,
+      "recYd": 30.77728973892112,
+      "recTD": 0.24267935999999993,
+      "_name": "Carson Steele",
+      "_team": "KC"
+    },
+    "samaje perine|RB": {
+      "rushYd": 307.183744,
+      "rushTD": 2.35745664,
+      "rec": 17.084626943999996,
+      "recYd": 133.26009016319998,
+      "recTD": 0.8200620933119999,
+      "_name": "Samaje Perine",
+      "_team": "KC"
+    },
+    "gus edwards|RB": {
+      "rushYd": 900.1289990656363,
+      "rushTD": 8.426357988048,
+      "rec": 13.216425226200004,
+      "recYd": 94.89393312411602,
+      "recTD": 0.41680217789813334,
+      "_name": "Gus Edwards",
+      "_team": "LAC"
+    },
+    "jk dobbins|RB": {
+      "rushYd": 696.4922695673374,
+      "rushTD": 5.25419757996,
+      "rec": 25.5031779555,
+      "recYd": 188.8264622042818,
+      "recTD": 1.3682910997514572,
+      "_name": "J.K. Dobbins",
+      "_team": "LAC"
+    },
+    "kimani vidal|RB": {
+      "rushYd": 76.14023892153793,
+      "rushTD": 0.5343741354,
+      "rec": 8.583138511920003,
+      "recYd": 61.191609459499986,
+      "recTD": 0.27332862039213984,
+      "_name": "Kimani Vidal",
+      "_team": "LAC"
+    },
+    "jaret patterson|RB": {
+      "rushYd": 154.43893931199995,
+      "rushTD": 1.1554035359999997,
+      "rec": 5.219008305420002,
+      "recYd": 36.63743830404841,
+      "recTD": 0.15657024916260004,
+      "_name": "Jaret Patterson",
+      "_team": "LAC"
+    },
+    "kyren williams|RB": {
+      "rushYd": 1002.5652966419999,
+      "rushTD": 9.739205738808,
+      "rec": 36.11040295295999,
+      "recYd": 264.23875923441426,
+      "recTD": 1.8777409535539193,
+      "_name": "Kyren Williams",
+      "_team": "LAR"
+    },
+    "blake corum|RB": {
+      "rushYd": 646.5907395926994,
+      "rushTD": 6.166683439560001,
+      "rec": 12.570535538399996,
+      "recYd": 95.7485267669048,
+      "recTD": 0.4467674951301272,
+      "_name": "Blake Corum",
+      "_team": "LAR"
+    },
+    "ronnie rivers|RB": {
+      "rushYd": 52.068719752558565,
+      "rushTD": 0.48029098319999997,
+      "rec": 4.2626311671999995,
+      "recYd": 28.39011755292673,
+      "recTD": 0.15920449553378238,
+      "_name": "Ronnie Rivers",
+      "_team": "LAR"
+    },
+    "zamir white|RB": {
+      "rushYd": 1088.4762,
+      "rushTD": 8.100288,
+      "rec": 25.518318,
+      "recYd": 182.45474291871378,
+      "recTD": 0.6299163515282186,
+      "_name": "Zamir White",
+      "_team": "LV"
+    },
+    "alexander mattison|RB": {
+      "rushYd": 384.91243466048115,
+      "rushTD": 2.6199369000000003,
+      "rec": 20.449611000000008,
+      "recYd": 142.84275470573382,
+      "recTD": 0.9072721205744383,
+      "_name": "Alexander Mattison",
+      "_team": "LV"
+    },
+    "dylan laube|RB": {
+      "rushYd": 198.6920650660464,
+      "rushTD": 1.4850528000000003,
+      "rec": 17.105429599999994,
+      "recYd": 132.31325108910247,
+      "recTD": 0.48073023317946967,
+      "_name": "Dylan Laube",
+      "_team": "LV"
+    },
+    "raheem mostert|RB": {
+      "rushYd": 827.8883638383868,
+      "rushTD": 9.827694868992001,
+      "rec": 17.54299599359999,
+      "recYd": 123.10984222257677,
+      "recTD": 1.0666255945375045,
+      "_name": "Raheem Mostert",
+      "_team": "MIA"
+    },
+    "devon achane|RB": {
+      "rushYd": 730.1035348992,
+      "rushTD": 7.243090624000001,
+      "rec": 53.50261979999998,
+      "recYd": 422.6217051571997,
+      "recTD": 3.5846755265999986,
+      "_name": "De'Von Achane",
+      "_team": "MIA"
+    },
+    "jaylen wright|RB": {
+      "rushYd": 242.4929422654348,
+      "rushTD": 2.385730563708704,
+      "rec": 21.459680928,
+      "recYd": 180.37396931468604,
+      "recTD": 1.1729359641013992,
+      "_name": "Jaylen Wright",
+      "_team": "MIA"
+    },
+    "jeff wilson|RB": {
+      "rushYd": 34.62836894402913,
+      "rushTD": 0.28635474560000007,
+      "rec": 4.104310559999998,
+      "recYd": 28.69220135611388,
+      "recTD": 0.19382375883416578,
+      "_name": "Jeff Wilson",
+      "_team": "MIA"
+    },
+    "aaron jones|RB": {
+      "rushYd": 973.6553369733339,
+      "rushTD": 7.318431456000001,
+      "rec": 46.05622543199999,
+      "recYd": 352.1532131880971,
+      "recTD": 1.981899982003265,
+      "_name": "Aaron Jones",
+      "_team": "MIN"
+    },
+    "ty chandler|RB": {
+      "rushYd": 627.0726518567307,
+      "rushTD": 4.6292002848000005,
+      "rec": 19.955852112,
+      "recYd": 146.2379034490608,
+      "recTD": 0.618631415472,
+      "_name": "Ty Chandler",
+      "_team": "MIN"
+    },
+    "rhamondre stevenson|RB": {
+      "rushYd": 996.6366347850094,
+      "rushTD": 7.128268778960001,
+      "rec": 24.829473648,
+      "recYd": 172.52057180513003,
+      "recTD": 0.6966616598936439,
+      "_name": "Rhamondre Stevenson",
+      "_team": "NE"
+    },
+    "antonio gibson|RB": {
+      "rushYd": 500.22633763200014,
+      "rushTD": 3.215740741920001,
+      "rec": 39.21923070464,
+      "recYd": 297.9215333019979,
+      "recTD": 1.3334538439577601,
+      "_name": "Antonio Gibson",
+      "_team": "NE"
+    },
+    "jamycal hasty|RB": {
+      "rushYd": 102.29767373781746,
+      "rushTD": 0.64419137328,
+      "rec": 3.8377976391999993,
+      "recYd": 30.333603042931895,
+      "recTD": 0.11513392917599997,
+      "_name": "JaMycal Hasty",
+      "_team": "NE"
+    },
+    "alvin kamara|RB": {
+      "rushYd": 831.3133996552001,
+      "rushTD": 6.121310068720001,
+      "rec": 61.129864150431985,
+      "recYd": 441.3576191661189,
+      "recTD": 2.3229348377164154,
+      "_name": "Alvin Kamara",
+      "_team": "NO"
+    },
+    "kendre miller|RB": {
+      "rushYd": 149.24403943680002,
+      "rushTD": 1.0713062236800002,
+      "rec": 21.0015687266,
+      "recYd": 142.81066734087997,
+      "recTD": 0.7140533367044,
+      "_name": "Kendre Miller",
+      "_team": "NO"
+    },
+    "jamaal williams|RB": {
+      "rushYd": 501.3502032,
+      "rushTD": 3.8854640748000002,
+      "rec": 6.617580397427999,
+      "recYd": 39.308427560722315,
+      "recTD": 0.19852741192283996,
+      "_name": "Jamaal Williams",
+      "_team": "NO"
+    },
+    "jordan mims|RB": {
+      "rushYd": 21.162255945600002,
+      "rushTD": 0.14776637568,
+      "rec": 4.5652681581584,
+      "recYd": 28.259009899000496,
+      "recTD": 0.13695804474475198,
+      "_name": "Jordan Mims",
+      "_team": "NO"
+    },
+    "devin singletary|RB": {
+      "rushYd": 992.9823353613637,
+      "rushTD": 6.593978858880002,
+      "rec": 32.73909375743999,
+      "recYd": 215.11835732454028,
+      "recTD": 0.837640487186976,
+      "_name": "Devin Singletary",
+      "_team": "NYG"
+    },
+    "eric gray|RB": {
+      "rushYd": 267.63590170239996,
+      "rushTD": 2.11291501344,
+      "rec": 11.864037427199996,
+      "recYd": 83.44331308096419,
+      "recTD": 0.39362498111725314,
+      "_name": "Eric Gray",
+      "_team": "NYG"
+    },
+    "tyrone tracy|RB": {
+      "rushYd": 237.8191537232,
+      "rushTD": 1.7265559169600002,
+      "rec": 21.383515077119995,
+      "recYd": 156.92584693461,
+      "recTD": 0.9562949329419287,
+      "_name": "Tyrone Tracy",
+      "_team": "NYG"
+    },
+    "breece hall|RB": {
+      "rushYd": 1081.152639879771,
+      "rushTD": 9.181738736800002,
+      "rec": 57.137109469439984,
+      "recYd": 453.72342684389395,
+      "recTD": 3.257654232752843,
+      "_name": "Breece Hall",
+      "_team": "NYJ"
+    },
+    "braelon allen|RB": {
+      "rushYd": 416.60229871605276,
+      "rushTD": 3.6088533712000004,
+      "rec": 4.337187254399999,
+      "recYd": 33.910559698509715,
+      "recTD": 0.2299959972859019,
+      "_name": "Braelon Allen",
+      "_team": "NYJ"
+    },
+    "isaiah davis|RB": {
+      "rushYd": 258.10674757674207,
+      "rushTD": 2.0801891913600006,
+      "rec": 16.382954587999993,
+      "recYd": 121.65533652850371,
+      "recTD": 0.7044670472839997,
+      "_name": "Isaiah Davis",
+      "_team": "NYJ"
+    },
+    "israel abanikanda|RB": {
+      "rushYd": 22.36890488662227,
+      "rushTD": 0.17102881786759588,
+      "rec": 9.515741435199994,
+      "recYd": 69.13854591366105,
+      "recTD": 0.41330692324283663,
+      "_name": "Israel Abanikanda",
+      "_team": "NYJ"
+    },
+    "saquon barkley|RB": {
+      "rushYd": 1107.4152660480001,
+      "rushTD": 9.5423537664,
+      "rec": 48.45908446847999,
+      "recYd": 358.5428279791946,
+      "recTD": 2.2775769700185595,
+      "_name": "Saquon Barkley",
+      "_team": "PHI"
+    },
+    "kenneth gainwell|RB": {
+      "rushYd": 267.74646120413456,
+      "rushTD": 2.1972525120000004,
+      "rec": 21.16696022784,
+      "recYd": 154.49231311258944,
+      "recTD": 0.6350088068352,
+      "_name": "Kenneth Gainwell",
+      "_team": "PHI"
+    },
+    "will shipley|RB": {
+      "rushYd": 144.26113156502868,
+      "rushTD": 1.345666171899811,
+      "rec": 9.081755020800003,
+      "recYd": 69.8676152450383,
+      "recTD": 0.3451066907904001,
+      "_name": "Will Shipley",
+      "_team": "PHI"
+    },
+    "najee harris|RB": {
+      "rushYd": 871.6082759999999,
+      "rushTD": 6.5265354,
+      "rec": 22.812791085,
+      "recYd": 146.68624667654998,
+      "recTD": 0.935324434485,
+      "_name": "Najee Harris",
+      "_team": "PIT"
+    },
+    "jaylen warren|RB": {
+      "rushYd": 674.9318016,
+      "rushTD": 4.8001615200000005,
+      "rec": 27.90450432,
+      "recYd": 196.4477104128,
+      "recTD": 1.17198918144,
+      "_name": "Jaylen Warren",
+      "_team": "PIT"
+    },
+    "cordarrelle patterson|RB": {
+      "rushYd": 183.5085672,
+      "rushTD": 1.75412601,
+      "rec": 34.20184540500001,
+      "recYd": 242.49108392145004,
+      "recTD": 1.536897570984842,
+      "_name": "Cordarrelle Patterson",
+      "_team": "PIT"
+    },
+    "kenneth walker|RB": {
+      "rushYd": 1028.4174638136,
+      "rushTD": 8.969302994904,
+      "rec": 26.85311674919999,
+      "recYd": 209.55563946416092,
+      "recTD": 0.8845376682785584,
+      "_name": "Kenneth Walker",
+      "_team": "SEA"
+    },
+    "zach charbonnet|RB": {
+      "rushYd": 599.5178455225255,
+      "rushTD": 4.32090811866,
+      "rec": 40.14906657929999,
+      "recYd": 282.0177491054743,
+      "recTD": 1.1341392900789073,
+      "_name": "Zach Charbonnet",
+      "_team": "SEA"
+    },
+    "kenny mcintosh|RB": {
+      "rushYd": 88.14835806344134,
+      "rushTD": 0.6210704505735518,
+      "rec": 11.406479552999997,
+      "recYd": 81.93625049750683,
+      "recTD": 0.3245137208655313,
+      "_name": "Kenny McIntosh",
+      "_team": "SEA"
+    },
+    "christian mccaffrey|RB": {
+      "rushYd": 1230.7405815936002,
+      "rushTD": 13.543295939712001,
+      "rec": 65.60818387200001,
+      "recYd": 536.294539598699,
+      "recTD": 4.566931951302141,
+      "_name": "Christian McCaffrey",
+      "_team": "SF"
+    },
+    "isaac guerendo|RB": {
+      "rushYd": 153.36467958000003,
+      "rushTD": 1.1935555688871728,
+      "rec": 4.036607416799999,
+      "recYd": 32.98007763280248,
+      "recTD": 0.17052645516426712,
+      "_name": "Isaac Guerendo",
+      "_team": "SF"
+    },
+    "jordan mason|RB": {
+      "rushYd": 537.4249477632001,
+      "rushTD": 5.278280736959999,
+      "rec": 8.573796755999998,
+      "recYd": 67.53949439824167,
+      "recTD": 0.3403670258823181,
+      "_name": "Jordan Mason",
+      "_team": "SF"
+    },
+    "rachaad white|RB": {
+      "rushYd": 869.672451816,
+      "rushTD": 6.490092924000001,
+      "rec": 46.45723686912001,
+      "recYd": 360.93497968080663,
+      "recTD": 2.0362990196558814,
+      "_name": "Rachaad White",
+      "_team": "TB"
+    },
+    "bucky irving|RB": {
+      "rushYd": 414.4496987232,
+      "rushTD": 3.2034759321600004,
+      "rec": 31.069937698800008,
+      "recYd": 251.80779797119325,
+      "recTD": 1.1185177571568001,
+      "_name": "Bucky Irving",
+      "_team": "TB"
+    },
+    "sean tucker|RB": {
+      "rushYd": 212.50176151680003,
+      "rushTD": 1.5779833776,
+      "rec": 9.807283064039998,
+      "recYd": 67.44063714373588,
+      "recTD": 0.26479664272907993,
+      "_name": "Sean Tucker",
+      "_team": "TB"
+    },
+    "tony pollard|RB": {
+      "rushYd": 867.001732785653,
+      "rushTD": 6.3891052117200005,
+      "rec": 33.276232489499996,
+      "recYd": 251.23555529572496,
+      "recTD": 1.397601764559,
+      "_name": "Tony Pollard",
+      "_team": "TEN"
+    },
+    "tyjae spears|RB": {
+      "rushYd": 704.6286783580873,
+      "rushTD": 5.21102647296,
+      "rec": 45.8578588545,
+      "recYd": 372.36581389853995,
+      "recTD": 2.017745789598,
+      "_name": "Tyjae Spears",
+      "_team": "TEN"
+    },
+    "hassan haskins|RB": {
+      "rushYd": 51.17362351128743,
+      "rushTD": 0.415330329221115,
+      "rec": 5.856963997499999,
+      "recYd": 43.243540584677085,
+      "recTD": 0.1314787301101748,
+      "_name": "Hassan Haskins",
+      "_team": "TEN"
+    },
+    "austin ekeler|RB": {
+      "rushYd": 454.6583521200001,
+      "rushTD": 3.5469800520000003,
+      "rec": 51.263905056,
+      "recYd": 431.64208057152,
+      "recTD": 2.5631952528,
+      "_name": "Austin Ekeler",
+      "_team": "WSH"
+    },
+    "brian robinson|RB": {
+      "rushYd": 959.3295902959998,
+      "rushTD": 7.117606637679999,
+      "rec": 25.190022312000004,
+      "recYd": 202.52777938848,
+      "recTD": 1.4862113164080002,
+      "_name": "Brian Robinson",
+      "_team": "WSH"
+    },
+    "jeremy mcnichols|RB": {
+      "rushYd": 51.73263395999999,
+      "rushTD": 0.3532960368,
+      "rec": 4.096353156,
+      "recYd": 28.934527040205502,
+      "recTD": 0.11146953929390682,
+      "_name": "Jeremy McNichols",
+      "_team": "WSH"
+    },
+    "marvin harrison|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 86.380223202,
+      "recYd": 1130.71712171418,
+      "recTD": 6.644399453026943,
+      "_name": "Marvin Harrison",
+      "_team": "ARI"
+    },
+    "michael wilson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 49.78167201000001,
+      "recYd": 619.7818165245001,
+      "recTD": 3.7336254007500003,
+      "_name": "Michael Wilson",
+      "_team": "ARI"
+    },
+    "greg dortch|WR": {
+      "rushYd": 22.7912769,
+      "rushTD": 0.018917865093866917,
+      "rec": 57.878122575000006,
+      "recYd": 613.5625062409106,
+      "recTD": 3.7041998448000006,
+      "_name": "Greg Dortch",
+      "_team": "ARI"
+    },
+    "zay jones|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 17.723737667999995,
+      "recYd": 185.05164488064284,
+      "recTD": 1.1874904237559998,
+      "_name": "Zay Jones",
+      "_team": "ARI"
+    },
+    "chris moore|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 7.783914599999999,
+      "recYd": 86.47929120599998,
+      "recTD": 0.40409979546640457,
+      "_name": "Chris Moore",
+      "_team": "ARI"
+    },
+    "zach pascal|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 4.796542526999999,
+      "recYd": 52.52214067064998,
+      "recTD": 0.2877925516199999,
+      "_name": "Zach Pascal",
+      "_team": "ARI"
+    },
+    "drake london|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 85.36607247168001,
+      "recYd": 1097.807691985805,
+      "recTD": 7.597580449979521,
+      "_name": "Drake London",
+      "_team": "ATL"
+    },
+    "darnell mooney|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 59.74957916927999,
+      "recYd": 827.5316714945278,
+      "recTD": 5.765192518069337,
+      "_name": "Darnell Mooney",
+      "_team": "ATL"
+    },
+    "ray ray mccloud|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 44.039203528319995,
+      "recYd": 445.2963584500773,
+      "recTD": 2.9466040126420627,
+      "_name": "Ray-Ray McCloud",
+      "_team": "ATL"
+    },
+    "khadarel hodge|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 13.419039553919996,
+      "recYd": 162.90714018458877,
+      "recTD": 0.9531602222430299,
+      "_name": "KhaDarel Hodge",
+      "_team": "ATL"
+    },
+    "casey washington|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 11.642448898080001,
+      "recYd": 112.93175431137601,
+      "recTD": 0.9081110140502401,
+      "_name": "Casey Washington",
+      "_team": "ATL"
+    },
+    "zay flowers|WR": {
+      "rushYd": 41.82668733599999,
+      "rushTD": 0.39384828,
+      "rec": 78.07367811040001,
+      "recYd": 944.681288460264,
+      "recTD": 6.0116732145008,
+      "_name": "Zay Flowers",
+      "_team": "BAL"
+    },
+    "rashod bateman|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 47.24439467999999,
+      "recYd": 615.3889450159372,
+      "recTD": 3.2126188382399996,
+      "_name": "Rashod Bateman",
+      "_team": "BAL"
+    },
+    "nelson agholor|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 40.30304176752,
+      "recYd": 486.0546837162912,
+      "recTD": 3.26454638316912,
+      "_name": "Nelson Agholor",
+      "_team": "BAL"
+    },
+    "devontez walker|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 7.482876898560002,
+      "recYd": 95.82273674991409,
+      "recTD": 0.5836643980876801,
+      "_name": "Devontez Walker",
+      "_team": "BAL"
+    },
+    "deonte harty|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 16.25207176992,
+      "recYd": 181.77188829902357,
+      "recTD": 1.2351574545139201,
+      "_name": "Deonte Harty",
+      "_team": "BAL"
+    },
+    "keon coleman|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 63.66865881599999,
+      "recYd": 832.7860573132799,
+      "recTD": 5.443079049387166,
+      "_name": "Keon Coleman",
+      "_team": "BUF"
+    },
+    "curtis samuel|WR": {
+      "rushYd": 72.43012224,
+      "rushTD": 0.45604151040000007,
+      "rec": 69.75157432319999,
+      "recYd": 759.2288198082257,
+      "recTD": 5.253634436081648,
+      "_name": "Curtis Samuel",
+      "_team": "BUF"
+    },
+    "khalil shakir|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 79.41074609663998,
+      "recYd": 1028.3691619514877,
+      "recTD": 5.796984465054718,
+      "_name": "Khalil Shakir",
+      "_team": "BUF"
+    },
+    "mack hollins|WR": {
+      "rushYd": 22.444395903999997,
+      "rushTD": 0.0,
+      "rec": 16.344608716799996,
+      "recYd": 204.30760895999995,
+      "recTD": 1.350049470917278,
+      "_name": "Mack Hollins",
+      "_team": "BUF"
+    },
+    "marquez valdes scantling|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 4.600907135999999,
+      "recYd": 69.15163425407998,
+      "recTD": 0.3726734780159999,
+      "_name": "Marquez Valdes-Scantling",
+      "_team": "BUF"
+    },
+    "diontae johnson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 76.832718732,
+      "recYd": 975.7755278964,
+      "recTD": 5.916119342364,
+      "_name": "Diontae Johnson",
+      "_team": "CAR"
+    },
+    "xavier legette|WR": {
+      "rushYd": 26.754588,
+      "rushTD": 0.03482039750204465,
+      "rec": 55.205924293799995,
+      "recYd": 735.3429115934159,
+      "recTD": 3.6987969276846,
+      "_name": "Xavier Legette",
+      "_team": "CAR"
+    },
+    "adam thielen|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 67.4901242358,
+      "recYd": 750.4901815020959,
+      "recTD": 4.6568185722702005,
+      "_name": "Adam Thielen",
+      "_team": "CAR"
+    },
+    "jonathan mingo|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 29.153111187199993,
+      "recYd": 349.0119981795925,
+      "recTD": 1.5451148929215996,
+      "_name": "Jonathan Mingo",
+      "_team": "CAR"
+    },
+    "david moore|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 11.421236343999997,
+      "recYd": 135.67960425255126,
+      "recTD": 0.5933034399055527,
+      "_name": "David Moore",
+      "_team": "CAR"
+    },
+    "dj moore|WR": {
+      "rushYd": 22.906838303999997,
+      "rushTD": 0.15058280159999998,
+      "rec": 78.87139999199998,
+      "recYd": 1086.0591778898397,
+      "recTD": 6.812266499050112,
+      "_name": "DJ Moore",
+      "_team": "CHI"
+    },
+    "keenan allen|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 76.63250649599999,
+      "recYd": 859.6139797405759,
+      "recTD": 5.4409079612159985,
+      "_name": "Keenan Allen",
+      "_team": "CHI"
+    },
+    "rome odunze|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 63.618583795199974,
+      "recYd": 863.9403679388157,
+      "recTD": 5.4726278311605565,
+      "_name": "Rome Odunze",
+      "_team": "CHI"
+    },
+    "tyler scott|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 10.032510095999998,
+      "recYd": 122.42530065239373,
+      "recTD": 0.6917860609361834,
+      "_name": "Tyler Scott",
+      "_team": "CHI"
+    },
+    "velus jones|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 6.574978367999999,
+      "recYd": 82.12745497967974,
+      "recTD": 0.496112108616012,
+      "_name": "Velus Jones",
+      "_team": "CHI"
+    },
+    "jamarr chase|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 106.27409112348,
+      "recYd": 1317.7987299311521,
+      "recTD": 9.629248089047726,
+      "_name": "Ja'Marr Chase",
+      "_team": "CIN"
+    },
+    "tee higgins|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 85.27044613752,
+      "recYd": 1140.9185693200177,
+      "recTD": 7.93015149078936,
+      "_name": "Tee Higgins",
+      "_team": "CIN"
+    },
+    "jermaine burton|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 45.46559876544,
+      "recYd": 557.4082408642944,
+      "recTD": 3.6372479012352,
+      "_name": "Jermaine Burton",
+      "_team": "CIN"
+    },
+    "andrei iosivas|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 48.79046398128,
+      "recYd": 534.255580595016,
+      "recTD": 3.80565619053984,
+      "_name": "Andrei Iosivas",
+      "_team": "CIN"
+    },
+    "charlie jones|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 4.196613447600001,
+      "recYd": 45.61200837395097,
+      "recTD": 0.2937629413320001,
+      "_name": "Charlie Jones",
+      "_team": "CIN"
+    },
+    "amari cooper|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 77.42195999999997,
+      "recYd": 1072.2941459999995,
+      "recTD": 6.271178759999998,
+      "_name": "Amari Cooper",
+      "_team": "CLE"
+    },
+    "jerry jeudy|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 54.02332319999999,
+      "recYd": 700.142268672,
+      "recTD": 3.7384237329299896,
+      "_name": "Jerry Jeudy",
+      "_team": "CLE"
+    },
+    "elijah moore|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 52.08562358999998,
+      "recYd": 571.3792907822999,
+      "recTD": 3.281394286169999,
+      "_name": "Elijah Moore",
+      "_team": "CLE"
+    },
+    "cedric tillman|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 19.570551000000002,
+      "recYd": 240.11280816840582,
+      "recTD": 1.5007543833046004,
+      "_name": "Cedric Tillman",
+      "_team": "CLE"
+    },
+    "jamari thrash|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 5.685137534999999,
+      "recYd": 65.26537890179999,
+      "recTD": 0.34110825209999995,
+      "_name": "Jamari Thrash",
+      "_team": "CLE"
+    },
+    "david bell|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 3.2904332999999992,
+      "recYd": 35.31788789588036,
+      "recTD": 0.2082673474878317,
+      "_name": "David Bell",
+      "_team": "CLE"
+    },
+    "ceedee lamb|WR": {
+      "rushYd": 78.801206904,
+      "rushTD": 0.363558048,
+      "rec": 111.89205609119995,
+      "recYd": 1444.4786463175233,
+      "recTD": 10.18363511452486,
+      "_name": "CeeDee Lamb",
+      "_team": "DAL"
+    },
+    "brandin cooks|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 64.40806298304,
+      "recYd": 774.1849170561408,
+      "recTD": 5.603501479524479,
+      "_name": "Brandin Cooks",
+      "_team": "DAL"
+    },
+    "jalen tolbert|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 55.14592788431998,
+      "recYd": 678.2949129771358,
+      "recTD": 4.6322579422828785,
+      "_name": "Jalen Tolbert",
+      "_team": "DAL"
+    },
+    "kavontae turpin|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 10.323853376759995,
+      "recYd": 117.79516702883154,
+      "recTD": 0.8362321235175596,
+      "_name": "KaVontae Turpin",
+      "_team": "DAL"
+    },
+    "ryan flournoy|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 7.160652510479997,
+      "recYd": 83.49320827219677,
+      "recTD": 0.5728522008383997,
+      "_name": "Ryan Flournoy",
+      "_team": "DAL"
+    },
+    "jalen brooks|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 7.439955767999998,
+      "recYd": 79.38432804455998,
+      "recTD": 0.5867311853369301,
+      "_name": "Jalen Brooks",
+      "_team": "DAL"
+    },
+    "courtland sutton|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 73.23993294321605,
+      "recYd": 920.6259570962258,
+      "recTD": 6.152154367230148,
+      "_name": "Courtland Sutton",
+      "_team": "DEN"
+    },
+    "josh reynolds|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 54.09559795869345,
+      "recYd": 651.3109994226692,
+      "recTD": 3.9489786509846216,
+      "_name": "Josh Reynolds",
+      "_team": "DEN"
+    },
+    "marvin mims|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 49.074857265527626,
+      "recYd": 667.4180588111757,
+      "recTD": 3.778764009445627,
+      "_name": "Marvin Mims",
+      "_team": "DEN"
+    },
+    "troy franklin|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 34.6884930921608,
+      "recYd": 459.275648540209,
+      "recTD": 2.428194516451256,
+      "_name": "Troy Franklin",
+      "_team": "DEN"
+    },
+    "devaughn vele|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 13.549287191155777,
+      "recYd": 173.97284753444018,
+      "recTD": 0.9755486777632159,
+      "_name": "Devaughn Vele",
+      "_team": "DEN"
+    },
+    "jameson williams|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 65.21317158719998,
+      "recYd": 945.5909880143997,
+      "recTD": 6.288854839588943,
+      "_name": "Jameson Williams",
+      "_team": "DET"
+    },
+    "amon ra st brown|WR": {
+      "rushYd": 123.26695878000001,
+      "rushTD": 0.28167640200000005,
+      "rec": 108.1797093888,
+      "recYd": 1337.101208045568,
+      "recTD": 8.233138876629978,
+      "_name": "Amon-Ra St. Brown",
+      "_team": "DET"
+    },
+    "tim patrick|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 13.323325008000003,
+      "recYd": 170.93825985264004,
+      "recTD": 0.9421930443424578,
+      "_name": "Tim Patrick",
+      "_team": "DET"
+    },
+    "kalif raymond|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 35.46564806399999,
+      "recYd": 425.48505462750603,
+      "recTD": 2.5889923086719993,
+      "_name": "Kalif Raymond",
+      "_team": "DET"
+    },
+    "antoine green|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 6.75649044,
+      "recYd": 87.9019406244,
+      "recTD": 0.44891383942220314,
+      "_name": "Antoine Green",
+      "_team": "DET"
+    },
+    "christian watson|WR": {
+      "rushYd": 29.21069536,
+      "rushTD": 0.05036537541903995,
+      "rec": 58.83983841119998,
+      "recYd": 850.2356650418396,
+      "recTD": 6.366470516091838,
+      "_name": "Christian Watson",
+      "_team": "GB"
+    },
+    "romeo doubs|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 68.93927748960002,
+      "recYd": 818.9986165764483,
+      "recTD": 7.175809739370966,
+      "_name": "Romeo Doubs",
+      "_team": "GB"
+    },
+    "jayden reed|WR": {
+      "rushYd": 137.0931408,
+      "rushTD": 0.8064302399999999,
+      "rec": 55.312561416,
+      "recYd": 680.89763103096,
+      "recTD": 5.199380773104,
+      "_name": "Jayden Reed",
+      "_team": "GB"
+    },
+    "dontayvion wicks|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 49.32029598720001,
+      "recYd": 632.2861945559042,
+      "recTD": 4.822942271961376,
+      "_name": "Dontayvion Wicks",
+      "_team": "GB"
+    },
+    "bo melton|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 7.264388767999999,
+      "recYd": 86.73680188991999,
+      "recTD": 0.5811511014399999,
+      "_name": "Bo Melton",
+      "_team": "GB"
+    },
+    "stefon diggs|WR": {
+      "rushYd": 21.33532128,
+      "rushTD": 0.021230708481497,
+      "rec": 83.60303952,
+      "recYd": 1014.1048693776,
+      "recTD": 6.616917301870028,
+      "_name": "Stefon Diggs",
+      "_team": "HOU"
+    },
+    "nico collins|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 81.62793999359998,
+      "recYd": 1186.8702475069435,
+      "recTD": 7.836282239385598,
+      "_name": "Nico Collins",
+      "_team": "HOU"
+    },
+    "tank dell|WR": {
+      "rushYd": 106.20909936000001,
+      "rushTD": 0.09873549301924824,
+      "rec": 67.23894777599999,
+      "recYd": 970.9304058854398,
+      "recTD": 6.6566558298239995,
+      "_name": "Tank Dell",
+      "_team": "HOU"
+    },
+    "robert woods|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 14.640930303999996,
+      "recYd": 162.5096094716055,
+      "recTD": 0.9750009110081149,
+      "_name": "Robert Woods",
+      "_team": "HOU"
+    },
+    "xavier hutchinson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 6.607432832,
+      "recYd": 82.88042986088463,
+      "recTD": 0.469072352155653,
+      "_name": "Xavier Hutchinson",
+      "_team": "HOU"
+    },
+    "john metchie|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 14.569627072000001,
+      "recYd": 171.92159944960002,
+      "recTD": 1.107291657472,
+      "_name": "John Metchie",
+      "_team": "HOU"
+    },
+    "michael pittman|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 84.2420727456,
+      "recYd": 963.7293122096639,
+      "recTD": 5.8127030194464,
+      "_name": "Michael Pittman",
+      "_team": "IND"
+    },
+    "adonai mitchell|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 65.68331615999999,
+      "recYd": 891.9794334527999,
+      "recTD": 4.991932028159999,
+      "_name": "Adonai Mitchell",
+      "_team": "IND"
+    },
+    "josh downs|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 57.247517712000004,
+      "recYd": 665.6308675744343,
+      "recTD": 3.8355836867040005,
+      "_name": "Josh Downs",
+      "_team": "IND"
+    },
+    "anthony gould|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 13.568112465599999,
+      "recYd": 161.05349496667196,
+      "recTD": 0.8683591977984,
+      "_name": "Anthony Gould",
+      "_team": "IND"
+    },
+    "alec pierce|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 10.225454162000002,
+      "recYd": 152.742919204243,
+      "recTD": 0.7771345163120001,
+      "_name": "Alec Pierce",
+      "_team": "IND"
+    },
+    "christian kirk|WR": {
+      "rushYd": 20.158053552,
+      "rushTD": 0.01942573030990813,
+      "rec": 86.24598979919999,
+      "recYd": 1066.862893816104,
+      "recTD": 5.605989336947999,
+      "_name": "Christian Kirk",
+      "_team": "JAX"
+    },
+    "brian thomas|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 78.28500679999999,
+      "recYd": 1025.53358908,
+      "recTD": 6.575940571199999,
+      "_name": "Brian Thomas",
+      "_team": "JAX"
+    },
+    "gabe davis|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 53.08927845759999,
+      "recYd": 743.2498984063998,
+      "recTD": 5.2558385673023995,
+      "_name": "Gabe Davis",
+      "_team": "JAX"
+    },
+    "parker washington|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 11.550049464800002,
+      "recYd": 116.53999909983203,
+      "recTD": 0.7738533141416002,
+      "_name": "Parker Washington",
+      "_team": "JAX"
+    },
+    "tim jones|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 6.8649929039999975,
+      "recYd": 73.04352449855998,
+      "recTD": 0.45244498229927416,
+      "_name": "Tim Jones",
+      "_team": "JAX"
+    },
+    "devin duvernay|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 3.962425728799998,
+      "recYd": 37.921826363946415,
+      "recTD": 0.24317386951205217,
+      "_name": "Devin Duvernay",
+      "_team": "JAX"
+    },
+    "marquise brown|WR": {
+      "rushYd": 21.095244799999996,
+      "rushTD": 0.00995976225283702,
+      "rec": 70.40096716799997,
+      "recYd": 916.6205925273596,
+      "recTD": 6.758492848127997,
+      "_name": "Marquise Brown",
+      "_team": "KC"
+    },
+    "rashee rice|WR": {
+      "rushYd": 21.095244799999996,
+      "rushTD": 0.010947701395606461,
+      "rec": 93.94527743999998,
+      "recYd": 1100.0991988223998,
+      "recTD": 7.703512750079999,
+      "_name": "Rashee Rice",
+      "_team": "KC"
+    },
+    "xavier worthy|WR": {
+      "rushYd": 48.830028799999994,
+      "rushTD": 0.04086589599579747,
+      "rec": 64.14299135999998,
+      "recYd": 885.1732807679998,
+      "recTD": 6.286013153279998,
+      "_name": "Xavier Worthy",
+      "_team": "KC"
+    },
+    "juju smith schuster|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 16.100672447999997,
+      "recYd": 166.15893966335997,
+      "recTD": 1.320255140736,
+      "_name": "JuJu Smith-Schuster",
+      "_team": "KC"
+    },
+    "justin watson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 10.525350527999995,
+      "recYd": 145.67085130751994,
+      "recTD": 0.8525533927679997,
+      "_name": "Justin Watson",
+      "_team": "KC"
+    },
+    "skyy moore|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 9.152478720000001,
+      "recYd": 106.0772283648,
+      "recTD": 0.7350467687531194,
+      "_name": "Skyy Moore",
+      "_team": "KC"
+    },
+    "joshua palmer|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 78.27339898224004,
+      "recYd": 979.2002212678228,
+      "recTD": 5.948778322650242,
+      "_name": "Joshua Palmer",
+      "_team": "LAC"
+    },
+    "ladd mcconkey|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 76.63014002826003,
+      "recYd": 923.3931873405334,
+      "recTD": 5.440739942006462,
+      "_name": "Ladd McConkey",
+      "_team": "LAC"
+    },
+    "dj chark|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 32.61279951888001,
+      "recYd": 427.8799296877057,
+      "recTD": 2.6090239615104007,
+      "_name": "DJ Chark",
+      "_team": "LAC"
+    },
+    "brenden rice|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 30.98238288768001,
+      "recYd": 368.38053253451534,
+      "recTD": 2.2307315679129607,
+      "_name": "Brenden Rice",
+      "_team": "LAC"
+    },
+    "quentin johnston|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 24.708629028720004,
+      "recYd": 321.4592636636473,
+      "recTD": 1.7790212900678402,
+      "_name": "Quentin Johnston",
+      "_team": "LAC"
+    },
+    "derius davis|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 7.772397091200004,
+      "recYd": 80.03086122767255,
+      "recTD": 0.4876835501076973,
+      "_name": "Derius Davis",
+      "_team": "LAC"
+    },
+    "cooper kupp|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 92.73939763199998,
+      "recYd": 1161.0972583526398,
+      "recTD": 8.253879401627836,
+      "_name": "Cooper Kupp",
+      "_team": "LAR"
+    },
+    "puka nacua|WR": {
+      "rushYd": 90.24414789599999,
+      "rushTD": 0.1121566998292951,
+      "rec": 93.94030037867998,
+      "recYd": 1298.2549512333574,
+      "recTD": 7.117392514551949,
+      "_name": "Puka Nacua",
+      "_team": "LAR"
+    },
+    "demarcus robinson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 55.33571479799999,
+      "recYd": 727.6646495936999,
+      "recTD": 4.980214331819999,
+      "_name": "Demarcus Robinson",
+      "_team": "LAR"
+    },
+    "jordan whittington|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 25.909069213440002,
+      "recYd": 317.5618083392152,
+      "recTD": 1.860404098703017,
+      "_name": "Jordan Whittington",
+      "_team": "LAR"
+    },
+    "tutu atwell|WR": {
+      "rushYd": 19.717208783999997,
+      "rushTD": 0.03531852092907908,
+      "rec": 9.308354774039996,
+      "recYd": 101.55415058477637,
+      "recTD": 0.6715394447463243,
+      "_name": "Tutu Atwell",
+      "_team": "LAR"
+    },
+    "davante adams|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 91.32295228000001,
+      "recYd": 1089.611003326202,
+      "recTD": 6.48392961188,
+      "_name": "Davante Adams",
+      "_team": "LV"
+    },
+    "jakobi meyers|WR": {
+      "rushYd": 23.246139000000003,
+      "rushTD": 0.06274953081086129,
+      "rec": 75.69269119999998,
+      "recYd": 885.4163808009444,
+      "recTD": 5.071410310399999,
+      "_name": "Jakobi Meyers",
+      "_team": "LV"
+    },
+    "dj turner|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 10.312197,
+      "recYd": 134.26480493999998,
+      "recTD": 0.6187318199999999,
+      "_name": "DJ Turner",
+      "_team": "LV"
+    },
+    "tre tucker|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 21.47209155,
+      "recYd": 278.18624155793555,
+      "recTD": 1.3333823505397018,
+      "_name": "Tre Tucker",
+      "_team": "LV"
+    },
+    "jalen guyton|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 3.3791379999999993,
+      "recYd": 47.20933014656481,
+      "recTD": 0.22978138399999998,
+      "_name": "Jalen Guyton",
+      "_team": "LV"
+    },
+    "tyreek hill|WR": {
+      "rushYd": 33.541405128,
+      "rushTD": 0.3158324400000001,
+      "rec": 105.11960206271996,
+      "recYd": 1506.753388178435,
+      "recTD": 9.645827690341369,
+      "_name": "Tyreek Hill",
+      "_team": "MIA"
+    },
+    "jaylen waddle|WR": {
+      "rushYd": 10.190860064,
+      "rushTD": 0.10527748000000002,
+      "rec": 88.25909428223994,
+      "recYd": 1223.2709818310982,
+      "recTD": 6.1781365997567965,
+      "_name": "Jaylen Waddle",
+      "_team": "MIA"
+    },
+    "odell beckham|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 17.744693541119993,
+      "recYd": 246.86457649408405,
+      "recTD": 1.5976782473451419,
+      "_name": "Odell Beckham",
+      "_team": "MIA"
+    },
+    "braxton berrios|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 6.332364863999998,
+      "recYd": 62.18279819409054,
+      "recTD": 0.3367508981278134,
+      "_name": "Braxton Berrios",
+      "_team": "MIA"
+    },
+    "malik washington|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 27.006363484799994,
+      "recYd": 318.9451527554879,
+      "recTD": 1.8904454439359997,
+      "_name": "Malik Washington",
+      "_team": "MIA"
+    },
+    "river cracraft|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 4.397475599999998,
+      "recYd": 50.81429684374926,
+      "recTD": 0.20591088235902322,
+      "_name": "River Cracraft",
+      "_team": "MIA"
+    },
+    "justin jefferson|WR": {
+      "rushYd": 17.3359648,
+      "rushTD": 0.02263736982374522,
+      "rec": 103.52432663999997,
+      "recYd": 1423.4594912999996,
+      "recTD": 7.557275844719998,
+      "_name": "Justin Jefferson",
+      "_team": "MIN"
+    },
+    "jordan addison|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 78.673760256,
+      "recYd": 1002.30370566144,
+      "recTD": 5.664510738431999,
+      "_name": "Jordan Addison",
+      "_team": "MIN"
+    },
+    "brandon powell|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 13.4374464,
+      "recYd": 135.07808280601225,
+      "recTD": 0.6967599414940221,
+      "_name": "Brandon Powell",
+      "_team": "MIN"
+    },
+    "trent sherfield|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 7.303500959999997,
+      "recYd": 86.27215078014783,
+      "recTD": 0.40008391543138655,
+      "_name": "Trent Sherfield",
+      "_team": "MIN"
+    },
+    "jalen nailor|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 31.08404846399999,
+      "recYd": 385.4422009535999,
+      "recTD": 1.7717907624479996,
+      "_name": "Jalen Nailor",
+      "_team": "MIN"
+    },
+    "demario douglas|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 63.71821158695999,
+      "recYd": 745.5030755674318,
+      "recTD": 3.5045016372827993,
+      "_name": "Demario Douglas",
+      "_team": "NE"
+    },
+    "kendrick bourne|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 33.2080037968,
+      "recYd": 409.454686814544,
+      "recTD": 2.1917282505888003,
+      "_name": "Kendrick Bourne",
+      "_team": "NE"
+    },
+    "jalynn polk|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 42.03550524991999,
+      "recYd": 548.563343511456,
+      "recTD": 2.7743433464947196,
+      "_name": "Ja'Lynn Polk",
+      "_team": "NE"
+    },
+    "tyquan thornton|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 28.820329686399997,
+      "recYd": 383.02218153225596,
+      "recTD": 1.7292197811839998,
+      "_name": "Tyquan Thornton",
+      "_team": "NE"
+    },
+    "javon baker|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 8.040667904640001,
+      "recYd": 97.93533507851521,
+      "recTD": 0.47439940637376005,
+      "_name": "Javon Baker",
+      "_team": "NE"
+    },
+    "kj osborn|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 47.09436878495999,
+      "recYd": 534.8386895704175,
+      "recTD": 2.8256621270975995,
+      "_name": "K.J. Osborn",
+      "_team": "NE"
+    },
+    "chris olave|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 84.06580253166479,
+      "recYd": 1120.5971477470916,
+      "recTD": 6.237017841711259,
+      "_name": "Chris Olave",
+      "_team": "NO"
+    },
+    "rashid shaheed|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 60.94516161222718,
+      "recYd": 862.9834884291369,
+      "recTD": 4.973300559095741,
+      "_name": "Rashid Shaheed",
+      "_team": "NO"
+    },
+    "cedrick wilson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 30.04197910559999,
+      "recYd": 335.2684868184959,
+      "recTD": 2.4312429088079526,
+      "_name": "Cedrick Wilson",
+      "_team": "NO"
+    },
+    "at perry|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 19.231317291155197,
+      "recYd": 256.73808583692187,
+      "recTD": 1.7500498734951229,
+      "_name": "A.T. Perry",
+      "_team": "NO"
+    },
+    "bub means|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 8.8317855241,
+      "recYd": 105.62815486823601,
+      "recTD": 0.7100673359303007,
+      "_name": "Bub Means",
+      "_team": "NO"
+    },
+    "stanley morgan|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 3.3379976783999994,
+      "recYd": 37.076642033546754,
+      "recTD": 0.2259206716099632,
+      "_name": "Stanley Morgan",
+      "_team": "NO"
+    },
+    "malik nabers|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 85.89716105711996,
+      "recYd": 1100.3426331417068,
+      "recTD": 5.8753658163070055,
+      "_name": "Malik Nabers",
+      "_team": "NYG"
+    },
+    "wandale robinson|WR": {
+      "rushYd": 52.71323881600001,
+      "rushTD": 0.08369511462693469,
+      "rec": 68.3035468248,
+      "recYd": 661.3937011447499,
+      "recTD": 3.2193948437875664,
+      "_name": "Wan'Dale Robinson",
+      "_team": "NYG"
+    },
+    "darius slayton|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 45.7495173408,
+      "recYd": 590.1687736963199,
+      "recTD": 2.973718627152,
+      "_name": "Darius Slayton",
+      "_team": "NYG"
+    },
+    "jalin hyatt|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 37.63654015968,
+      "recYd": 477.2313292247424,
+      "recTD": 2.0498016274716777,
+      "_name": "Jalin Hyatt",
+      "_team": "NYG"
+    },
+    "gunner olszewski|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 6.3557343359999985,
+      "recYd": 60.72669584467457,
+      "recTD": 0.29637199624083127,
+      "_name": "Gunner Olszewski",
+      "_team": "NYG"
+    },
+    "garrett wilson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 84.12721244927997,
+      "recYd": 1052.564409957333,
+      "recTD": 7.38305988773812,
+      "_name": "Garrett Wilson",
+      "_team": "NYJ"
+    },
+    "mike williams|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 64.32309403519997,
+      "recYd": 896.9036851418747,
+      "recTD": 6.136085873253441,
+      "_name": "Mike Williams",
+      "_team": "NYJ"
+    },
+    "malachi corley|WR": {
+      "rushYd": 24.960496904000003,
+      "rushTD": 0.030751864593784175,
+      "rec": 45.82961198815998,
+      "recYd": 548.6110802333167,
+      "recTD": 3.7674978441924276,
+      "_name": "Malachi Corley",
+      "_team": "NYJ"
+    },
+    "allen lazard|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 18.191300967839997,
+      "recYd": 235.77203635810108,
+      "recTD": 1.6312505989738435,
+      "_name": "Allen Lazard",
+      "_team": "NYJ"
+    },
+    "jason brownlee|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 8.176664495999999,
+      "recYd": 93.09941734004578,
+      "recTD": 0.6683064547402515,
+      "_name": "Jason Brownlee",
+      "_team": "NYJ"
+    },
+    "xavier gipson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 12.608653657599998,
+      "recYd": 146.1070994910365,
+      "recTD": 1.1189931551875791,
+      "_name": "Xavier Gipson",
+      "_team": "NYJ"
+    },
+    "aj brown|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 90.11243114496,
+      "recYd": 1286.8055167500288,
+      "recTD": 8.20023123419136,
+      "_name": "A.J. Brown",
+      "_team": "PHI"
+    },
+    "devonta smith|WR": {
+      "rushYd": 24.242214527999998,
+      "rushTD": 0.014429660557768925,
+      "rec": 84.01850658432001,
+      "recYd": 1135.9302090200065,
+      "recTD": 7.084565185139086,
+      "_name": "DeVonta Smith",
+      "_team": "PHI"
+    },
+    "jahan dotson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 23.249404422719998,
+      "recYd": 271.5530436573696,
+      "recTD": 1.6507077140131197,
+      "_name": "Jahan Dotson",
+      "_team": "PHI"
+    },
+    "johnny wilson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 12.64026333024,
+      "recYd": 152.947186295904,
+      "recTD": 0.6920929139576478,
+      "_name": "Johnny Wilson",
+      "_team": "PHI"
+    },
+    "britain covey|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 5.187980448000001,
+      "recYd": 58.033275066020074,
+      "recTD": 0.3631586313600001,
+      "_name": "Britain Covey",
+      "_team": "PHI"
+    },
+    "george pickens|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 77.36387294999999,
+      "recYd": 1124.8707126929996,
+      "recTD": 6.321099065216795,
+      "_name": "George Pickens",
+      "_team": "PIT"
+    },
+    "roman wilson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 47.013981,
+      "recYd": 574.5108478200001,
+      "recTD": 3.337992651,
+      "_name": "Roman Wilson",
+      "_team": "PIT"
+    },
+    "van jefferson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 43.86173211,
+      "recYd": 593.0106181271999,
+      "recTD": 3.24576817614,
+      "_name": "Van Jefferson",
+      "_team": "PIT"
+    },
+    "calvin austin|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 29.309418599999997,
+      "recYd": 328.26548832,
+      "recTD": 1.8158737725561622,
+      "_name": "Calvin Austin",
+      "_team": "PIT"
+    },
+    "dez fitzpatrick|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 4.06500276,
+      "recYd": 50.040183975599994,
+      "recTD": 0.24390016559999997,
+      "_name": "Dez Fitzpatrick",
+      "_team": "PIT"
+    },
+    "dk metcalf|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 73.44379674323999,
+      "recYd": 1102.391389116032,
+      "recTD": 8.299149031986119,
+      "_name": "DK Metcalf",
+      "_team": "SEA"
+    },
+    "tyler lockett|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 77.58728025719999,
+      "recYd": 890.7254198585324,
+      "recTD": 5.741458739032799,
+      "_name": "Tyler Lockett",
+      "_team": "SEA"
+    },
+    "jaxon smith njigba|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 79.78614766416,
+      "recYd": 899.6336609984504,
+      "recTD": 5.664816484155359,
+      "_name": "Jaxon Smith-Njigba",
+      "_team": "SEA"
+    },
+    "jake bobo|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 17.1880844562,
+      "recYd": 187.34551148138038,
+      "recTD": 1.1687897430215999,
+      "_name": "Jake Bobo",
+      "_team": "SEA"
+    },
+    "laviska shenault|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 7.999047747599999,
+      "recYd": 78.42270360819124,
+      "recTD": 0.46458328906608864,
+      "_name": "Laviska Shenault",
+      "_team": "SEA"
+    },
+    "brandon aiyuk|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 78.2185880448,
+      "recYd": 1184.229422998272,
+      "recTD": 7.900077392524801,
+      "_name": "Brandon Aiyuk",
+      "_team": "SF"
+    },
+    "deebo samuel|WR": {
+      "rushYd": 231.31002261360004,
+      "rushTD": 2.1651484176,
+      "rec": 71.466057432,
+      "recYd": 998.3808223250401,
+      "recTD": 6.289013054015999,
+      "_name": "Deebo Samuel",
+      "_team": "SF"
+    },
+    "ricky pearsall|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 27.521355052799997,
+      "recYd": 363.88666336255017,
+      "recTD": 2.3943578895935995,
+      "_name": "Ricky Pearsall",
+      "_team": "SF"
+    },
+    "jauan jennings|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 26.786990721959995,
+      "recYd": 345.01644049884476,
+      "recTD": 2.133590747005389,
+      "_name": "Jauan Jennings",
+      "_team": "SF"
+    },
+    "ronnie bell|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 5.104338006599999,
+      "recYd": 61.26378219290883,
+      "recTD": 0.3953419421524025,
+      "_name": "Ronnie Bell",
+      "_team": "SF"
+    },
+    "danny gray|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 3.3389879291999995,
+      "recYd": 54.25855384949999,
+      "recTD": 0.25042409468999993,
+      "_name": "Danny Gray",
+      "_team": "SF"
+    },
+    "mike evans|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 77.23420741343999,
+      "recYd": 1153.8790587567935,
+      "recTD": 9.268104889612799,
+      "_name": "Mike Evans",
+      "_team": "TB"
+    },
+    "chris godwin|WR": {
+      "rushYd": 21.251872908,
+      "rushTD": 0.04793562356510904,
+      "rec": 78.21155532959999,
+      "recYd": 954.1166738266508,
+      "recTD": 5.0603068112553515,
+      "_name": "Chris Godwin",
+      "_team": "TB"
+    },
+    "trey palmer|WR": {
+      "rushYd": 24.730223364,
+      "rushTD": 0.03294676305415995,
+      "rec": 21.65703349656,
+      "recYd": 256.85241726920157,
+      "recTD": 1.5350635864914943,
+      "_name": "Trey Palmer",
+      "_team": "TB"
+    },
+    "jalen mcmillan|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 49.92302644559999,
+      "recYd": 617.5554387832201,
+      "recTD": 3.733163195799231,
+      "_name": "Jalen McMillan",
+      "_team": "TB"
+    },
+    "kameron johnson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 4.8155734703999995,
+      "recYd": 48.05579627257822,
+      "recTD": 0.30819670210559996,
+      "_name": "Kameron Johnson",
+      "_team": "TB"
+    },
+    "deandre hopkins|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 71.95649042735998,
+      "recYd": 978.6082698120957,
+      "recTD": 6.059606919546159,
+      "_name": "DeAndre Hopkins",
+      "_team": "TEN"
+    },
+    "calvin ridley|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 73.34133702588001,
+      "recYd": 1039.9801590269785,
+      "recTD": 7.040768354484481,
+      "_name": "Calvin Ridley",
+      "_team": "TEN"
+    },
+    "tyler boyd|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 40.8541315875,
+      "recYd": 466.55418272925,
+      "recTD": 2.412201324778474,
+      "_name": "Tyler Boyd",
+      "_team": "TEN"
+    },
+    "treylon burks|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 12.859289843399996,
+      "recYd": 175.5001469207427,
+      "recTD": 0.793082619589497,
+      "_name": "Treylon Burks",
+      "_team": "TEN"
+    },
+    "nick westbrook ikhine|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 9.293049542699999,
+      "recYd": 107.52896919621344,
+      "recTD": 0.5436624076441573,
+      "_name": "Nick Westbrook-Ikhine",
+      "_team": "TEN"
+    },
+    "kyle philips|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 3.569132628599999,
+      "recYd": 44.423951259866186,
+      "recTD": 0.2309723114955428,
+      "_name": "Kyle Philips",
+      "_team": "TEN"
+    },
+    "jhaquan jackson|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 3.3493157081999994,
+      "recYd": 39.99082955590799,
+      "recTD": 0.20095894249199994,
+      "_name": "Jha'Quan Jackson",
+      "_team": "TEN"
+    },
+    "terry mclaurin|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 85.71746458800001,
+      "recYd": 1146.8996761874403,
+      "recTD": 6.514527308688001,
+      "_name": "Terry McLaurin",
+      "_team": "WSH"
+    },
+    "luke mccaffrey|WR": {
+      "rushYd": 29.908659199999995,
+      "rushTD": 0.044541704375,
+      "rec": 34.25865697520001,
+      "recYd": 390.54868951728014,
+      "recTD": 2.0555194185120005,
+      "_name": "Luke McCaffrey",
+      "_team": "WSH"
+    },
+    "jamison crowder|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 7.495816356,
+      "recYd": 75.25799621424,
+      "recTD": 0.44225316500399997,
+      "_name": "Jamison Crowder",
+      "_team": "WSH"
+    },
+    "olamide zaccheaus|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 24.904467403200005,
+      "recYd": 261.99499708166405,
+      "recTD": 1.8429305878368003,
+      "_name": "Olamide Zaccheaus",
+      "_team": "WSH"
+    },
+    "dyami brown|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 40.3142340888,
+      "recYd": 566.011846606752,
+      "recTD": 3.7492237702584,
+      "_name": "Dyami Brown",
+      "_team": "WSH"
+    },
+    "noah brown|WR": {
+      "rushYd": 0.0,
+      "rushTD": 0.0,
+      "rec": 16.572383100000003,
+      "recYd": 224.39006717400002,
+      "recTD": 1.3257906480000003,
+      "_name": "Noah Brown",
+      "_team": "WSH"
+    },
+    "trey mcbride|TE": {
+      "rec": 88.98606552149998,
+      "recYd": 913.8868929058048,
+      "recTD": 5.695108193375999,
+      "_name": "Trey McBride",
+      "_team": "ARI"
+    },
+    "tip reiman|TE": {
+      "rec": 3.9686170649999997,
+      "recYd": 38.2566698557006,
+      "recTD": 0.257960109225,
+      "_name": "Tip Reiman",
+      "_team": "ARI"
+    },
+    "elijah higgins|TE": {
+      "rec": 9.877315875,
+      "recYd": 99.56334402,
+      "recTD": 0.5727851163873112,
+      "_name": "Elijah Higgins",
+      "_team": "ARI"
+    },
+    "kyle pitts|TE": {
+      "rec": 78.70141319039999,
+      "recYd": 1000.294961649984,
+      "recTD": 6.374814468422399,
+      "_name": "Kyle Pitts",
+      "_team": "ATL"
+    },
+    "charlie woerner|TE": {
+      "rec": 14.723444735999994,
+      "recYd": 136.21587343973044,
+      "recTD": 1.1218617632780226,
+      "_name": "Charlie Woerner",
+      "_team": "ATL"
+    },
+    "mark andrews|TE": {
+      "rec": 81.51973984,
+      "recYd": 931.1038958039898,
+      "recTD": 8.07045424416,
+      "_name": "Mark Andrews",
+      "_team": "BAL"
+    },
+    "isaiah likely|TE": {
+      "rec": 34.3335735456,
+      "recYd": 409.8781154720719,
+      "recTD": 3.6736923693791996,
+      "_name": "Isaiah Likely",
+      "_team": "BAL"
+    },
+    "charlie kolar|TE": {
+      "rec": 3.4725291776000007,
+      "recYd": 39.43058490536757,
+      "recTD": 0.312527625984,
+      "_name": "Charlie Kolar",
+      "_team": "BAL"
+    },
+    "dalton kincaid|TE": {
+      "rec": 78.13889137151999,
+      "recYd": 794.7843327775793,
+      "recTD": 6.4855279838361595,
+      "_name": "Dalton Kincaid",
+      "_team": "BUF"
+    },
+    "dawson knox|TE": {
+      "rec": 26.736888729599993,
+      "recYd": 277.7642532555541,
+      "recTD": 2.8341102053375993,
+      "_name": "Dawson Knox",
+      "_team": "BUF"
+    },
+    "quintin morris|TE": {
+      "rec": 3.6442828799999996,
+      "recYd": 37.55827501806654,
+      "recTD": 0.34620687359999996,
+      "_name": "Quintin Morris",
+      "_team": "BUF"
+    },
+    "jatavion sanders|TE": {
+      "rec": 29.695793664599996,
+      "recYd": 312.8824518744864,
+      "recTD": 2.1794191658372144,
+      "_name": "Ja'Tavion Sanders",
+      "_team": "CAR"
+    },
+    "tommy tremble|TE": {
+      "rec": 30.188667504799994,
+      "recYd": 298.565921622472,
+      "recTD": 2.4150934003839994,
+      "_name": "Tommy Tremble",
+      "_team": "CAR"
+    },
+    "ian thomas|TE": {
+      "rec": 5.9370737202,
+      "recYd": 59.74400827238726,
+      "recTD": 0.3443502757716,
+      "_name": "Ian Thomas",
+      "_team": "CAR"
+    },
+    "cole kmet|TE": {
+      "rec": 51.267827016,
+      "recYd": 505.9149762291255,
+      "recTD": 3.8888148377086442,
+      "_name": "Cole Kmet",
+      "_team": "CHI"
+    },
+    "gerald everett|TE": {
+      "rec": 14.737020479999998,
+      "recYd": 140.204280613757,
+      "recTD": 1.128424237287815,
+      "_name": "Gerald Everett",
+      "_team": "CHI"
+    },
+    "mike gesicki|TE": {
+      "rec": 49.74701747736,
+      "recYd": 484.2621807808679,
+      "recTD": 3.9300143807114396,
+      "_name": "Mike Gesicki",
+      "_team": "CIN"
+    },
+    "tanner hudson|TE": {
+      "rec": 4.583225681999998,
+      "recYd": 42.76627411600713,
+      "recTD": 0.30539196773932936,
+      "_name": "Tanner Hudson",
+      "_team": "CIN"
+    },
+    "erick all|TE": {
+      "rec": 9.36973457112,
+      "recYd": 89.51975417049293,
+      "recTD": 0.66525115454952,
+      "_name": "Erick All",
+      "_team": "CIN"
+    },
+    "david njoku|TE": {
+      "rec": 68.44316324999998,
+      "recYd": 718.6532141249999,
+      "recTD": 5.338566733499999,
+      "_name": "David Njoku",
+      "_team": "CLE"
+    },
+    "jordan akins|TE": {
+      "rec": 10.887463125000002,
+      "recYd": 106.11131499374042,
+      "recTD": 0.7185725662500001,
+      "_name": "Jordan Akins",
+      "_team": "CLE"
+    },
+    "jake ferguson|TE": {
+      "rec": 78.59032620767996,
+      "recYd": 824.3265215562279,
+      "recTD": 6.994539032483517,
+      "_name": "Jake Ferguson",
+      "_team": "DAL"
+    },
+    "luke schoonmaker|TE": {
+      "rec": 12.202747124399998,
+      "recYd": 120.19705917533997,
+      "recTD": 0.9884225170763999,
+      "_name": "Luke Schoonmaker",
+      "_team": "DAL"
+    },
+    "greg dulcich|TE": {
+      "rec": 37.229558173869336,
+      "recYd": 401.3346371143114,
+      "recTD": 2.3082326067798986,
+      "_name": "Greg Dulcich",
+      "_team": "DEN"
+    },
+    "adam trautman|TE": {
+      "rec": 13.299139443216076,
+      "recYd": 127.0116019285744,
+      "recTD": 0.8644440638090449,
+      "_name": "Adam Trautman",
+      "_team": "DEN"
+    },
+    "sam laporta|TE": {
+      "rec": 86.26378802999997,
+      "recYd": 896.2653184552676,
+      "recTD": 8.296384338654134,
+      "_name": "Sam LaPorta",
+      "_team": "DET"
+    },
+    "james mitchell|TE": {
+      "rec": 9.734680305000001,
+      "recYd": 91.61665306546385,
+      "recTD": 0.7376230105793803,
+      "_name": "James Mitchell",
+      "_team": "DET"
+    },
+    "brock wright|TE": {
+      "rec": 5.885258778,
+      "recYd": 56.58734862293188,
+      "recTD": 0.5473674158167288,
+      "_name": "Brock Wright",
+      "_team": "DET"
+    },
+    "luke musgrave|TE": {
+      "rec": 47.500207372800006,
+      "recYd": 511.0248366013114,
+      "recTD": 3.4923484555538193,
+      "_name": "Luke Musgrave",
+      "_team": "GB"
+    },
+    "tucker kraft|TE": {
+      "rec": 32.5118460576,
+      "recYd": 336.3689061118107,
+      "recTD": 2.5390911281621866,
+      "_name": "Tucker Kraft",
+      "_team": "GB"
+    },
+    "dalton schultz|TE": {
+      "rec": 47.0078440832,
+      "recYd": 511.445343625216,
+      "recTD": 3.9685813344360383,
+      "_name": "Dalton Schultz",
+      "_team": "HOU"
+    },
+    "cade stover|TE": {
+      "rec": 15.995691712,
+      "recYd": 168.91197013890178,
+      "recTD": 1.297205241986855,
+      "_name": "Cade Stover",
+      "_team": "HOU"
+    },
+    "brevin jordan|TE": {
+      "rec": 4.064284223999999,
+      "recYd": 44.138126672639984,
+      "recTD": 0.3332713063679999,
+      "_name": "Brevin Jordan",
+      "_team": "HOU"
+    },
+    "drew ogletree|TE": {
+      "rec": 3.8894826432,
+      "recYd": 41.850833240832,
+      "recTD": 0.330606024672,
+      "_name": "Drew Ogletree",
+      "_team": "IND"
+    },
+    "mo alie cox|TE": {
+      "rec": 20.395098970400003,
+      "recYd": 237.34846304434652,
+      "recTD": 2.3046461836552004,
+      "_name": "Mo Alie-Cox",
+      "_team": "IND"
+    },
+    "kylen granson|TE": {
+      "rec": 24.83247921,
+      "recYd": 276.35942204912243,
+      "recTD": 1.9865983368,
+      "_name": "Kylen Granson",
+      "_team": "IND"
+    },
+    "evan engram|TE": {
+      "rec": 91.68739996416,
+      "recYd": 851.1176742005088,
+      "recTD": 5.196970021656584,
+      "_name": "Evan Engram",
+      "_team": "JAX"
+    },
+    "brenton strange|TE": {
+      "rec": 11.977606040399998,
+      "recYd": 112.97281335824182,
+      "recTD": 0.9582084832319998,
+      "_name": "Brenton Strange",
+      "_team": "JAX"
+    },
+    "luke farrell|TE": {
+      "rec": 6.142362071999999,
+      "recYd": 60.14511884123884,
+      "recTD": 0.45995885566280226,
+      "_name": "Luke Farrell",
+      "_team": "JAX"
+    },
+    "travis kelce|TE": {
+      "rec": 96.00962784000001,
+      "recYd": 1034.0236918368,
+      "recTD": 8.25682799424,
+      "_name": "Travis Kelce",
+      "_team": "KC"
+    },
+    "jared wiley|TE": {
+      "rec": 13.142505599999996,
+      "recYd": 131.95075622399995,
+      "recTD": 1.011953269175737,
+      "_name": "Jared Wiley",
+      "_team": "KC"
+    },
+    "will dissly|TE": {
+      "rec": 24.489192817740005,
+      "recYd": 242.13702387302234,
+      "recTD": 2.5713652458627005,
+      "_name": "Will Dissly",
+      "_team": "LAC"
+    },
+    "hayden hurst|TE": {
+      "rec": 39.64536714558001,
+      "recYd": 399.2288471559907,
+      "recTD": 3.330210840228721,
+      "_name": "Hayden Hurst",
+      "_team": "LAC"
+    },
+    "tyler higbee|TE": {
+      "rec": 21.663947437719994,
+      "recYd": 221.43123881704204,
+      "recTD": 1.3037944325522695,
+      "_name": "Tyler Higbee",
+      "_team": "LAR"
+    },
+    "colby parkinson|TE": {
+      "rec": 41.56850291776,
+      "recYd": 422.57731804449213,
+      "recTD": 3.022266734811485,
+      "_name": "Colby Parkinson",
+      "_team": "LAR"
+    },
+    "jonnu smith|TE": {
+      "rec": 41.92553237039999,
+      "recYd": 461.20501993138794,
+      "recTD": 3.0905162053528943,
+      "_name": "Jonnu Smith",
+      "_team": "MIA"
+    },
+    "durham smythe|TE": {
+      "rec": 5.564272459199997,
+      "recYd": 52.716665398698375,
+      "recTD": 0.27821362295999985,
+      "_name": "Durham Smythe",
+      "_team": "MIA"
+    },
+    "julian hill|TE": {
+      "rec": 6.209235547199996,
+      "recYd": 54.9064333831796,
+      "recTD": 0.3776467744198043,
+      "_name": "Julian Hill",
+      "_team": "MIA"
+    },
+    "tj hockenson|TE": {
+      "rec": 67.54183128000003,
+      "recYd": 682.8479142408003,
+      "recTD": 4.930553683440001,
+      "_name": "T.J. Hockenson",
+      "_team": "MIN"
+    },
+    "josh oliver|TE": {
+      "rec": 23.200746576,
+      "recYd": 220.66166838756078,
+      "recTD": 1.5776507671680002,
+      "_name": "Josh Oliver",
+      "_team": "MIN"
+    },
+    "robert tonyan|TE": {
+      "rec": 9.798138000000002,
+      "recYd": 90.8406044371778,
+      "recTD": 0.6340033138469653,
+      "_name": "Robert Tonyan",
+      "_team": "MIN"
+    },
+    "hunter henry|TE": {
+      "rec": 48.84376959952,
+      "recYd": 520.186146234888,
+      "recTD": 4.2005641855587195,
+      "_name": "Hunter Henry",
+      "_team": "NE"
+    },
+    "austin hooper|TE": {
+      "rec": 19.86698021616,
+      "recYd": 187.84907374737665,
+      "recTD": 1.1920188129696,
+      "_name": "Austin Hooper",
+      "_team": "NE"
+    },
+    "juwan johnson|TE": {
+      "rec": 43.57422169383361,
+      "recYd": 456.2221011344379,
+      "recTD": 4.095976839220359,
+      "_name": "Juwan Johnson",
+      "_team": "NO"
+    },
+    "taysom hill|TE": {
+      "rec": 21.174031939983998,
+      "recYd": 201.78852438804748,
+      "recTD": 1.5880523954987997,
+      "_name": "Taysom Hill",
+      "_team": "NO"
+    },
+    "foster moreau|TE": {
+      "rec": 3.9555272489039988,
+      "recYd": 42.086809928338546,
+      "recTD": 0.3296762080597923,
+      "_name": "Foster Moreau",
+      "_team": "NO"
+    },
+    "daniel bellinger|TE": {
+      "rec": 31.44793809695999,
+      "recYd": 274.5228619973361,
+      "recTD": 1.6352927810419196,
+      "_name": "Daniel Bellinger",
+      "_team": "NYG"
+    },
+    "theo johnson|TE": {
+      "rec": 40.937991050879994,
+      "recYd": 391.01696787087036,
+      "recTD": 2.4562794630527995,
+      "_name": "Theo Johnson",
+      "_team": "NYG"
+    },
+    "chris manhertz|TE": {
+      "rec": 4.9727736239999984,
+      "recYd": 44.65293590830441,
+      "recTD": 0.24991401504619476,
+      "_name": "Chris Manhertz",
+      "_team": "NYG"
+    },
+    "tyler conklin|TE": {
+      "rec": 47.822822087039974,
+      "recYd": 480.80830174130097,
+      "recTD": 3.3475975460927985,
+      "_name": "Tyler Conklin",
+      "_team": "NYJ"
+    },
+    "jeremy ruckert|TE": {
+      "rec": 20.69940392519999,
+      "recYd": 207.80391532112876,
+      "recTD": 1.4903570826143993,
+      "_name": "Jeremy Ruckert",
+      "_team": "NYJ"
+    },
+    "brock bowers|TE": {
+      "rec": 70.22606157000001,
+      "recYd": 781.6160652741002,
+      "recTD": 4.891287895631244,
+      "_name": "Brock Bowers",
+      "_team": "LV"
+    },
+    "michael mayer|TE": {
+      "rec": 32.3989421,
+      "recYd": 351.204532364,
+      "recTD": 2.0368929904691835,
+      "_name": "Michael Mayer",
+      "_team": "LV"
+    },
+    "harrison bryant|TE": {
+      "rec": 7.239511859999999,
+      "recYd": 75.4428654611837,
+      "recTD": 0.4612176358133812,
+      "_name": "Harrison Bryant",
+      "_team": "LV"
+    },
+    "dallas goedert|TE": {
+      "rec": 62.19551786112002,
+      "recYd": 691.6141586156546,
+      "recTD": 3.832390930724367,
+      "_name": "Dallas Goedert",
+      "_team": "PHI"
+    },
+    "grant calcaterra|TE": {
+      "rec": 10.3090192128,
+      "recYd": 106.28598808396801,
+      "recTD": 0.7628674217472,
+      "_name": "Grant Calcaterra",
+      "_team": "PHI"
+    },
+    "albert okwuegbunam|TE": {
+      "rec": 3.6650571552000004,
+      "recYd": 37.20652434186525,
+      "recTD": 0.25655400086400004,
+      "_name": "Albert Okwuegbunam",
+      "_team": "PHI"
+    },
+    "pat freiermuth|TE": {
+      "rec": 42.79042991999999,
+      "recYd": 427.1038627393618,
+      "recTD": 3.358241735738687,
+      "_name": "Pat Freiermuth",
+      "_team": "PIT"
+    },
+    "darnell washington|TE": {
+      "rec": 23.410650375,
+      "recYd": 226.06959061951173,
+      "recTD": 1.802620078875,
+      "_name": "Darnell Washington",
+      "_team": "PIT"
+    },
+    "noah fant|TE": {
+      "rec": 39.422883071879994,
+      "recYd": 424.1451221671137,
+      "recTD": 2.3773813994617345,
+      "_name": "Noah Fant",
+      "_team": "SEA"
+    },
+    "pharaoh brown|TE": {
+      "rec": 11.319407189999996,
+      "recYd": 117.37499404445633,
+      "recTD": 0.6723117221858061,
+      "_name": "Pharaoh Brown",
+      "_team": "SEA"
+    },
+    "aj barner|TE": {
+      "rec": 3.8950370381999995,
+      "recYd": 38.793821749006035,
+      "recTD": 0.2892215979189958,
+      "_name": "AJ Barner",
+      "_team": "SEA"
+    },
+    "george kittle|TE": {
+      "rec": 68.82149378663998,
+      "recYd": 905.0026432943157,
+      "recTD": 6.125112947010957,
+      "_name": "George Kittle",
+      "_team": "SF"
+    },
+    "logan thomas|TE": {
+      "rec": 6.816434687999999,
+      "recYd": 74.69195571725456,
+      "recTD": 0.64756129536,
+      "_name": "Logan Thomas",
+      "_team": "SF"
+    },
+    "cade otton|TE": {
+      "rec": 48.16759572240001,
+      "recYd": 481.1273060749737,
+      "recTD": 3.5836691217465604,
+      "_name": "Cade Otton",
+      "_team": "TB"
+    },
+    "ko kieft|TE": {
+      "rec": 12.661637142000002,
+      "recYd": 116.49334482614039,
+      "recTD": 0.7090516799520001,
+      "_name": "Ko Kieft",
+      "_team": "TB"
+    },
+    "payne durham|TE": {
+      "rec": 3.6057495936,
+      "recYd": 38.338544183838074,
+      "recTD": 0.252402471552,
+      "_name": "Payne Durham",
+      "_team": "TB"
+    },
+    "chigoziem okonkwo|TE": {
+      "rec": 54.595581440399975,
+      "recYd": 601.6433074732078,
+      "recTD": 3.8216907008279986,
+      "_name": "Chigoziem Okonkwo",
+      "_team": "TEN"
+    },
+    "josh whyle|TE": {
+      "rec": 9.414527314499999,
+      "recYd": 98.47378742152141,
+      "recTD": 0.58257469683817,
+      "_name": "Josh Whyle",
+      "_team": "TEN"
+    },
+    "zach ertz|TE": {
+      "rec": 29.784396826800005,
+      "recYd": 287.41942937862007,
+      "recTD": 2.084907777876001,
+      "_name": "Zach Ertz",
+      "_team": "WSH"
+    },
+    "ben sinnott|TE": {
+      "rec": 39.15728344640001,
+      "recYd": 411.1514761872001,
+      "recTD": 3.1325826757120008,
+      "_name": "Ben Sinnott",
+      "_team": "WSH"
+    }
+  }
+}

@@ -84,6 +84,86 @@ Rookies are skipped (already used `player.proj` first, at higher priority).
 `expert_blend_parity.py` holds the shipped JS to the backtested Python,
 equality not tolerance — same treatment `anchor_parity.py` gives the anchor.
 
+### 0.1b A second expert source: The Athletic — IN PROGRESS, not shipped
+
+**Prompted directly**: the user supplied The Athletic's downloadable
+projections workbook (Jake's model) and asked to "consider ways to
+incorporate this into the tool and algorithm," with an explicit
+requirement — "the cheat sheet is regularly updated, so if we do
+incorporate it we should make it fluid, not static." Presented as three
+options (auction-value import, second expert-blend source, full
+stat-level pipeline ingestion); the user chose the second, then supplied
+2024 and 2025 copies of the SAME workbook — both now realized seasons —
+"to use for validation," offering to go back further if needed.
+
+**MECHANISM.** `data-pipeline/athletic_projections.py` parses the
+workbook's `QB`/`RB`/`WR`/`TE` sheets into the same `proj` shape
+FantasyPros already fills, columns located BY HEADER TEXT (not fixed
+indices) so a future year's reordered columns don't silently break it.
+K/DST are out of scope (matches `EXPERT_BLEND_W`'s own K/DST=1.0 policy).
+**Fluid by construction**: the parser takes a file path at call time; no
+copy of the workbook or its numbers is ever meant to live in the repo as
+production data — same "just pasted this today" discipline the Yahoo and
+FantasyPros-AAV paste importers already use, applied to a file upload
+instead of pasted text.
+
+**PRECONDITION CHECKED FIRST**: does a second, independently-built expert
+source add anything our model doesn't already have? Measured with
+`data-pipeline/athletic_blend_backtest.py` against REAL 2024/2025 outcomes,
+using only nflverse data (no `FANTASYPROS_API_KEY` needed for this half):
+
+1. **Disagreement signal** (`disagreement_vs_model`, the same
+   partial-Spearman construction `disagreement_signal` uses for
+   FantasyPros-vs-ADP, here controlling for OUR MODEL instead): strongly
+   positive at every position, both seasons, consistent sign —
+
+   | pos | 2024 | 2025 |
+   |---|---|---|
+   | QB | +0.660 | +0.363 |
+   | RB | +0.413 | +0.397 |
+   | WR | +0.430 | +0.338 |
+   | TE | +0.308 | +0.377 |
+
+2. **Matched-population solo accuracy** (Spearman vs actual season
+   points): The Athletic beats our own model outright at every position,
+   both seasons — 8 of 8:
+
+   | pos | 2024 model | 2024 Athletic | 2025 model | 2025 Athletic |
+   |---|---|---|---|---|
+   | QB | 0.619 | **0.802** | 0.663 | **0.711** |
+   | RB | 0.690 | **0.748** | 0.734 | **0.767** |
+   | WR | 0.683 | **0.751** | 0.709 | **0.739** |
+   | TE | 0.653 | **0.666** | 0.773 | **0.783** |
+
+3. **Blend sweep** (pooled 2024+2025, `w` = weight on OUR model, same
+   convention as `EXPERT_BLEND_W`): flat near the optimum, but
+   consistently favors trusting The Athletic heavily —
+   best mean w: QB≈0.1, RB≈0.2, WR≈0.2, TE≈0.4.
+
+**NOT YET GATED THE SECOND WAY** every prior signal here required before
+shipping: re-measured against the ACTUAL LIVE BOARD (model + injury
+discount + FantasyPros expert blend + anchor already applied), not just
+the pure model — the same check that caught the Opportunity model's
+QB/WR result "nearly vanishing" in Phase 1 once FantasyPros was already
+in the mix. A second expert-like source can easily be re-discovering what
+the first already covers; solo-vs-model numbers alone cannot rule that
+out. This needs real historical ADP + FantasyPros projections for
+2024/2025 (`FANTASYPROS_API_KEY`) — unavailable in the sandbox that ran
+the analysis above.
+
+**Also a real, stated limitation**: two seasons is a thin base next to
+`EXPERT_BLEND_W`'s own 7-season (2019-2025) fit. The user has explicitly
+offered more seasons if the signal warrants extending the check —
+worth taking up before finalizing a weight, not just before shipping one.
+
+**Kill gate, once the full-stack data is available** (same bar as 0.1):
+matched-population Spearman (now vs the FantasyPros-covered population,
+not just vs ADP) must clear what's already shipped, AND the full-board
+merged number (model → injury → FantasyPros blend → **Athletic blend** →
+anchor) must beat the CURRENT live board — not the pre-0.1 one.
+
+**RESULT: pending.**
+
 ### 0.2 Collapse the overfit snake slot configs — DONE, collapsed
 
 `DEFAULT_SNAKE_PARAMS.SLOTS` carries ~8 parameters for each of 10 draft slots,

@@ -1,0 +1,48 @@
+name: Second expert source backtest — The Athletic (roadmap 0.1b)
+
+# Manual. Asks whether The Athletic's downloadable stat-level projection
+# workbook (Jake's model) is worth blending in as a SECOND expert source,
+# alongside the already-shipped FantasyPros blend (roadmap 0.1).
+#
+# THE DECISIVE CHECK this workflow exists for: does Athletic still help ON
+# TOP OF the already-shipped model->FantasyPros-blend board, or does it
+# just re-discover what FantasyPros already covers? Needs real historical
+# FantasyPros projections for 2024/2025 (FANTASYPROS_API_KEY) — blocked
+# entirely in the interactive sandbox that ran the rest of this analysis
+# (a hard egress-proxy policy denial on api.fantasypros.com, not a key
+# problem), so this is the only place it can run.
+#
+# Reads data-pipeline/fixtures/athletic_2024.json / athletic_2025.json —
+# DERIVED data (name/team/position + a handful of stat-projection numbers
+# per player) committed as a validation fixture specifically so the raw
+# .xlsx workbook (paid-subscription content) never enters the repo. See
+# docs/ROADMAP.md 0.1b for the full writeup.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  athletic-blend-backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r data-pipeline/requirements.txt
+
+      - name: Run the 0.1b backtest (solo + disagreement + full-stack)
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: |
+          python athletic_blend_backtest.py \
+            --season 2024:fixtures/athletic_2024.json \
+            --season 2025:fixtures/athletic_2025.json \
+            | tee results_athletic_blend_backtest.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: athletic-blend-backtest
+          path: data-pipeline/results_athletic_blend_backtest.txt
