@@ -3232,14 +3232,56 @@ ONLY change from that gate is which flag is opt-in
 as every gate in this phase.** Workflow:
 `.github/workflows/snake-opportunity-bench-test.yml`.
 
-**RESULT: pending — awaiting the GitHub Actions run.** Read honestly
-either way: clearing the bar means the opportunity-cost framing was the
-right fix for 3.6f-snake's diagnosed failure mode, and this is a real
-candidate to wire into `SnakeRoom.tsx`. Still null or still negative means
-the harm 3.6f-snake showed was NOT (only) about missing alternatives on
-the board — some other mechanism is at fault, and `OPPORTUNITY_BENCH_K`
-being untuned is a real, uncontrolled variable in that read (a genuine
-signal could still be hiding behind a badly-chosen 0.35).
+**RESULT: NULL, but a qualitatively DIFFERENT null from 3.6f-snake — the
+discount almost never fires at all.** Run 2026-08-23
+(github.com/arimeltzer/fantasy-draft-tool/actions/runs/32651250720), 12
+seeds x 4 slots x 9 seasons x 2 scenarios = 864 paired drafts:
+
+| bucket | mean diff | SE | mean/SE | wins |
+|---|---|---|---|---|
+| calm | +0.00 pts | 0.00 | **0.00** | 0/432 |
+| chaotic | +0.22 pts | 0.55 | **0.39** | 2/432 |
+
+The calm bucket is not merely "not significant" — it is EXACTLY zero
+across all 432 paired drafts (0 wins, 0 losses, 0 draws with any
+difference at all): the two arms produced byte-identical rosters every
+single time. Chaotic differs in only 2 of 18 season/scenario cells (2017:
+-2.0 pts, 2023: +3.9 pts), the rest all exactly 0.0. The mechanism is not
+"weakly helpful" — it is almost entirely INERT under these conditions.
+
+**Diagnosis, reasoned from the mechanism rather than re-probed empirically
+(the two facts below are both already true by construction elsewhere in
+this codebase):** the third precondition (`siblingBestVbd` must be real
+and positive) is very rarely satisfied at the same time as the first two
+(past the depth slot, sibling thin), for two compounding reasons:
+(1) VBD is points ABOVE REPLACEMENT — by definition, a large share of the
+draftable pool sits at or below replacement (`posRemaining` itself already
+filters to `vbd>0`, i.e. the engine already treats a large chunk of the
+board as VBD-zero-or-negative), and that pool skews toward exactly the
+deep bench tier this mechanism is evaluating; (2) even before this
+mechanism runs, `needMult`'s existing `belowStarter` bonus (1.15-1.30x)
+already actively steers a well-behaved agent away from letting one
+FLEX-eligible position get 5 deep while its sibling has zero starters —
+so the imbalanced states 3.6h is built to catch are themselves rare for
+an agent that isn't already broken. Put together: whenever the discount's
+first two gates DO fire, the third (a real, positive-VBD alternative)
+usually does not — the exact opposite failure mode from `benchDepthMult`,
+which had NO third gate and fired constantly, including in states that
+turned out to be harmless or even correct, which is the likely source of
+3.6f-snake's -10 to -29 pt harm. `opportunityBenchAware` avoided repeating
+that harm, but overcorrected into near-total inertness.
+
+**Not shipped, and NOT further tuned in this pass.** `OPPORTUNITY_BENCH_K`
+was never load-bearing here — the gate never engaged the constant often
+enough for its value to matter. A future attempt, if pursued, would need a
+different "is there a real alternative" signal than raw VBD (e.g. a
+points- or floor-adjusted measure that stays meaningfully positive at
+bench tier) to actually activate in the regime this whole thread is about
+— but that is a fourth, NOT-YET-SCOPED attempt, not a tuning pass on this
+one. `opportunityBenchAware`/`bestVbdByPos` are left in place (harmless,
+opt-in, unused by any shipped room) for exactly that future attempt to
+reuse, the same "kept as reachable infrastructure" treatment
+`benchDepthAware` itself got after ITS rejection.
 
 > **Prompt** — "how else should we adjust to avoid a bench full of RBs?
 > there has to be some diminishing return here."

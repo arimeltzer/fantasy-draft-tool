@@ -1515,24 +1515,39 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   already stops), tooltip naming the exact counts. No gate needed — pure
   display. `budget-path.selftest.mjs` pins the threshold.
 - **Opportunity-cost-aware bench pricing — roadmap 3.6h, the harder half
-  of the same answer, GATE BUILT AND RUNNING.** Diagnosis of why
-  3.6f-snake failed so badly: `benchDepthMult` discounts by roster COUNT
-  alone, blind to whether a real alternative is actually on the board —
-  when the best player left really is a 5th RB, the discount still fires
-  and has nowhere good to redirect to (QB/TE already capped by
-  `maxUseful`). `budget-path.js opportunityBenchMult` is a NEW function
-  (`benchDepthMult` untouched) sharing its two preconditions and adding a
-  third — `siblingBestVbd`, the best AVAILABLE player's VBD at the FLEX
-  sibling right now — must be real and positive or the discount is a
-  no-op, full stop, however deep the position already is. `needMult`
-  gained a third branch (`opportunityAware`) alongside the untouched,
-  still-rejected `depthAware` one; `draft-sim.mjs`/`SnakeRoom.tsx` both
-  compute the new `bestVbdByPos` field the mechanism needs, but neither
-  sets `opportunityBenchAware` — zero effect on any real draft pending the
-  gate. `snake-opportunity-bench-test.mjs`, structurally identical to
-  3.6f-snake's own gate (same bar, same stratification), is the pre-
-  registered kill gate. See `docs/ROADMAP.md` 3.6h for the mechanism and
-  result once run.
+  of the same answer, GATE RUN, NULL — but a DIFFERENT kind of null from
+  3.6f-snake, not a repeat of it.** Diagnosis of why 3.6f-snake failed so
+  badly: `benchDepthMult` discounts by roster COUNT alone, blind to
+  whether a real alternative is actually on the board — when the best
+  player left really is a 5th RB, the discount still fires and has
+  nowhere good to redirect to (QB/TE already capped by `maxUseful`).
+  `budget-path.js opportunityBenchMult` is a NEW function (`benchDepthMult`
+  untouched) sharing its two preconditions and adding a third —
+  `siblingBestVbd`, the best AVAILABLE player's VBD at the FLEX sibling
+  right now — must be real and positive or the discount is a no-op, full
+  stop, however deep the position already is. `needMult` gained a third
+  branch (`opportunityAware`); `draft-sim.mjs`/`SnakeRoom.tsx` both
+  compute `bestVbdByPos`, neither sets `opportunityBenchAware`.
+  **RESULT: near-total INERTNESS, not harm and not a clean null either.**
+  864 paired drafts: calm mean/SE **0.00** (literally 0.00 pts, 0/432
+  wins — the two arms produced byte-identical rosters every single time),
+  chaotic mean/SE **0.39** (+0.22 pts, only 2/432 non-zero cells of 18).
+  Diagnosed from the mechanism, not re-probed: VBD is points ABOVE
+  REPLACEMENT, so a large share of the bench-tier pool this discount
+  targets already sits at VBD≈0 by construction (`posRemaining` itself
+  already filters to `vbd>0`) — and even before this step runs,
+  `needMult`'s existing `belowStarter` bonus already steers a sane agent
+  away from the extreme imbalance this mechanism watches for, so its
+  first two gates rarely fire together with a real (positive-VBD) third.
+  `benchDepthMult` had no third gate and fired constantly — including in
+  harmless states — which is the likely source of ITS harm;
+  `opportunityBenchAware` avoided repeating that harm by overcorrecting
+  into near-total inertness. Not shipped; `OPPORTUNITY_BENCH_K` was never
+  load-bearing enough in this run to be worth tuning. A real fourth
+  attempt would need a different "is there an alternative" signal than
+  raw VBD (e.g. points- or floor-based, staying positive at bench tier) —
+  scoped as a follow-up, not built here. See `docs/ROADMAP.md` 3.6h for
+  the full numbers.
 
 ## Frontend visual refresh (shipped, both rooms and every page)
 
