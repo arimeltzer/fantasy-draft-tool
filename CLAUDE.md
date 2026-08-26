@@ -1721,6 +1721,30 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   on the name span stay as a safety net for a name that still doesn't
   fit alone. Verified against the real compiled CSS bundle, not a
   from-scratch approximation, before shipping the fix.
+- **A second real layout bug, unrelated to the Athletic badge work
+  despite surfacing right after it: "the headers don't align with the
+  values and there are big spaces between the values" (auction only,
+  from a user screenshot).** Root cause is a CSS Grid track blowout, not
+  anything about badges. `ValueBar` (the VBD bar + number shown on every
+  row) renders at a fixed ~100px (a 56px bar + 8px gap + a 36px number,
+  none of which can shrink), but the VBD grid column was declared at
+  only `60px` (auction) / `70px` (snake). A grid item's content can't
+  shrink below its own intrinsic minimum width, so each PLAYER ROW's own
+  copy of that column silently grew past its declared size — but the
+  HEADER row is a separate, independent grid with much shorter content
+  ("VBD" as plain text) that never blows out, so the header's version of
+  every column stayed at its declared width while every row's version
+  after VBD (`$Par`/`$Live`/`$Max`/`Bid / Buy`) drifted right of where
+  its header sat. Confirmed, not just theorized: rebuilt the real
+  Tailwind bundle and rendered a static repro (Playwright, the exact
+  production classnames) — the reported misalignment reproduced exactly
+  at the pre-fix `60px`, and rebuilding at the corrected width lined
+  every column up pixel-for-pixel with its header. Fixed by widening the
+  VBD column to `104px` (bar + gap + number, no more) in BOTH the header
+  row's and every player row's `grid-cols-[...]` string, in both rooms —
+  they must stay byte-identical between header and row for the same
+  reason the bug existed: two independent grids only agree on column
+  widths when given the exact same template.
 
 ## Gotchas
 
