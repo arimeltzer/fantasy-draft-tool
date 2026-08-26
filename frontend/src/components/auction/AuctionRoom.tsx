@@ -778,8 +778,17 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                         )}
                         {pickEntry?.mine && <Crown className="w-3 h-3 text-gold shrink-0" />}
                         <span className="font-semibold truncate min-w-0 shrink">{p.name}</span>
+                        <span className="font-mono text-xs text-faint shrink-0">{p.team}</span>
+                      </div>
+                      {/* Always its own line, at a fixed min-height, regardless of
+                          player name length or which badges/icons apply — these
+                          used to share a line with the name and reflow onto a
+                          second line unpredictably depending on both, so the same
+                          badge could sit next to the name for a short name and
+                          wrap below it for a long one. Fixed position beats
+                          fitting more on one line. */}
+                      <div className="flex items-center gap-1 flex-wrap min-h-[18px] mt-0.5">
                         <InjuryBadge injury={p.injury} />
-                        <span className="font-mono text-xs text-faint">{p.team}</span>
                         {p.tier && <span className="text-2xs font-mono font-bold bg-raised border border-line px-1.5 py-0.5 rounded-md text-muted" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
                         {p.fpTier != null && <span className="text-2xs font-mono font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md text-indigo-600" title={`FantasyPros' own consensus Tier ${p.fpTier} at ${p.pos} — their expert panel's judgment of drop-offs, separate from this app's computed tier above (a mechanical gap in value). Shown side by side, never blended.`}>FP{p.fpTier}</span>}
                         {p.athleticTier != null && <span className="text-2xs font-mono font-bold bg-teal-50 px-1.5 py-0.5 rounded-md text-teal-700" title={`The Athletic's projection (uploaded): Tier ${p.athleticTier} at ${p.pos} — same drop-off rule (≥18 pts) as your board's own tier, computed on ${p.athleticPoints} pts under this league's scoring (rank #${p.athleticRank} among uploaded players). A second opinion only — tested and NOT blended into valuation (roadmap 0.1b).`}>AT{p.athleticTier}</span>}
@@ -898,7 +907,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                             type="number"
                             value={prices[p.id as number] ?? live}
                             onChange={(e) => setPrices((pr) => ({ ...pr, [p.id as number]: Number(e.target.value) }))}
-                            className="w-10 sm:w-12 px-1.5 py-1.5 rounded-lg bg-surface border border-line text-right font-mono text-xs text-ink focus:outline-none focus:border-gold"
+                            className="w-12 sm:w-14 no-spinner px-1.5 py-1.5 rounded-lg bg-surface border border-line text-right font-mono text-xs text-ink focus:outline-none focus:border-gold"
                           />
                           <select
                             value=""

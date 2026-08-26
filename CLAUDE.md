@@ -1776,8 +1776,38 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     measured bounding boxes — not just the isolated component being
     changed — before shipping. The first VBD fix was correctly verified
     in isolation and still broke something two columns away.
-
-## Gotchas
+- **Two more reports on the same row, both fixed together: "three digit
+  values in the winning bid column are still cut off" and a request to
+  stop badges reflowing based on player name length.** Neither was about
+  the grid columns above — both are about content INSIDE two of the
+  cells.
+  - **Bid clipping**: the price `<input type="number">` was `w-10 sm:
+    w-12` (40px/48px) with no styling against the browser's native
+    up/down spinner arrows, which eat a real chunk of a narrow box's
+    width in Chrome/Safari — enough that a 3-digit price ($127) rendered
+    with its last digit hidden behind them, independent of anything the
+    surrounding grid was doing. Fixed with a `.no-spinner` utility
+    (`index.css`, `-webkit-appearance:none` on the spin buttons +
+    `-moz-appearance:textfield` for Firefox) and widening the input to
+    `w-12 sm:w-14` — the extra width comes out of the same `Bid / Buy`
+    grid cell as its neighboring `<select>`, not a new column, so it
+    doesn't reopen the overflow issue above.
+  - **Badge reflow**: `T{tier}`/`FP{fpTier}`/`AT{tier}` and the
+    injury/risk/bye/stack icons shared ONE `flex-wrap` line with the
+    player's name and team — whether a given badge rendered next to the
+    name or wrapped to a second line depended on both the name's length
+    AND how many badges this particular player happened to have, so the
+    same badge sat in a different visual slot from one row to the next
+    (confirmed on a live screenshot: Gibbs showed `T1`/`FP1` beside the
+    name with only `AT1` wrapping down, while the longer "Christian
+    McCaffrey" wrapped `FP1`+`AT1` both down, leaving a bare `T1`
+    beside the name). Split into two ALWAYS-separate lines in both rooms:
+    line 1 is identity only (Nominated flag/Crown + name + team, no
+    badges to compete with), line 2 is every badge/icon, unconditionally,
+    at a fixed `min-h-[18px]` so the second line reserves the same
+    vertical space whether a given player has zero badges or five. Same
+    visual slot for every badge on every row, independent of name length
+    — verified with a repro varying both across four rows side by side.
 
 - Auth uses `bcrypt` directly (NOT passlib — breaks on Python 3.13).
 - `VITE_API_URL` and `ALLOWED_ORIGINS` must include `https://` and match exactly.
