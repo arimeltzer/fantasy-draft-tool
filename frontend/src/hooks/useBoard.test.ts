@@ -191,6 +191,33 @@ describe("useBoard projBreakdown", () => {
     expect(byName(result.current, "Plain WR").fpTier).toBeUndefined();
   });
 
+  it("computes a display-only Athletic points/rank from an uploaded projection, never touching valuePoints", () => {
+    const withAthletic: LeagueSettings = {
+      ...SETTINGS,
+      athleticProjections: {
+        // Ranked below Ranked-Second RB under this league's own scoring.
+        5: { rushYd: 900, rushTD: 6, rec: 20, recYd: 150, recTD: 1 },
+        6: { rushYd: 1400, rushTD: 12, rec: 30, recYd: 250, recTD: 2 },
+      },
+    };
+    const before = renderHook(() => useBoard(players, SETTINGS, undefined)).result.current;
+    const after = renderHook(() => useBoard(players, withAthletic, undefined)).result.current;
+
+    const first = byName(after, "Ranked-First RB");
+    const second = byName(after, "Ranked-Second RB");
+    expect(first.athleticPoints).toBeGreaterThan(0);
+    expect(second.athleticPoints).toBeGreaterThan(first.athleticPoints!);
+    expect(second.athleticRank).toBe(1);
+    expect(first.athleticRank).toBe(2);
+    // A player nobody uploaded a projection for carries neither field.
+    expect(byName(after, "Plain WR").athleticPoints).toBeUndefined();
+    expect(byName(after, "Plain WR").athleticRank).toBeUndefined();
+    // Never fed into valuation — valuePoints/vbd are byte-identical with or
+    // without the upload present.
+    expect(byName(after, "Ranked-First RB").valuePoints).toBe(byName(before, "Ranked-First RB").valuePoints);
+    expect(byName(after, "Ranked-Second RB").vbd).toBe(byName(before, "Ranked-Second RB").vbd);
+  });
+
   it("adds Injury discount only for the player it actually discounted", () => {
     const { result } = renderHook(() => useBoard(players, SETTINGS, undefined));
     const hurt = byName(result.current, "Hurt QB");

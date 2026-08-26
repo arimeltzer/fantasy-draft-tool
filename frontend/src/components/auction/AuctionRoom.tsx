@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback } from "react";
-import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock, RotateCcw, Radio, HelpCircle, DollarSign, CalendarX, Layers } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Gavel, Settings, Lock, RotateCcw, Radio, HelpCircle, DollarSign, CalendarX, Layers, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   auctionValues, applyInflation, maxBid,
@@ -42,6 +42,7 @@ import Tip from "@/components/shared/Tip";
 import ProjTip from "@/components/shared/ProjTip";
 import SettingsDrawer from "./SettingsDrawer";
 import AavPasteImport from "./AavPasteImport";
+import AthleticUploadImport from "@/components/shared/AthleticUploadImport";
 
 interface Props {
   league: ApiLeague;
@@ -68,6 +69,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   const [showLog, setShowLog] = useState(false);
   const [showLive, setShowLive] = useState(false);
   const [showAav, setShowAav] = useState(false);
+  const [showAthletic, setShowAthletic] = useState(false);
 
   // Lifted here (not owned inside LiveDraftPanel) so closing that panel
   // — the natural thing to do to get back to drafting — doesn't unmount the
@@ -584,7 +586,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
               {live.running && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
             </button>
             <button
-              onClick={() => { setShowAav((v) => !v); setShowSettings(false); setShowKeepers(false); }}
+              onClick={() => { setShowAav((v) => !v); setShowSettings(false); setShowKeepers(false); setShowAthletic(false); }}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint"
               title="Paste real auction values from FantasyPros for this league"
             >
@@ -595,10 +597,22 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                 </span>
               )}
             </button>
-            <button onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); setShowAav(false); }} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint">
+            <button
+              onClick={() => { setShowAthletic((v) => !v); setShowSettings(false); setShowKeepers(false); setShowAav(false); }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint"
+              title="Upload The Athletic's projections workbook as a second opinion (display only)"
+            >
+              <Upload className="w-3.5 h-3.5" /> Athletic
+              {Object.keys(settings.athleticProjections ?? {}).length > 0 && (
+                <span className="ml-0.5 text-2xs font-mono text-teal-600">
+                  {Object.keys(settings.athleticProjections ?? {}).length}
+                </span>
+              )}
+            </button>
+            <button onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); setShowAav(false); setShowAthletic(false); }} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint">
               <Lock className="w-3.5 h-3.5" /> Keepers
             </button>
-            <button onClick={() => { setShowSettings((v) => !v); setShowKeepers(false); setShowAav(false); }} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint">
+            <button onClick={() => { setShowSettings((v) => !v); setShowKeepers(false); setShowAav(false); setShowAthletic(false); }} className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint">
               <Settings className="w-3.5 h-3.5" /> League
             </button>
           </div>
@@ -623,6 +637,14 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           settings={settings}
           onSave={(patch) => patchLeague.mutate({ settings: { ...settings, ...patch } })}
           onClose={() => setShowAav(false)}
+        />
+      )}
+
+      {showAthletic && (
+        <AthleticUploadImport
+          settings={settings}
+          onSave={(patch) => patchLeague.mutate({ settings: { ...settings, ...patch } })}
+          onClose={() => setShowAthletic(false)}
         />
       )}
 
@@ -760,6 +782,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                         <span className="font-mono text-xs text-faint">{p.team}</span>
                         {p.tier && <span className="text-2xs font-mono font-bold bg-raised border border-line px-1.5 py-0.5 rounded-md text-muted" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
                         {p.fpTier != null && <span className="text-2xs font-mono font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md text-indigo-600" title={`FantasyPros' own consensus Tier ${p.fpTier} at ${p.pos} — their expert panel's judgment of drop-offs, separate from this app's computed tier above (a mechanical gap in value). Shown side by side, never blended.`}>FP{p.fpTier}</span>}
+                        {p.athleticRank != null && <span className="text-2xs font-mono font-bold bg-teal-50 px-1.5 py-0.5 rounded-md text-teal-700" title={`The Athletic's projection (uploaded): ${p.athleticPoints} pts under this league's scoring, rank #${p.athleticRank} at ${p.pos} among uploaded players. A second opinion only — tested and NOT blended into valuation (roadmap 0.1b).`}>AT{p.athleticRank}</span>}
                         {p.risk >= 0.4 && (
                           <span title={`Elevated risk (${p.risk} of 1) from week-to-week volatility, injury history, or age — expect a wider range of outcomes`}>
                             <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />

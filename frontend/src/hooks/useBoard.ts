@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import {
-  projectAll, finalizeBoard, marketAnchor, MARKET_ANCHOR_W, resolveScoring,
+  projectAll, finalizeBoard, marketAnchor, MARKET_ANCHOR_W, resolveScoring, points,
   blendExpertAll, EXPERT_BLEND_W, applyInjuryDiscount, INJURY_K,
   applyOpportunityModel, OPPORTUNITY_K,
   applyTeamChangeDiscount, TEAM_CHANGE_K,
@@ -248,6 +248,40 @@ export function useBoard(
         () => "Pulled toward ADP/ECR consensus order for players the market ranks");
     }
 
-    return finalizeBoard(scored, league);
+    const finalBoard = finalizeBoard(scored, league);
+
+    // SECOND OPINION, DISPLAY ONLY (roadmap 0.1b) — computed AFTER
+    // finalizeBoard, deliberately outside the valuation waterfall above:
+    // blending The Athletic's projections into valuePoints was gated the
+    // same two ways every signal here is required to clear and FAILED the
+    // decisive one (QB/TE flip sign between validation seasons, RB/WR under
+    // 0.01 Spearman — see CLAUDE.md). This never touches valuePoints/vbd/
+    // tier; it's this league's own scoring applied to whatever stat line was
+    // uploaded, plus a positional rank among uploaded players, so a human
+    // can weigh it the way `fpTier` is already weighed next to the app's own
+    // computed tier.
+    const athleticOverrides = settings.athleticProjections;
+    if (athleticOverrides && Object.keys(athleticOverrides).length > 0) {
+      const withPts = finalBoard.map((p) => {
+        const line = athleticOverrides[p.id as number];
+        if (!line) return p;
+        return { ...p, athleticPoints: +points(line, sc).toFixed(1) };
+      });
+      const rankOf = new Map<number | string, number>();
+      const byPos = new Map<string, typeof withPts>();
+      for (const p of withPts) {
+        if (p.athleticPoints == null) continue;
+        const arr = byPos.get(p.pos) ?? [];
+        arr.push(p);
+        byPos.set(p.pos, arr);
+      }
+      for (const arr of byPos.values()) {
+        arr.sort((a, b) => (b.athleticPoints as number) - (a.athleticPoints as number));
+        arr.forEach((p, i) => rankOf.set(p.id, i + 1));
+      }
+      return withPts.map((p) => rankOf.has(p.id) ? { ...p, athleticRank: rankOf.get(p.id) } : p);
+    }
+
+    return finalBoard;
   }, [players, settings, sos]);
 }

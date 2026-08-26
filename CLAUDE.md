@@ -748,6 +748,47 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   before revisiting this at all. `athletic_projections.py`/
   `athletic_blend_backtest.py` stay in the repo, reusable for that or for
   the unrelated auction-value-import path this was never contingent on.
+- **Follow-up question asked directly: "is there any other use we should
+  consider for the Athletic projections?"** Two ideas were on the table —
+  a rookie-only re-test (0.1b's gate excluded rookies; untested whether
+  Athletic's bottom-up model beats the ADP/ECR curve there) and a
+  second-opinion DISPLAY badge, no valuation claim at all. User chose the
+  display badge.
+
+### Second opinion display (shipped, both rooms) — NOT a valuation change
+
+- **A live upload, not a blend.** `backend/integrations/athletic_upload.py`
+  parses an uploaded copy of the workbook (same header-text-lookup, same
+  QB/RB/WR/TE-only scope as the 0.1b parser, kept independent rather than
+  shared since the backend has no dependency on data-pipeline) and matches
+  it through the same `matching.py` index every other importer uses.
+  `POST /api/integrations/athletic/upload-candidates` (multipart, any
+  signed-in user, no admin gate, no write) returns a match report; the
+  frontend merges `candidates` into `settings.athleticProjections` (keyed
+  by player id) via the existing `PATCH /api/leagues/{id}` — same shape as
+  the FantasyPros AAV-paste flow. The raw workbook is parsed in memory and
+  discarded; nothing is ever written to `fantasy_players` or persisted to
+  disk. **Fluid by design**: re-upload any time to refresh for a later cut
+  of the sheet, same discipline as the Yahoo-paste and AAV-paste importers.
+- **Display only, computed AFTER `finalizeBoard`, outside the valuation
+  waterfall.** `useBoard.ts` runs the uploaded stat line through the same
+  `points(line, sc)` this league's own model uses (so the number reflects
+  THIS league's scoring, not whatever The Athletic's own workbook tab was
+  last customized to) and ranks it positionally among uploaded players —
+  `BoardPlayer.athleticPoints`/`athleticRank`. Never fed into `valuePoints`,
+  `vbd`, `tier`, or any engine stage; a selftest (`useBoard.test.ts`) pins
+  that valuePoints/vbd are byte-identical with or without the upload
+  present, the same non-negotiable this section's own 0.1b result exists
+  to justify.
+- **UI**: an "Athletic" upload button in both rooms' header (next to
+  "Values" in the auction room), opening `AthleticUploadImport.tsx`
+  (preview match → apply → clear, same flow as `AavPasteImport.tsx`); a
+  teal `AT{rank}` badge next to the player's name in both rooms' main
+  board (same slot as the indigo `FP{n}` FantasyPros-tier badge), tooltip
+  stating the league-scored points, the rank, and explicitly that it's a
+  second opinion "tested and NOT blended into valuation (roadmap 0.1b)" —
+  so the badge can't be mistaken for another valuation input the way the
+  computed tier and FP tier could be if unlabeled.
 
 ## Injury-aware expected games (shipped for QB/RB only; roadmap 0.3)
 

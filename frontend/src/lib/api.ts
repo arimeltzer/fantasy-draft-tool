@@ -319,6 +319,19 @@ export interface LeagueSettings {
   aavOverrides?: Record<number, number>;
   /** When the override above was last pasted in, for the "as of" badge. */
   aavImportedAt?: string;
+  /** A SECOND-OPINION display source, uploaded from The Athletic's
+   *  projections workbook — keyed by player id, StatLine-shaped
+   *  (passYd/passTD/int/rushYd/rushTD/rec/recYd/recTD). Roadmap 0.1b
+   *  gated blending this into valuation the same way FantasyPros (0.1)
+   *  is blended and it FAILED the full-stack check (QB/TE flip sign
+   *  between validation seasons, RB/WR under 0.01 Spearman) — so this
+   *  NEVER feeds valuePoints/marketPrice/any engine stage. useBoard
+   *  computes a display-only points/rank from it under THIS league's
+   *  own scoring, the same role `fp_tier` plays next to the app's own
+   *  computed tier. See AthleticUploadImport.tsx / CLAUDE.md. */
+  athleticProjections?: Record<number, Record<string, number>>;
+  /** When the workbook above was last uploaded, for the "as of" badge. */
+  athleticImportedAt?: string;
 }
 
 function getToken(): string | null {
@@ -435,6 +448,30 @@ export const api = {
   }>("/api/integrations/fantasypros/aav-paste-candidates", {
     method: "POST", body: JSON.stringify(data),
   }),
+
+  /** Match report for an uploaded copy of The Athletic's projections
+   *  workbook — no write, second-opinion display only (see LeagueSettings
+   *  .athleticProjections). Multipart, so this bypasses `req()`'s JSON
+   *  Content-Type: a browser-set boundary is required for FormData and
+   *  fetch only supplies one when Content-Type is left unset. */
+  athleticUploadCandidates: async (file: File, season = 2026) => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${BASE}/api/integrations/athletic/upload-candidates?season=${season}`, {
+      method: "POST",
+      headers: { ...authHeaders() },
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+    return res.json() as Promise<{
+      season: number; sheets_found: string[]; parsed: number;
+      candidates: { id: number; name: string; pos: string; team: string; proj: Record<string, number> }[];
+      matched: number; unmatched: number; unmatched_names: string[];
+    }>;
+  },
 
   espnProbeActivity: (data: {
     ext_id: string;

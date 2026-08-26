@@ -110,6 +110,14 @@ export interface BoardPlayer extends Player {
    *  first. Only stages that actually fired for THIS player appear — a QB
    *  with no reported injury carries no "Injury discount" step at all. */
   projBreakdown?: ProjBreakdownStep[];
+  /** SECOND-OPINION DISPLAY ONLY (roadmap 0.1b) — this league's own scoring
+   *  applied to a stat line uploaded from The Athletic's workbook, and this
+   *  player's rank among uploaded players at the same position. Never
+   *  derived from or fed into valuePoints/vbd/tier — see
+   *  AthleticUploadImport.tsx. Undefined for a player nobody uploaded a
+   *  projection for. */
+  athleticPoints?: number;
+  athleticRank?: number;
 }
 
 export declare const DEFAULT_PARAMS: EngineParams;

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any, Literal, Optional
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import bcrypt as _bcrypt
@@ -22,6 +22,7 @@ from models import (
 )
 from integrations import espn as espn_provider, yahoo as yahoo_provider, yahoo_paste
 from integrations import fantasypros_aav_paste as aav_paste
+from integrations import athletic_upload
 from integrations.base import NormPlayer, opponent_team_ids
 from integrations.matching import build_index, match_player, keeper_candidates
 import live_ws_registry
@@ -831,6 +832,61 @@ async def fantasypros_aav_paste_candidates(
         "season": data.season,
         "parsed": len(report.rows),
         "skipped_lines": len(report.skipped),
+        "candidates": matched,
+        "matched": len(matched),
+        "unmatched": len(unmatched),
+        "unmatched_names": unmatched[:40],
+    }
+
+
+@app.post("/api/integrations/athletic/upload-candidates")
+async def athletic_upload_candidates(
+    file: UploadFile = File(...),
+    season: int = 2026,
+    _: User = Depends(get_current_user),
+    db: AsyncSession = Depends(db_dep),
+) -> dict:
+    """Match report for an uploaded copy of The Athletic's projections
+    workbook — no write, no admin gate, and NOT a valuation input (roadmap
+    0.1b tried and failed the full-stack kill gate for that — see
+    CLAUDE.md). This is a SECOND-OPINION DISPLAY source only: the caller
+    merges `candidates` into their own league's `settings.athleticProjections`
+    via the existing `PATCH /api/leagues/{id}`, same shape as
+    `aav-paste-candidates` above. The raw workbook is parsed in memory and
+    discarded — never persisted to disk, never written to `fantasy_players`.
+    """
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400,
+                             detail="Upload The Athletic's projections workbook as a .xlsx file.")
+    try:
+        report = athletic_upload.parse_workbook(file.file)
+    except Exception as e:  # noqa: BLE001 — an unreadable/unexpected workbook shape
+        raise HTTPException(status_code=422, detail=f"Could not parse the uploaded workbook: {e}")
+    if not report.rows:
+        raise HTTPException(
+            status_code=422,
+            detail="No player rows found — expected QB/RB/WR/TE sheets with Player/Tm columns.")
+
+    rows = (await db.execute(
+        select(Player.id, Player.name, Player.pos, Player.team).where(Player.season == season)
+    )).all()
+    if not rows:
+        raise HTTPException(status_code=409, detail=f"No players loaded for season {season}.")
+    index = build_index([{"id": r.id, "name": r.name, "pos": r.pos, "team": r.team} for r in rows])
+
+    norm_players = athletic_upload.to_norm_players(report)
+    matched, unmatched = [], []
+    for np, ar in zip(norm_players, report.rows):
+        pid = match_player(index, np)
+        if pid is None:
+            unmatched.append(ar.name)
+            continue
+        matched.append({"id": pid, "name": ar.name, "pos": ar.pos, "team": ar.team, "proj": ar.proj})
+
+    return {
+        "season": season,
+        "sheets_found": report.sheets_found,
+        "parsed": len(report.rows),
         "candidates": matched,
         "matched": len(matched),
         "unmatched": len(unmatched),

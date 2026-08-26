@@ -16,6 +16,7 @@ from .base import NormLeague, NormPlayer, NormTeam, opponent_team_ids, resolve_m
 from .matching import build_index, match_player, keeper_candidates
 from . import espn, espn_draft_ws, live, yahoo, yahoo_paste
 from . import fantasypros_aav_paste as aav_paste
+from . import athletic_upload
 
 
 def test_matching():
@@ -837,6 +838,7 @@ def main():
     test_waiver_weekly_fetch(); print("✓ waiver weekly fetch")
     test_yahoo_paste(); print("✓ yahoo paste import")
     test_fantasypros_aav_paste(); print("✓ fantasypros aav paste import")
+    test_athletic_upload(); print("✓ athletic projections upload (second-opinion display)")
     test_espn_draft_ws(); print("✓ espn draft websocket (protocol + accumulator)")
     print("\nALL INTEGRATION SELFTESTS PASS")
 
@@ -1062,6 +1064,70 @@ def test_fantasypros_aav_paste():
     assert ids["Austin Ekeler"] == 4           # name+pos unique even with a blank/stale team
     assert ids["Alec Pierce"] is None          # not in the pool -> unmatched, not guessed
     assert ids["Jordan Love"] is None
+
+
+def test_athletic_upload():
+    """The Athletic's projections workbook, parsed for a SECOND-OPINION
+    display only — never a valuation input (roadmap 0.1b gated blending this
+    into valuePoints the way FantasyPros is blended and it failed the
+    decisive check; see CLAUDE.md). Built in-memory rather than committing
+    the real .xlsx (paid-subscription content) — same reasoning as the
+    fixtures/ JSON extracts used for the 0.1b backtest itself — but the
+    header text and stat values are drawn from a real uploaded copy, not
+    invented, the same discipline `test_fantasypros_aav_paste` uses for its
+    hand-copied real rows."""
+    import io
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    qb = wb.create_sheet("QB")
+    qb.append(["Player", "Tm", "PAYD", "PATD", "INT", "RUYD", "RUTD"])
+    qb.append(["Jacoby Brissett", "ARI", 3231.86, 21.36, 7.95, 208.65, 1.11])
+
+    rb = wb.create_sheet("RB")
+    rb.append(["Player", "Tm", "RUYD", "RUTD", "REC", "RCYD", "RCTD"])
+    rb.append(["J.K. Dobbins", "DEN", 735.81, 4.78, 15.26, 74.47, 0.50])
+
+    # A sheet the app doesn't score at all (out of scope, same as K/DST in
+    # EXPERT_BLEND_W) — must be silently ignored, not error.
+    dst = wb.create_sheet("DST1")
+    dst.append(["Player", "Tm", "Custom"])
+    dst.append(["Broncos", "DEN", 120.0])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    report = athletic_upload.parse_workbook(buf)
+    assert set(report.sheets_found) == {"QB", "RB"}, report.sheets_found
+    assert len(report.rows) == 2, len(report.rows)
+
+    by_name = {r.name: r for r in report.rows}
+    brissett = by_name["Jacoby Brissett"]
+    assert brissett.pos == "QB" and brissett.team == "ARI"
+    assert brissett.proj["passYd"] == 3231.86
+    assert brissett.proj["passTD"] == 21.36
+    assert brissett.proj["int"] == 7.95
+    assert "rec" not in brissett.proj          # QB sheet carries no receiving columns
+
+    dobbins = by_name["J.K. Dobbins"]
+    assert dobbins.pos == "RB" and dobbins.team == "DEN"
+    assert dobbins.proj["rec"] == 15.26
+    assert dobbins.proj["recYd"] == 74.47
+
+    # ── feeds the SAME matcher ESPN/Yahoo/AAV-paste import already use ──
+    pool = [
+        {"id": 1, "name": "Jacoby Brissett", "pos": "QB", "team": "ARI"},
+        {"id": 2, "name": "J.K. Dobbins", "pos": "RB", "team": "DEN"},
+    ]
+    index = build_index(pool)
+    norm_players = athletic_upload.to_norm_players(report)
+    assert len(norm_players) == 2
+    ids = {np.name: match_player(index, np) for np in norm_players}
+    assert ids["Jacoby Brissett"] == 1
+    assert ids["J.K. Dobbins"] == 2
 
 
 def test_espn_draft_ws():

@@ -1,6 +1,6 @@
 import { memo, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio, HelpCircle, CalendarX, Layers } from "lucide-react";
+import { ArrowLeft, Crown, AlertTriangle, Zap, Settings, Check, Lock, ListOrdered, Radio, HelpCircle, CalendarX, Layers, Upload } from "lucide-react";
 import { myPickNumbers, rankByAdp, isRookieFilterMatch } from "@/engine/snake-engine.js";
 import { benchStackWarning, FLEX_SIBLING } from "@/engine/budget-path.js";
 import { byeCollisions } from "@/engine/bye-weeks.js";
@@ -29,6 +29,7 @@ import DraftOrderBoard from "@/components/shared/DraftOrderBoard";
 import InjuryBadge from "@/components/shared/InjuryBadge";
 import Tip from "@/components/shared/Tip";
 import ProjTip from "@/components/shared/ProjTip";
+import AthleticUploadImport from "@/components/shared/AthleticUploadImport";
 import PickClock from "./PickClock";
 import NeedsPanel, { computeNeeds } from "./NeedsPanel";
 import Recommendations from "./Recommendations";
@@ -57,6 +58,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
   const [showLog, setShowLog] = useState(false);
   const [showLive, setShowLive] = useState(false);
   const [showOrder, setShowOrder] = useState(false);
+  const [showAthletic, setShowAthletic] = useState(false);
 
   // Lifted here (not owned inside LiveDraftPanel) so closing that panel
   // doesn't unmount the hook and kill the poll along with it — see
@@ -385,20 +387,32 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
               {liveDraft.running && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
             </button>
             <button
-              onClick={() => { setShowOrder(true); setShowSettings(false); setShowKeepers(false); }}
+              onClick={() => { setShowOrder(true); setShowSettings(false); setShowKeepers(false); setShowAthletic(false); }}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint"
               title="The full draft order, with traded picks"
             >
               <ListOrdered className="w-3.5 h-3.5" /> Order
             </button>
             <button
-              onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); }}
+              onClick={() => { setShowAthletic((v) => !v); setShowSettings(false); setShowKeepers(false); }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint"
+              title="Upload The Athletic's projections workbook as a second opinion (display only)"
+            >
+              <Upload className="w-3.5 h-3.5" /> Athletic
+              {Object.keys(settings.athleticProjections ?? {}).length > 0 && (
+                <span className="ml-0.5 text-2xs font-mono text-teal-600">
+                  {Object.keys(settings.athleticProjections ?? {}).length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => { setShowKeepers((v) => !v); setShowSettings(false); setShowAthletic(false); }}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint"
             >
               <Lock className="w-3.5 h-3.5" /> Keepers
             </button>
             <button
-              onClick={() => { setShowSettings((v) => !v); setShowKeepers(false); }}
+              onClick={() => { setShowSettings((v) => !v); setShowKeepers(false); setShowAthletic(false); }}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-surface border border-line text-muted font-semibold hover:border-faint"
             >
               <Settings className="w-3.5 h-3.5" /> League
@@ -437,6 +451,14 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
           onSave={(s) => patchLeague.mutate({ settings: s })}
           onRenames={renameTeamOnPicks}
           onClose={() => setShowOrder(false)}
+        />
+      )}
+
+      {showAthletic && (
+        <AthleticUploadImport
+          settings={settings}
+          onSave={(patch) => patchLeague.mutate({ settings: { ...settings, ...patch } })}
+          onClose={() => setShowAthletic(false)}
         />
       )}
 
@@ -611,6 +633,7 @@ const PlayerRow = memo(function PlayerRow({
                         <span className="font-mono text-xs text-faint">{p.team}</span>
                         {p.tier && <span className="text-2xs font-mono font-bold bg-raised border border-line px-1.5 py-0.5 rounded-md text-muted" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
                         {p.fpTier != null && <span className="text-2xs font-mono font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md text-indigo-600" title={`FantasyPros' own consensus Tier ${p.fpTier} at ${p.pos} — their expert panel's judgment of drop-offs, separate from this app's computed tier above (a mechanical gap in value). Shown side by side, never blended.`}>FP{p.fpTier}</span>}
+                        {p.athleticRank != null && <span className="text-2xs font-mono font-bold bg-teal-50 px-1.5 py-0.5 rounded-md text-teal-700" title={`The Athletic's projection (uploaded): ${p.athleticPoints} pts under this league's scoring, rank #${p.athleticRank} at ${p.pos} among uploaded players. A second opinion only — tested and NOT blended into valuation (roadmap 0.1b).`}>AT{p.athleticRank}</span>}
                         {p.risk >= 0.4 && (
                           <span title={`Elevated risk (${p.risk} of 1) from week-to-week volatility, injury history, or age — expect a wider range of outcomes`}>
                             <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />

@@ -84,7 +84,7 @@ Rookies are skipped (already used `player.proj` first, at higher priority).
 `expert_blend_parity.py` holds the shipped JS to the backtested Python,
 equality not tolerance — same treatment `anchor_parity.py` gives the anchor.
 
-### 0.1b A second expert source: The Athletic — IN PROGRESS, not shipped
+### 0.1b A second expert source: The Athletic — DONE, NOT shipped
 
 **Prompted directly**: the user supplied The Athletic's downloadable
 projections workbook (Jake's model) and asked to "consider ways to
@@ -203,6 +203,32 @@ takes up the standing offer of more historical seasons (two is thin
 regardless of direction), or for the unrelated import paths (auction-
 value override, roadmap 0.1b's option A) that were never contingent on
 this blend question.
+
+### 0.1c Second opinion display badge — DONE, shipped
+
+**Asked directly as the natural follow-up**: "is there any other use we
+should consider for the Athletic projections? Will it better predict how
+opponents will act?" Two options were on the table — a rookie-only
+re-test of 0.1b's model (untested: 0.1b's gate excluded rookies, and
+`rookieProjection()`'s ADP/ECR-curve fallback is a different, already
+roadmap-1.4-tested comparison) and a pure DISPLAY badge carrying no
+valuation claim at all. User chose the display badge.
+
+**No kill gate needed — the same reasoning 0.1b's own header note already
+states about the unrelated auction-value-import path**: this is not a
+predictive claim, so there is nothing to backtest. `backend/integrations/
+athletic_upload.py` accepts a live workbook upload (multipart), matches it
+through the shared `matching.py` index, and the frontend stores the raw
+per-category stat line in `settings.athleticProjections` (keyed by player
+id) — fluid by construction, same as the 0.1b parser and the AAV-paste
+importer. `useBoard.ts` computes `athleticPoints`/`athleticRank` from it
+using THIS league's own scoring, strictly AFTER `finalizeBoard` — a
+selftest pins that `valuePoints`/`vbd` are byte-identical with or without
+an upload present. Surfaced as a teal `AT{rank}` badge next to the name in
+both rooms (same slot as the indigo FantasyPros `FP{n}` tier badge), whose
+tooltip states outright that it is a second opinion not blended into
+valuation, referencing this section. See CLAUDE.md "Second opinion
+display" for the full shipped shape.
 
 ### 0.2 Collapse the overfit snake slot configs — DONE, collapsed
 
