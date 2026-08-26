@@ -706,7 +706,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
           />
 
           <div>
-            <div className="grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_104px_64px_64px_64px_160px] gap-2 px-4 py-1.5 mb-1 text-2xs uppercase tracking-wider text-faint font-mono font-semibold">
+            <div className="grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_64px_160px] gap-2 px-4 py-1.5 mb-1 text-2xs uppercase tracking-wider text-faint font-mono font-semibold">
               <span>Pos</span>
               <span className="flex items-center gap-1">
                 Player
@@ -755,7 +755,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                 return (
                   <div
                     key={p.id}
-                    className={`grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_104px_64px_64px_64px_160px] gap-2 px-3 py-2.5 items-center text-sm rounded-2xl border ${
+                    className={`grid grid-cols-[40px_minmax(120px,1fr)_64px_128px] sm:grid-cols-[44px_minmax(160px,1fr)_60px_64px_64px_64px_160px] gap-2 px-3 py-2.5 items-center text-sm rounded-2xl border ${
                       sold ? "opacity-40 bg-raised border-line"
                       : nominatedNow ? "bg-amber-50/70 border-amber-300 shadow-[0_6px_16px_rgba(180,83,9,0.08)]"
                       : "bg-surface border-line hover:border-faint"

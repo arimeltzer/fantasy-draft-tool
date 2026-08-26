@@ -1724,27 +1724,58 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
 - **A second real layout bug, unrelated to the Athletic badge work
   despite surfacing right after it: "the headers don't align with the
   values and there are big spaces between the values" (auction only,
-  from a user screenshot).** Root cause is a CSS Grid track blowout, not
-  anything about badges. `ValueBar` (the VBD bar + number shown on every
-  row) renders at a fixed ~100px (a 56px bar + 8px gap + a 36px number,
-  none of which can shrink), but the VBD grid column was declared at
-  only `60px` (auction) / `70px` (snake). A grid item's content can't
-  shrink below its own intrinsic minimum width, so each PLAYER ROW's own
-  copy of that column silently grew past its declared size — but the
-  HEADER row is a separate, independent grid with much shorter content
-  ("VBD" as plain text) that never blows out, so the header's version of
-  every column stayed at its declared width while every row's version
-  after VBD (`$Par`/`$Live`/`$Max`/`Bid / Buy`) drifted right of where
-  its header sat. Confirmed, not just theorized: rebuilt the real
-  Tailwind bundle and rendered a static repro (Playwright, the exact
-  production classnames) — the reported misalignment reproduced exactly
-  at the pre-fix `60px`, and rebuilding at the corrected width lined
-  every column up pixel-for-pixel with its header. Fixed by widening the
-  VBD column to `104px` (bar + gap + number, no more) in BOTH the header
-  row's and every player row's `grid-cols-[...]` string, in both rooms —
-  they must stay byte-identical between header and row for the same
-  reason the bug existed: two independent grids only agree on column
-  widths when given the exact same template.
+  from a user screenshot).** Root cause: `ValueBar` (the VBD bar + number
+  shown on every row) rendered at a fixed ~100px (a 56px bar + 8px gap +
+  a 36px number, none of which could shrink), inside a VBD grid column
+  declared at only `60px` (auction) / `70px` (snake). An explicit
+  fixed-px grid TRACK doesn't resize for its content, but the CONTENT
+  itself isn't clipped either — it just overflows the track's boundary
+  visually, and since `justify-end` right-aligns it, the overflow spills
+  toward the START of the track (left, into the name column's territory)
+  rather than harmlessly off to the right. The header row is a separate,
+  independent grid whose own VBD cell holds only the short word "VBD" —
+  far under 60px, so it never overflows — meaning the header's `VBD`
+  label sat exactly where its 60px track began while every row's actual
+  bar+number rendered measurably to the left of that, throwing off every
+  column after it. Confirmed with a static repro built from the real
+  compiled Tailwind bundle (Playwright, the exact production classnames).
+  - **First fix attempt widened the VBD column to `104px`
+    (bar+gap+number, no more) — this REGRESSED a different column.**
+    Shipped, then reported immediately: "the actual bid column is
+    slightly too narrow and gets cut off." Real mistake: the auction
+    row's total minimum width is already tight against the available
+    space at the specific breakpoint where BOTH the left sidebar and the
+    `xl` 300px right rail are present (`main`'s `xl:grid-cols-[280px_
+    minmax(0,1fr)_300px]`, narrowest around a ~1280px window) — adding
+    44px to VBD had nowhere to come from but the row's OWN overflow
+    budget, which the LAST column (`Bid / Buy`, containing the actual
+    price input + winner dropdown) absorbs. Confirmed by rebuilding a
+    full repro of the real 3-column page shell (sidebar + center + right
+    rail, not just the row in isolation) at a 1280px viewport and reading
+    exact element bounding boxes via Playwright, not eyeballing pixels —
+    the shipped 104px version measurably pushed the winner dropdown ~49px
+    past the row's own right edge, under the right rail.
+  - **Real fix: shrink `ValueBar` to fit the ORIGINAL column widths
+    instead of growing the columns to fit it.** `ValueBar`'s bar went
+    `w-14`→`w-4` (56px→16px) and its gap `gap-2`→`gap-1`, landing its
+    whole footprint at 56px — comfortably inside the untouched original
+    `60px`/`70px` columns, which were reverted back to their exact
+    pre-incident values in both rooms. This fixes the alignment bug
+    (measured: header and row now compute byte-identical
+    `grid-template-columns`, and VBD's rendered content box exactly
+    equals its 60px cell, zero overflow) WITHOUT changing the row's total
+    width at all, so the `Bid / Buy` column's headroom at the tight
+    breakpoint is exactly what it always was — not worse, and not
+    something newly introduced today. That specific breakpoint still
+    isn't spacious (a pre-existing tightness, confirmed unchanged from
+    before any of today's edits, and out of scope unless raised
+    separately); every other realistic width tested (1440px, 1600px)
+    renders every column fully visible and aligned.
+  - **Lesson applied**: verify a targeted layout change against the REAL
+    surrounding page shell at realistic pinch-point widths, with actual
+    measured bounding boxes — not just the isolated component being
+    changed — before shipping. The first VBD fix was correctly verified
+    in isolation and still broke something two columns away.
 
 ## Gotchas
 

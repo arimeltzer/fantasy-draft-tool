@@ -511,7 +511,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
           />
 
           <div>
-            <div className="grid grid-cols-[28px_1fr_auto] sm:grid-cols-[28px_44px_1fr_104px_140px] gap-2 px-4 py-1.5 mb-1 text-2xs uppercase tracking-wider text-faint font-mono font-semibold">
+            <div className="grid grid-cols-[28px_1fr_auto] sm:grid-cols-[28px_44px_1fr_70px_140px] gap-2 px-4 py-1.5 mb-1 text-2xs uppercase tracking-wider text-faint font-mono font-semibold">
               <span>#</span>
               <span className="hidden sm:block">Pos</span>
               <span className="flex items-center gap-1">
@@ -613,7 +613,7 @@ const PlayerRow = memo(function PlayerRow({
 
   return (
                   <div
-                    className={`grid grid-cols-[28px_1fr_auto] sm:grid-cols-[28px_44px_1fr_104px_140px] gap-2 px-3 py-2.5 items-center text-sm rounded-2xl border ${
+                    className={`grid grid-cols-[28px_1fr_auto] sm:grid-cols-[28px_44px_1fr_70px_140px] gap-2 px-3 py-2.5 items-center text-sm rounded-2xl border ${
                       mine ? "bg-emerald-500/[0.05] border-emerald-200" :
                       taken ? "bg-raised border-line opacity-50" :
                       "bg-surface border-line hover:border-faint"
