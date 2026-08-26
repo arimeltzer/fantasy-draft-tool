@@ -459,6 +459,35 @@ export function projectAll(players, sc, P = DEFAULT_PARAMS) {
   return players.map((pl) => ({ ...pl, ...projectValue(pl, sc, P) }));
 }
 
+/** VBD-gap tier threshold: a new tier begins whenever two consecutive
+ *  players (sorted descending by the same value) differ by more than this
+ *  many points. Exported so any OTHER value on the same points scale can be
+ *  tiered by the identical "drop-off" definition finalizeBoard uses for its
+ *  own vbd — gaps in raw points and gaps in VBD are the same number for two
+ *  players at the same position (VBD only subtracts one shared per-position
+ *  replacement constant, which cancels out of the difference), so the
+ *  threshold transfers without adjustment. See `tierize()`. */
+export const TIER_GAP = 18;
+
+/** Assign gap tiers to one position's list (already sorted descending by
+ *  `valueKey`) — tier 1 is the top group, incrementing every time the drop
+ *  to the next player exceeds TIER_GAP. Returns {id: tier}, not a mutated
+ *  list, so a caller can merge it into whatever shape it's already
+ *  building (finalizeBoard's own board map, or a second-opinion source's
+ *  own points list in useBoard). Pulled out so there is exactly ONE
+ *  definition of "a tier" in this codebase — two independent copies of a
+ *  replacement/tier calculation drifting apart is a mistake this file has
+ *  made once already (see finalizeBoard's own docstring history). */
+export function tierize(sortedList, valueKey) {
+  const tier = {};
+  let t = 1;
+  sortedList.forEach((p, i) => {
+    if (i > 0 && (sortedList[i - 1][valueKey] - p[valueKey]) > TIER_GAP) t++;
+    tier[p.id] = t;
+  });
+  return tier;
+}
+
 /**
  * Replacement level, VBD and tiers from finished valuePoints.
  *
@@ -484,11 +513,7 @@ export function finalizeBoard(scored, league, P = DEFAULT_PARAMS) {
   const tier = {};
   for (const pos of ["QB", "RB", "WR", "TE"]) {
     const list = board.filter((p) => p.pos === pos).sort((a, b) => b.vbd - a.vbd);
-    let t = 1;
-    list.forEach((p, i) => {
-      if (i > 0 && (list[i - 1].vbd - p.vbd) > 18) t++;
-      tier[p.id] = t;
-    });
+    Object.assign(tier, tierize(list, "vbd"));
   }
   return board.map((p) => ({ ...p, tier: tier[p.id] || null })).sort((a, b) => b.vbd - a.vbd);
 }

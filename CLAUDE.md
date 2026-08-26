@@ -783,12 +783,44 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
 - **UI**: an "Athletic" upload button in both rooms' header (next to
   "Values" in the auction room), opening `AthleticUploadImport.tsx`
   (preview match → apply → clear, same flow as `AavPasteImport.tsx`); a
-  teal `AT{rank}` badge next to the player's name in both rooms' main
+  teal `AT{n}` badge next to the player's name in both rooms' main
   board (same slot as the indigo `FP{n}` FantasyPros-tier badge), tooltip
   stating the league-scored points, the rank, and explicitly that it's a
   second opinion "tested and NOT blended into valuation (roadmap 0.1b)" —
   so the badge can't be mistaken for another valuation input the way the
   computed tier and FP tier could be if unlabeled.
+- **Two follow-up reports, same day, fixed together.** (1) The badge's
+  number was a plain positional RANK while the app's own tier badge and
+  the FantasyPros badge are both TIERS — three adjacent badges answering
+  "how good is this player" in two different units read as inconsistent.
+  (2) The auction board's name/badge row was wrapping to a second line
+  more than the snake room's — expected, not a bug: the auction row's
+  `sm:` grid carries four more fixed-width money columns (ECR-diff/
+  $Live/$Max/Bid, ~410px) than snake's two (~210px), leaving less flexible
+  room for the same badge set, and the Athletic badge was one more thing
+  competing for it.
+  - **Fix for (1) also helps (2).** `engine-core.js` gained `tierize()` /
+    `TIER_GAP` (the exact ">18pt gap starts a new tier" rule
+    `finalizeBoard` already used inline for `vbd`, pulled out to ONE
+    definition rather than a second inline copy — two independent
+    replacement/tier calculations drifting apart is a mistake this file
+    has made once before). `finalizeBoard`'s own tier now calls it;
+    `useBoard.ts` calls the SAME function on `athleticPoints` (gaps in raw
+    points and gaps in VBD are identical for two players at the same
+    position, since VBD only subtracts one shared per-position constant)
+    to produce `BoardPlayer.athleticTier`, scoped to QB/RB/WR/TE like the
+    app's own tier. The badge now reads `AT{tier}` — same *kind* of number
+    as `T{tier}`/`FP{fpTier}`, from a third independent source — and tier
+    numbers run shorter than rank numbers on average, so the badge set is
+    narrower too. `athleticRank` is kept (in the tooltip only) since it's
+    still useful detail, just not the headline number anymore.
+  - **Fix for (2)**: the auction row's badge flex container went from
+    `gap-1.5` to `gap-1` (auction only — snake wasn't wrapping and keeps
+    its existing gap). A real structural fix (widening the auction name
+    column at the expense of the money columns) was considered and NOT
+    done without visual verification — those columns are already sized
+    tightly for their own content (dollar values, a winner dropdown), and
+    shrinking them risks trading one overflow problem for another.
 
 ## Injury-aware expected games (shipped for QB/RB only; roadmap 0.3)
 

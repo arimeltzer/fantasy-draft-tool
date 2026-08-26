@@ -111,13 +111,18 @@ export interface BoardPlayer extends Player {
    *  with no reported injury carries no "Injury discount" step at all. */
   projBreakdown?: ProjBreakdownStep[];
   /** SECOND-OPINION DISPLAY ONLY (roadmap 0.1b) — this league's own scoring
-   *  applied to a stat line uploaded from The Athletic's workbook, and this
-   *  player's rank among uploaded players at the same position. Never
-   *  derived from or fed into valuePoints/vbd/tier — see
+   *  applied to a stat line uploaded from The Athletic's workbook.
+   *  `athleticTier` is computed by the SAME gap rule (`tierize`/TIER_GAP)
+   *  as the app's own `tier` above, applied to athleticPoints instead of
+   *  vbd — so the two badges read the same way (a drop-off tier) even
+   *  though they come from different sources; `athleticRank` (plain
+   *  positional rank among uploaded players) is kept for the tooltip.
+   *  Never derived from or fed into valuePoints/vbd/tier — see
    *  AthleticUploadImport.tsx. Undefined for a player nobody uploaded a
    *  projection for. */
   athleticPoints?: number;
   athleticRank?: number;
+  athleticTier?: number;
 }
 
 export declare const DEFAULT_PARAMS: EngineParams;
@@ -183,6 +188,17 @@ export declare function marketAnchor<T extends { id: number | string; pos: strin
 export declare function projectAll(
   players: Player[], sc: Scoring, P?: EngineParams
 ): (Player & ReturnType<typeof projectValue>)[];
+/** VBD-gap tier threshold (points) — see `tierize()`. */
+export declare const TIER_GAP: number;
+/** Assign gap tiers within one position's list, already sorted descending
+ *  by `valueKey` — a new tier begins whenever the drop to the next player
+ *  exceeds TIER_GAP. The ONE definition of "a tier" in this codebase;
+ *  finalizeBoard's own vbd-based tier and any second-opinion source (e.g.
+ *  Athletic's uploaded points) both call this rather than keeping separate
+ *  copies of the gap rule. */
+export declare function tierize<T extends { id: number | string }>(
+  sortedList: T[], valueKey: keyof T,
+): Record<number | string, number>;
 /** Replacement level, VBD and tiers from finished valuePoints. Runs LAST. */
 export declare function finalizeBoard(
   scored: { id: number | string; pos: string; valuePoints: number }[],

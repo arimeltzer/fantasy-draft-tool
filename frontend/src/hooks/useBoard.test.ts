@@ -191,11 +191,12 @@ describe("useBoard projBreakdown", () => {
     expect(byName(result.current, "Plain WR").fpTier).toBeUndefined();
   });
 
-  it("computes a display-only Athletic points/rank from an uploaded projection, never touching valuePoints", () => {
+  it("computes a display-only Athletic points/rank/tier from an uploaded projection, never touching valuePoints", () => {
     const withAthletic: LeagueSettings = {
       ...SETTINGS,
       athleticProjections: {
-        // Ranked below Ranked-Second RB under this league's own scoring.
+        // Ranked below Ranked-Second RB under this league's own scoring,
+        // and far enough apart (>TIER_GAP) to land in a different tier too.
         5: { rushYd: 900, rushTD: 6, rec: 20, recYd: 150, recTD: 1 },
         6: { rushYd: 1400, rushTD: 12, rec: 30, recYd: 250, recTD: 2 },
       },
@@ -209,9 +210,16 @@ describe("useBoard projBreakdown", () => {
     expect(second.athleticPoints).toBeGreaterThan(first.athleticPoints!);
     expect(second.athleticRank).toBe(1);
     expect(first.athleticRank).toBe(2);
-    // A player nobody uploaded a projection for carries neither field.
+    // Tiered the SAME way the app's own computed tier is (a >18pt gap
+    // starts a new tier) — a distinct concept from plain rank, and the one
+    // the badge actually displays, for consistency with the FantasyPros
+    // tier badge shown alongside it.
+    expect(second.athleticTier).toBe(1);
+    expect(first.athleticTier).toBe(2);
+    // A player nobody uploaded a projection for carries none of these.
     expect(byName(after, "Plain WR").athleticPoints).toBeUndefined();
     expect(byName(after, "Plain WR").athleticRank).toBeUndefined();
+    expect(byName(after, "Plain WR").athleticTier).toBeUndefined();
     // Never fed into valuation — valuePoints/vbd are byte-identical with or
     // without the upload present.
     expect(byName(after, "Ranked-First RB").valuePoints).toBe(byName(before, "Ranked-First RB").valuePoints);

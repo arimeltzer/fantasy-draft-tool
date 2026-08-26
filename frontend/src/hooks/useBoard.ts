@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import {
-  projectAll, finalizeBoard, marketAnchor, MARKET_ANCHOR_W, resolveScoring, points,
+  projectAll, finalizeBoard, marketAnchor, MARKET_ANCHOR_W, resolveScoring, points, tierize,
   blendExpertAll, EXPERT_BLEND_W, applyInjuryDiscount, INJURY_K,
   applyOpportunityModel, OPPORTUNITY_K,
   applyTeamChangeDiscount, TEAM_CHANGE_K,
@@ -257,9 +257,11 @@ export function useBoard(
     // decisive one (QB/TE flip sign between validation seasons, RB/WR under
     // 0.01 Spearman — see CLAUDE.md). This never touches valuePoints/vbd/
     // tier; it's this league's own scoring applied to whatever stat line was
-    // uploaded, plus a positional rank among uploaded players, so a human
-    // can weigh it the way `fpTier` is already weighed next to the app's own
-    // computed tier.
+    // uploaded, tiered by the SAME gap rule (tierize/TIER_GAP) the app's own
+    // `tier` uses on vbd — so the badge reads the same way ("a drop-off
+    // tier") even though the number underneath comes from a different
+    // source, the way `fpTier` is already weighed next to the app's own
+    // computed tier. Positional rank is also kept, for the tooltip.
     const athleticOverrides = settings.athleticProjections;
     if (athleticOverrides && Object.keys(athleticOverrides).length > 0) {
       const withPts = finalBoard.map((p) => {
@@ -268,6 +270,7 @@ export function useBoard(
         return { ...p, athleticPoints: +points(line, sc).toFixed(1) };
       });
       const rankOf = new Map<number | string, number>();
+      const tierOf = new Map<number | string, number>();
       const byPos = new Map<string, typeof withPts>();
       for (const p of withPts) {
         if (p.athleticPoints == null) continue;
@@ -275,11 +278,21 @@ export function useBoard(
         arr.push(p);
         byPos.set(p.pos, arr);
       }
-      for (const arr of byPos.values()) {
+      // Same position scope as finalizeBoard's own tier (K/DST untiered) —
+      // moot in practice since the uploader only covers QB/RB/WR/TE anyway,
+      // but kept explicit rather than assumed.
+      const TIERED_POS = new Set(["QB", "RB", "WR", "TE"]);
+      for (const [pos, arr] of byPos) {
         arr.sort((a, b) => (b.athleticPoints as number) - (a.athleticPoints as number));
         arr.forEach((p, i) => rankOf.set(p.id, i + 1));
+        if (TIERED_POS.has(pos)) {
+          const tiers = tierize(arr, "athleticPoints");
+          for (const p of arr) tierOf.set(p.id, tiers[p.id]);
+        }
       }
-      return withPts.map((p) => rankOf.has(p.id) ? { ...p, athleticRank: rankOf.get(p.id) } : p);
+      return withPts.map((p) => rankOf.has(p.id)
+        ? { ...p, athleticRank: rankOf.get(p.id), athleticTier: tierOf.get(p.id) }
+        : p);
     }
 
     return finalBoard;

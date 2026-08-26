@@ -770,7 +770,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                     </span>
 
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
+                      <div className="flex items-center gap-1 flex-wrap">
                         {nominatedNow && (
                           <span className="flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-1.5 py-0.5 text-2xs font-medium text-amber-800 shrink-0" title="Currently up for auction in your live draft">
                             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" /> Nominated
@@ -782,7 +782,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                         <span className="font-mono text-xs text-faint">{p.team}</span>
                         {p.tier && <span className="text-2xs font-mono font-bold bg-raised border border-line px-1.5 py-0.5 rounded-md text-muted" title={`Tier ${p.tier} at ${p.pos} — players in the same tier are roughly interchangeable; a new tier means a drop-off in value`}>T{p.tier}</span>}
                         {p.fpTier != null && <span className="text-2xs font-mono font-bold bg-indigo-50 px-1.5 py-0.5 rounded-md text-indigo-600" title={`FantasyPros' own consensus Tier ${p.fpTier} at ${p.pos} — their expert panel's judgment of drop-offs, separate from this app's computed tier above (a mechanical gap in value). Shown side by side, never blended.`}>FP{p.fpTier}</span>}
-                        {p.athleticRank != null && <span className="text-2xs font-mono font-bold bg-teal-50 px-1.5 py-0.5 rounded-md text-teal-700" title={`The Athletic's projection (uploaded): ${p.athleticPoints} pts under this league's scoring, rank #${p.athleticRank} at ${p.pos} among uploaded players. A second opinion only — tested and NOT blended into valuation (roadmap 0.1b).`}>AT{p.athleticRank}</span>}
+                        {p.athleticTier != null && <span className="text-2xs font-mono font-bold bg-teal-50 px-1.5 py-0.5 rounded-md text-teal-700" title={`The Athletic's projection (uploaded): Tier ${p.athleticTier} at ${p.pos} — same drop-off rule (≥18 pts) as your board's own tier, computed on ${p.athleticPoints} pts under this league's scoring (rank #${p.athleticRank} among uploaded players). A second opinion only — tested and NOT blended into valuation (roadmap 0.1b).`}>AT{p.athleticTier}</span>}
                         {p.risk >= 0.4 && (
                           <span title={`Elevated risk (${p.risk} of 1) from week-to-week volatility, injury history, or age — expect a wider range of outcomes`}>
                             <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />
