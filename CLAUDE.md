@@ -1852,6 +1852,24 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     vertical space whether a given player has zero badges or five. Same
     visual slot for every badge on every row, independent of name length
     — verified with a repro varying both across four rows side by side.
+- **The price box itself, reported live: "don't preload the $Live price.
+  it takes valuable time to erase and is better blank."** The bid
+  `<input>` defaulted its `value` to `live` (the inflation-adjusted price)
+  whenever nothing had been typed yet, so bidding a different amount meant
+  selecting/deleting that number first — real seconds at a live table.
+  Changed the default to blank (`value={prices[id] ?? ""}`) with the live
+  price kept as a `placeholder` instead — visible as a hint, nothing to
+  select or erase. `buy()` was already independent of the input's
+  rendered value (its own fallback is `prices[id] ?? adjValue ?? parValue
+  ?? 1`), so leaving the box untouched and confirming a sale still records
+  that same sensible price — the only thing that changed is what's
+  *displayed* before you type. The one thing that had to change alongside
+  it: `onChange` used to do `Number(e.target.value)` unconditionally, and
+  `Number("")` is `0`, not `undefined` — clearing the box by hand would
+  have quietly stored a $0 price. Now an empty field deletes the entry
+  (falls back to `buy()`'s own default) instead of coercing to zero.
+  `AuctionRoom.test.tsx` pins both: the box renders blank, and confirming
+  a sale with it left blank still records a real, non-zero price.
 
 - Auth uses `bcrypt` directly (NOT passlib — breaks on Python 3.13).
 - `VITE_API_URL` and `ALLOWED_ORIGINS` must include `https://` and match exactly.

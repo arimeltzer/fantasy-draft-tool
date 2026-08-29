@@ -110,6 +110,27 @@ describe("AuctionRoom player board", () => {
     expect(body.team_id).toBe(1);
   });
 
+  it("starts the price box blank, not pre-filled with the live price — reported live: erasing it cost table time", () => {
+    renderInApp(room());
+    const r = row("Bijan Robinson");
+    expect((within(r).getByRole("spinbutton") as HTMLInputElement).value).toBe("");
+  });
+
+  it("still records a sensible price when a sale is confirmed with the box left blank", async () => {
+    const { api } = await import("@/lib/api");
+    renderInApp(room());
+
+    const r = row("Bijan Robinson");
+    // No typing into the price box at all — buy() falls back to the live/par
+    // price on its own, so leaving the box blank must not record $0.
+    fireEvent.change(within(r).getByTitle("Who won this player?"), { target: { value: "mine" } });
+
+    await waitFor(() => expect(vi.mocked(api.addPick)).toHaveBeenCalled());
+    const calls = vi.mocked(api.addPick).mock.calls;
+    const [, body] = calls[calls.length - 1];
+    expect(body.price).toBeGreaterThan(0);
+  });
+
   it("hides a sold player, since 'hide sold' starts on", async () => {
     renderInApp(room());
     const r = row("Trey McBride");

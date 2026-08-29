@@ -916,9 +916,27 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
                         <>
                           <input
                             type="number"
-                            value={prices[p.id as number] ?? live}
-                            onChange={(e) => setPrices((pr) => ({ ...pr, [p.id as number]: Number(e.target.value) }))}
-                            className="w-12 sm:w-14 no-spinner px-1.5 py-1.5 rounded-lg bg-surface border border-line text-right font-mono text-xs text-ink focus:outline-none focus:border-gold"
+                            value={prices[p.id as number] ?? ""}
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              setPrices((pr) => {
+                                const n = { ...pr };
+                                // Blank means "not typed yet" — buy() already
+                                // falls back to the live/par price on its own,
+                                // so an empty field must stay UNSET rather
+                                // than coerce to 0 (Number("") === 0).
+                                if (raw === "") delete n[p.id as number];
+                                else n[p.id as number] = Number(raw);
+                                return n;
+                              });
+                            }}
+                            // Pre-filling this with the live price used to cost
+                            // real time at the table — reported live: "it
+                            // takes valuable time to erase and is better
+                            // blank." A placeholder shows the same suggested
+                            // price without anything to select or delete.
+                            placeholder={String(live)}
+                            className="w-12 sm:w-14 no-spinner px-1.5 py-1.5 rounded-lg bg-surface border border-line text-right font-mono text-xs text-ink placeholder:text-faint focus:outline-none focus:border-gold"
                           />
                           <select
                             value=""
