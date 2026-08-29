@@ -970,6 +970,7 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
         <aside className="space-y-3.5">
           <NominationPanel
             factor={inflation.factor}
+            reliable={inflation.reliable}
             phase={phase}
             nominations={nominations}
             valueTargets={valueTargets}

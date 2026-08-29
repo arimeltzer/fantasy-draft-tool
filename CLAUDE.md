@@ -1243,6 +1243,38 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
 - `CalibrationBadge` states the sample and per-position effect, and reads
   "generic prices" when there's no history — never adjust prices silently.
 
+## Live inflation display (auction) — header/panel could disagree
+
+- `auction-engine.js applyInflation()` returns `reliable: false` once too
+  little priced value is left on the board for the money-remaining /
+  par-remaining ratio to mean anything (`INFLATION_MIN_COVERAGE` — late in a
+  draft, remaining par collapses toward the discretionary floor while money
+  left stays real, which is also what an earlier bug had this "multiplier"
+  reading x1088 before the `INFLATION_CLAMP`/`reliable` fix). `InflationBadge`
+  (the header) reads that flag and prints "n/a" instead of a meaningless
+  number when it's false.
+- **Reported live: "the inflation number in the nomination panel is not
+  syncing with the number atop the screen. Late in the draft the top went to
+  N/A but the other one says 2x."** Both displays already read the SAME
+  `inflation.factor`/`inflation.reliable` from one `useMemo` in
+  `AuctionRoom.tsx` — not a computation mismatch. `NominationPanel`'s own
+  `Props` simply never had a `reliable` field at all, so it printed
+  `×{factor}` unconditionally; late in a draft `factor` sits clamped at the
+  x2.0 ceiling (the exact "2x" reported) at the same moment the header
+  correctly suppresses it. Fixed by adding `reliable` to `NominationPanel`
+  (defaults `true`, so any other untouched caller is unaffected) and
+  matching the header's own display: `n/a`, muted, once `!reliable`.
+- **A second, independent bug found in the same block while fixing the
+  first**: the panel's inflation tooltip still had the OLD, already-debunked
+  backwards causation `InflationBadge`'s own docstring says was fixed
+  previously — "Above 1: the room is overpaying" — when the verified
+  direction is the opposite (factor = money left / par left; UNDERpaying
+  drains board value faster than money, pushing the ratio UP, not down).
+  The header had the corrected text; this panel, showing the identical
+  number right next to it, still had the wrong one. Fixed to match.
+  `NominationPanel.test.tsx` pins both: `reliable=false` renders "n/a" (not
+  the clamped factor), and `reliable=true`/omitted renders the real number.
+
 ## Rookie draft capital (tried, roadmap 1.4 — NOT shipped)
 
 - Rookies with no FantasyPros projection fall back to an ADP/ECR decaying

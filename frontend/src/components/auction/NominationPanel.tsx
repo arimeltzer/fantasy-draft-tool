@@ -41,6 +41,14 @@ interface TargetItem {
 
 interface Props {
   factor: number;
+  /** False once too little priced value is left on the board for the ratio
+   *  to mean anything — see auction-engine.js applyInflation's
+   *  INFLATION_MIN_COVERAGE. Mirrors InflationBadge's own prop; this panel
+   *  used to omit it entirely and print `factor` unconditionally, so late
+   *  in a draft the header (correctly) read "n/a" while this panel kept
+   *  showing the same clamped number (typically the x2.0 ceiling) as if it
+   *  meant something — the two displays visibly disagreeing. */
+  reliable?: boolean;
   phase: "early" | "mid" | "late";
   nominations: NomItem[];
   valueTargets: TargetItem[];
@@ -55,7 +63,7 @@ const PHASE_ADVICE: Record<Props["phase"], string> = {
   late:  "Late — opponents are short. Nominate your targets and grab value; dump cheap filler to bleed last dollars.",
 };
 
-export default function NominationPanel({ factor, phase, nominations, valueTargets, myMax, oppBudgets, richThreshold }: Props) {
+export default function NominationPanel({ factor, reliable = true, phase, nominations, valueTargets, myMax, oppBudgets, richThreshold }: Props) {
   const rich = oppBudgets.filter((b) => b > richThreshold).length;
 
   return (
@@ -160,14 +168,19 @@ export default function NominationPanel({ factor, phase, nominations, valueTarge
       <div className="mt-3.5 pt-3.5 border-t border-hair flex items-center justify-between text-xs">
         <span className="flex items-center gap-1 text-faint font-semibold"><TrendingUp className="w-3 h-3" /> inflation</span>
         <span
-          className={`font-mono font-bold cursor-help ${factor > 1.05 ? "text-rose-500" : factor < 0.95 ? "text-emerald-600" : "text-muted"}`}
-          title={factor > 1.05
-            ? "Above 1: the room is overpaying, so remaining players will cost more than par"
+          className={`font-mono font-bold cursor-help ${
+            !reliable ? "text-faint"
+            : factor > 1.05 ? "text-rose-500" : factor < 0.95 ? "text-emerald-600" : "text-muted"
+          }`}
+          title={!reliable
+            ? "Almost no priced value is left on the board, so this ratio is mostly leftover dollars divided by scraps — not a real multiplier. Matches the header's own \"n/a\"."
+            : factor > 1.05
+            ? "Above 1: the room has UNDERpaid so far (more money left than value on the board) — remaining players should cost more than par"
             : factor < 0.95
-            ? "Below 1: the room is underpaying — bargains available on remaining players"
+            ? "Below 1: the room has OVERpaid so far — bargains available on remaining players"
             : "Near 1: prices are tracking par values"}
         >
-          ×{factor}
+          {reliable ? `×${factor.toFixed(2)}` : "n/a"}
         </span>
       </div>
     </div>
