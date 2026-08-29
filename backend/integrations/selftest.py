@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from .base import NormLeague, NormPlayer, NormTeam, opponent_team_ids, resolve_my_team
+from .base import NormLeague, NormPlayer, NormTeam, opponent_team_ids, resolve_my_team, resolve_my_team_index
 from .matching import build_index, match_player, keeper_candidates
 from . import espn, espn_draft_ws, live, yahoo, yahoo_paste
 from . import fantasypros_aav_paste as aav_paste
@@ -276,6 +276,41 @@ def test_resolve_my_team():
         t.is_mine = (i == 1)
     names, _ = opponent_team_ids(teams)
     assert names == ["Team 1", "andrew's Angry Team"], names
+
+
+def test_sync_draft_opponent_rename():
+    """`main.py sync_draft`'s own opponent-attribution lookup — a FOURTH
+    instance of the exact-only-match bug class `test_resolve_my_team`/
+    `test_resolve_team_ids` already regression-test twice over, found while
+    answering "what happens if someone renames their team right before the
+    draft?". `settings.opponents` is a snapshot frozen at IMPORT time; a
+    live-sync pick's `owner` (here modeled as `lp.owner`, i.e. `NormPick
+    .owner`) comes from a FRESH poll of the platform's live draft data. A
+    team renamed on the platform between import and draft day made those two
+    strings differ, and the original `{name: i for i, name in
+    enumerate(opponents)}` dict lookup returned None silently — the pick
+    still logged (`mine=False`, off the board) but its `team_id` never
+    resolved, the identical "shows as sold but unassigned" bug already fixed
+    twice over for keepers. Fixed by routing through `resolve_my_team_index`
+    (the exact tiered resolver `opponent_team_ids`/`resolve_my_team` already
+    use) instead, over `[(None, name) for name in opponents]` — the same
+    call shape `main.py` now uses per-pick.
+    """
+    opponents = ["Team 1", "Ari's Astounding Team", "andrew's Angry Team"]
+    pairs = [(None, name) for name in opponents]
+
+    # Untouched name -> exact match, same as before.
+    assert resolve_my_team_index(pairs, "Ari's Astounding Team") == 1
+
+    # Renamed on the platform since import (apostrophe dropped/retyped) ->
+    # the OLD dict lookup returns None here; the tiered resolver still finds it.
+    assert resolve_my_team_index(pairs, "Aris Astounding Team") == 1
+    assert resolve_my_team_index(pairs, "ARI'S ASTOUNDING TEAM") == 1
+
+    # Renamed past recognition -> still refuses rather than guessing, so the
+    # pick logs with team_id=None (visibly unassigned) instead of landing on
+    # the wrong roster.
+    assert resolve_my_team_index(pairs, "The Renamed Squad") is None
 
 
 def test_resolve_team_ids():
@@ -827,6 +862,7 @@ def main():
     test_espn_draft_picks(); print("✓ espn draft picks (incl. dropped)")
     test_opponent_team_ids(); print("✓ opponent team ids")
     test_resolve_my_team(); print("✓ resolve my team")
+    test_sync_draft_opponent_rename(); print("✓ sync_draft opponent-rename attribution")
     test_resolve_team_ids(); print("✓ resolve team ids (live-WS path)")
     test_scoring_diagnostics(); print("✓ scoring diagnostics")
     test_keeper_candidates(); print("✓ keeper candidates")

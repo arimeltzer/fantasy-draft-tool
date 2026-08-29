@@ -23,7 +23,7 @@ from models import (
 from integrations import espn as espn_provider, yahoo as yahoo_provider, yahoo_paste
 from integrations import fantasypros_aav_paste as aav_paste
 from integrations import athletic_upload
-from integrations.base import NormPlayer, opponent_team_ids
+from integrations.base import NormPlayer, opponent_team_ids, resolve_my_team_index
 from integrations.matching import build_index, match_player, keeper_candidates
 import live_ws_registry
 
@@ -1415,7 +1415,18 @@ async def sync_draft(
 
     settings = league.settings or {}
     opponents = settings.get("opponents") or []
-    team_id_by_name = {name: i for i, name in enumerate(opponents)}
+    # NOT a plain `{name: i}` dict lookup — `opponents` is a snapshot frozen
+    # at IMPORT time, while `lp.owner` comes from a FRESH live-draft poll. A
+    # team renamed on the platform between import and draft day makes those
+    # two strings differ, and an exact lookup then silently returns None:
+    # the pick still logs (mine=False, off the board) but `team_id` never
+    # resolves, so it can't be attributed to that opponent's roster or
+    # budget — the identical "shows as sold but unassigned" bug already hit
+    # and fixed twice for keepers (KeeperPlanner/KeeperRecommendations/
+    # KeeperAutofill), now via the SAME tiered, refuse-on-ambiguity resolver
+    # `opponent_team_ids`/`resolve_my_team` already use for import-time
+    # attribution, reused per-pick here instead of a fresh exact dict.
+    opponent_pairs = [(None, name) for name in opponents]
 
     # The player currently up for auction (see LiveDraftWatcher
     # .current_nomination_id's docstring) — resolved to OUR internal player
@@ -1454,7 +1465,7 @@ async def sync_draft(
             db.add(DraftPick(
                 league_id=league_id, player_id=pid, overall_pick=overall,
                 mine=lp.is_mine,
-                team_id=None if lp.is_mine else team_id_by_name.get(lp.owner or ""),
+                team_id=None if lp.is_mine else resolve_my_team_index(opponent_pairs, lp.owner),
                 price=lp.bid, slot=None,
             ))
         have.add(pid)

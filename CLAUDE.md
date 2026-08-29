@@ -572,6 +572,32 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     overriding an active search/position filter — if they don't match what
     you're currently looking at, they simply don't show, same as any other
     player — plus a pulsing "Nominated" badge so it's clear why they moved.
+  - **A FOURTH instance of the exact-match team-name bug, found by asking
+    "what happens if someone renames their team right before the draft?"
+    rather than waiting for it to be hit live.** `sync_draft` built
+    `team_id_by_name = {name: i for i, name in enumerate(opponents)}` from
+    `settings.opponents` — a snapshot frozen at LEAGUE IMPORT time — then
+    looked up each live pick's `team_id` with a plain
+    `team_id_by_name.get(lp.owner or "")`, where `lp.owner` comes from a
+    FRESH poll of the platform's live draft data. A team renamed on the
+    platform between import and draft day makes those two strings differ,
+    and the exact dict lookup returns `None` silently: the pick still logs
+    (`mine=False`, off the board — the SAME "shows as sold but unassigned"
+    signature already hit and fixed twice for keepers), just never
+    attributed to that opponent's roster or budget. **"My team" identification
+    in the same endpoint is NOT vulnerable to this** — `data.my_team` is
+    typed fresh into `LiveDraftPanel.tsx` each session (not read from stale
+    `settings`) and already resolved against fresh live data via the
+    tiered `resolve_my_team_index()`; only the OPPONENT side used a naive
+    dict. Fixed the same way as the keeper bug's second pass: routes
+    through `resolve_my_team_index(opponent_pairs, lp.owner)` (`opponent_pairs
+    = [(None, name) for name in opponents]`) instead of the exact dict,
+    reusing the resolver directly rather than porting it again since this
+    is already Python. `integrations/selftest.py
+    test_sync_draft_opponent_rename` pins the exact renamed-team case
+    (apostrophe dropped/retyped still resolves; a name changed past
+    recognition still refuses rather than guessing) against the identical
+    `[(None, name) for name in opponents]` call shape `main.py` now uses.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.
