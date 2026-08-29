@@ -30,6 +30,7 @@ function renderTable() {
       rule={rule}
       takenIds={new Set()}
       addPick={async () => {}}
+      teamIdFor={() => undefined}
       cached={{ season: 2025, fetchedAt: new Date().toISOString(), candidates: CANDIDATES }}
     />,
   );

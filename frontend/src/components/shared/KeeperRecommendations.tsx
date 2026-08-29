@@ -14,7 +14,7 @@ interface Props {
   settings: LeagueSettings;
   board: BoardPlayer[];
   picks: DraftEntry[];
-  addPick: (d: { playerId?: number; mine: boolean; price?: number; slot?: string }) => Promise<void>;
+  addPick: (d: { playerId?: number; mine: boolean; teamId?: number; price?: number; slot?: string }) => Promise<void>;
   removePick: (pickId: number) => Promise<void>;
   importedCandidates?: KeeperCandidate[];
 }
@@ -220,9 +220,17 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
   };
 
   // Commit a predicted opponent keeper as a confirmed fact (that team's keeper).
+  // `DraftPick.team_id` is an index into `settings.opponents[]` — the SAME
+  // convention AuctionRoom/SnakeRoom's own winner dropdown writes. Omitting
+  // it (as this used to) still marks the player taken but attributes the
+  // pick to no specific team, so it can never show up on that opponent's
+  // roster or count against their budget — reported live as a keeper
+  // showing sold but not on the team that kept it.
   const confirmOpp = async (p: { id: number; owner: string; base: number | null; cost: { price: number | null; round: number | null } }) => {
+    const idx = (settings.opponents ?? []).indexOf(p.owner);
     await addPick({
       playerId: p.id, mine: false,
+      teamId: idx >= 0 ? idx : undefined,
       price: priceBasis ? (p.cost.price ?? undefined) : undefined,
       slot: encodeKeeper({ k: 1, owner: p.owner, basis: rule.basis, kept: 0, base: p.base, round: p.cost.round ?? undefined }),
     });

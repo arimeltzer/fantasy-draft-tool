@@ -1889,6 +1889,28 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   (`lib/keeperPick.ts`) — no migration. Removed from pool; auction price feeds
   budget + inflation; snake round is the pick that team forfeits. Reset-draft
   keeps them; snake pick-clock ignores them. All-teams (my + opponents').
+- **A real bug, reported live: "keepers are not carrying over to the draft
+  board" — clarified as "they show as sold, but they are not allocated to
+  the team that kept them. they are just off the board."** Every commit
+  path for an OPPONENT keeper (`KeeperPlanner.tsx`'s manual add form and its
+  waiver-edit/refresh-cost re-creates, `KeeperRecommendations.tsx
+  confirmOpp`, `KeeperAutofill.tsx`'s bulk ESPN commit) called
+  `addPick({ mine: false, ... })` with no `teamId` at all — `mine: false`
+  is enough to mark the player taken (off the board), but `DraftPick
+  .team_id` stayed `null`, the same value "my own pick" uses, so the
+  server had no way to tell "an opponent's keeper" from "unassigned."
+  Nothing downstream that attributes a pick to a specific opponent's
+  roster or budget (both rooms key off `team_id` as the index into
+  `settings.opponents[]`, the same convention the live winner dropdown
+  writes) could ever find these picks. Fixed by computing that index at
+  commit time — `KeeperPlanner`'s own `teamIdFor(owner)` helper, threaded
+  into `KeeperAutofill` as a prop so there's one definition instead of a
+  second copy that could drift, and inline in `KeeperRecommendations
+  .confirmOpp` (which already receives `settings` directly). Only ever
+  affected OPPONENT keepers — "Me" keepers were always `team_id: null`
+  correctly, by design, so they never showed the symptom.
+  `KeeperPlanner.test.tsx` pins both directions: an opponent keeper
+  resolves to their real index, a keeper kept by "Me" still omits it.
 - **ESPN auto-fill**: `POST /api/integrations/espn/keeper-candidates` reads a
   prior-season ESPN league's draft (bid + round via `espn.py`/`matching.keeper_candidates`,
   fixture-tested) and maps it to the current pool; `KeeperAutofill.tsx` pre-fills

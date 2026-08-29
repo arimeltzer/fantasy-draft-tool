@@ -18,7 +18,7 @@ interface Props {
   settings: LeagueSettings;
   board: BoardPlayer[];
   picks: DraftEntry[];
-  addPick: (d: { playerId?: number; mine: boolean; price?: number; slot?: string }) => Promise<void>;
+  addPick: (d: { playerId?: number; mine: boolean; teamId?: number; price?: number; slot?: string }) => Promise<void>;
   removePick: (pickId: number) => Promise<void>;
   onClose: () => void;
 }
@@ -61,6 +61,19 @@ export default function KeeperPlanner({
       ? real
       : Array.from({ length: Math.max(0, settings.teams - 1) }, (_, i) => `Team ${i + 2}`))];
   }, [settings.teams, settings.opponents]);
+
+  // `DraftPick.team_id` is an index into `settings.opponents[]` (`owners`
+  // minus the leading "Me") — the SAME convention AuctionRoom/SnakeRoom's own
+  // winner dropdown already writes. A committed keeper used to omit this
+  // entirely: `addPick({ mine: owner === "Me" })` alone marks an opponent
+  // keeper as taken (off the board) but attributes it to NO specific team,
+  // so it can't show up on that opponent's roster or count against their
+  // budget — reported live as "keepers... are just off the board," not on
+  // the team that kept them.
+  const teamIdFor = (owner: string): number | undefined => {
+    const i = owners.indexOf(owner);
+    return i > 0 ? i - 1 : undefined;
+  };
 
   const playerById = useMemo(() => new Map(board.map((p) => [p.id as number, p])), [board]);
   const takenIds = useMemo(() => new Set(picks.map((p) => p.playerId).filter(Boolean) as number[]), [picks]);
@@ -118,6 +131,7 @@ export default function KeeperPlanner({
     await addPick({
       playerId: row.pick.playerId as number,
       mine: row.owner === "Me",
+      teamId: teamIdFor(row.owner),
       price: priceBasis ? (cost.price ?? undefined) : undefined,
       slot: encodeKeeper({
         k: 1, owner: row.owner, basis: rule.basis, kept: row.kept,
@@ -137,6 +151,7 @@ export default function KeeperPlanner({
         await addPick({
           playerId: row.pick.playerId as number,
           mine: row.owner === "Me",
+          teamId: teamIdFor(row.owner),
           price: priceBasis ? (newCost.price ?? undefined) : undefined,
           slot: encodeKeeper({
             k: 1, owner: row.owner, basis: rule.basis, kept: row.kept,
@@ -197,6 +212,7 @@ export default function KeeperPlanner({
       await addPick({
         playerId: selected.id as number,
         mine: owner === "Me",
+        teamId: teamIdFor(owner),
         price: priceBasis ? (cost.price ?? undefined) : undefined,
         slot: encodeKeeper({
           k: 1, owner, basis: rule.basis, kept,
@@ -365,6 +381,7 @@ export default function KeeperPlanner({
               rule={rule}
               takenIds={takenIds}
               addPick={addPick}
+              teamIdFor={teamIdFor}
               onCandidates={setImportedCandidates}
               source={settings.source}
               cached={settings.keeperImport}

@@ -10,7 +10,15 @@ import { posStyle } from "@/lib/posStyles";
 interface Props {
   rule: KeeperRule;
   takenIds: Set<number>;
-  addPick: (d: { playerId?: number; mine: boolean; price?: number; slot?: string }) => Promise<void>;
+  addPick: (d: { playerId?: number; mine: boolean; teamId?: number; price?: number; slot?: string }) => Promise<void>;
+  // `DraftPick.team_id` for a given owner label — the SAME index-into-
+  // `settings.opponents[]` convention AuctionRoom/SnakeRoom's winner
+  // dropdown already writes, computed once by the caller (KeeperPlanner)
+  // rather than a second copy here that could drift. Omitting it used to
+  // silently mark an opponent's autofilled keeper as taken but attribute it
+  // to no specific team — reported live as a keeper showing sold but not on
+  // the team that kept it.
+  teamIdFor: (owner: string) => number | undefined;
   // Surface the full fetched candidate list (all teams) so the recommender can
   // predict opponents' keepers.
   onCandidates?: (c: KeeperCandidate[]) => void;
@@ -25,7 +33,7 @@ interface Props {
 
 const CURRENT_SEASON = 2026;
 
-export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, source, cached, onCache }: Props) {
+export default function KeeperAutofill({ rule, takenIds, addPick, teamIdFor, onCandidates, source, cached, onCache }: Props) {
   const priceBasis = rule.basis === "price";
   const espnSource = source?.provider === "espn" ? source.extId : "";
 
@@ -162,6 +170,7 @@ export default function KeeperAutofill({ rule, takenIds, addPick, onCandidates, 
         await addPick({
           playerId: c.player_id,
           mine: c.is_mine,
+          teamId: c.is_mine ? undefined : teamIdFor(c.owner),
           price: priceBasis ? (cost.price ?? undefined) : undefined,
           slot: encodeKeeper({
             k: 1, owner: c.owner, basis: rule.basis, kept: 0,
