@@ -229,6 +229,7 @@ def parse_teams(teams_node, my_guid: str | None = None) -> list[NormTeam]:
             continue
         meta = flatten(tnode[0]) if isinstance(tnode, list) else flatten(tnode)
         name = meta.get("name", "Team")
+        team_key = meta.get("team_key")
         # "mine" if this team's manager guid matches the token owner
         is_mine = False
         for mgr in (flatten(meta.get("managers")) or {}).values() if meta.get("managers") else []:
@@ -247,7 +248,7 @@ def parse_teams(teams_node, my_guid: str | None = None) -> list[NormTeam]:
                 if pk == "count" or not isinstance(pv, dict):
                     continue
                 players.append(_player_from_node(pv.get("player")))
-        out.append(NormTeam(name=name, is_mine=is_mine, players=players))
+        out.append(NormTeam(name=name, is_mine=is_mine, players=players, ext_id=team_key))
     return out
 
 
@@ -584,6 +585,7 @@ def parse_live_draft(draft_json, teams_json, my_guid: str | None = None) -> Live
             name=np.name, pos=np.pos, team=np.team,
             round=d.get("round"),
             owner=names_by_key.get(owner_key),
+            owner_ext_id=owner_key,
             is_mine=owner_key in mine_keys,
             bid=d.get("cost"),
         ))

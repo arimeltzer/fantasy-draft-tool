@@ -171,18 +171,67 @@ def resolve_my_team(teams: list[NormTeam], my_team: str | None) -> int | None:
     return resolve_my_team_index([(t.ext_id, t.name) for t in teams], my_team)
 
 
-def opponent_team_ids(teams: list[NormTeam]) -> tuple[list[str], dict[str, int]]:
+def resolve_opponent_index(pairs: list[tuple[str | None, str]], ext_id: str | None,
+                           name: str | None) -> int | None:
+    """Like `resolve_my_team_index`, but tries the platform's stable team id
+    FIRST when the caller has one, before falling back to the same tiered
+    name match.
+
+    Built for live-draft sync (`main.py sync_draft`), which used to match a
+    live pick's `owner` NAME against `settings.opponents` — a snapshot frozen
+    at league-IMPORT time — with a plain exact dict lookup. A team renamed on
+    the platform between import and draft day made that lookup return `None`
+    silently: the pick still logged (`mine=False`, off the board) but its
+    `team_id` never resolved, the identical "shows as sold but unassigned"
+    bug already hit and fixed twice for keepers. Wiring in the FIRST fix
+    (routing through `resolve_my_team_index`'s tiered name match) helps, but
+    a "serious" rename can still slip every tier — folding punctuation or a
+    unique substring only survives so much retyping.
+
+    ESPN's `teamId` and Yahoo's `team_key` are the platform's own internal
+    identifiers for a team SLOT — they do not change when a manager renames
+    their team, so an exact match on THAT is immune to a rename of any size,
+    not just the ones the name tiers happen to survive. `opponent_team_ids`
+    captures each opponent's ext_id at import time (`settings.opponentIds`,
+    index-aligned with `settings.opponents`); every live-pick source
+    (`espn.parse_live_draft`, `yahoo.parse_live_draft`,
+    `espn_draft_ws.sold_events_to_picks`) already had the platform's raw
+    team id in hand and simply wasn't carrying it past that point — now
+    threaded onto `LivePick.owner_ext_id`.
+
+    Falls back to the tiered name match whenever no ext_id is available on
+    either side — an older league imported before ext_ids were captured, or
+    a paste import that never had a platform id to begin with.
+    """
+    key = str(ext_id).strip() if ext_id is not None else ""
+    if key:
+        for i, (pid, _) in enumerate(pairs):
+            if pid is not None and str(pid).strip() == key:
+                return i
+    return resolve_my_team_index(pairs, name)
+
+
+def opponent_team_ids(teams: list[NormTeam]) -> tuple[list[str], dict[str, int], list[str | None]]:
     """Real opponent names (in stable NormLeague.teams order, "my" team
     excluded) plus a name -> index lookup — the index IS the DraftPick.team_id
     each opponent's picks should carry, and the list IS settings.opponents, so
     a picked team_id always resolves back to the label the user sees. A name
     clash keeps the first team's index (rare; opponents are typically unique
-    league display names)."""
+    league display names).
+
+    Also returns each opponent's platform team id (ext_id), index-aligned
+    with `names` and `None` where the adapter doesn't have one (e.g. a
+    Yahoo-paste import, which has no platform credentials to pull one from).
+    Callers persist this as `settings.opponentIds` — the STABLE key
+    `resolve_opponent_index` prefers over matching by name during live-draft
+    sync, since a platform team id survives a rename that even tiered name
+    matching cannot always recover from."""
     names = [t.name for t in teams if not t.is_mine and t.name]
+    ext_ids = [t.ext_id for t in teams if not t.is_mine and t.name]
     by_name: dict[str, int] = {}
     for i, name in enumerate(names):
         by_name.setdefault(name, i)
-    return names, by_name
+    return names, by_name, ext_ids
 
 
 def make_settings(*, teams: int, ppr: float, roster: dict, fmt: str,

@@ -598,6 +598,36 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     (apostrophe dropped/retyped still resolves; a name changed past
     recognition still refuses rather than guessing) against the identical
     `[(None, name) for name in opponents]` call shape `main.py` now uses.
+  - **Asked directly, right after that fix shipped: "map team names to team
+    ids throughout and use that as the constant? that would survive a
+    serious name change."** Correct — the tiered name match above is still
+    NAME-based, so a rename severe enough to defeat every tier (folding
+    punctuation, a unique substring) still loses, same as it always could.
+    Checked whether a better constant already existed rather than inventing
+    one: ESPN's live poll (`draftDetail.picks[].teamId`) and Yahoo's
+    (`draftresults`' `team_key`) both hand over the platform's own STABLE
+    team-slot id with every single pick already — a manager renaming their
+    team doesn't change it — but neither `espn.parse_live_draft`,
+    `yahoo.parse_live_draft`, nor the WebSocket/live-ingest accumulator
+    (`espn_draft_ws.sold_events_to_picks`) carried it past resolving the
+    display name; `LivePick` only ever kept `owner` (the name). Added
+    `LivePick.owner_ext_id`, populated by all three producers from the id
+    they already had in hand. On the import side, `opponent_team_ids` now
+    also returns each opponent's `NormTeam.ext_id` (ESPN already captured
+    it for "which team is mine"; Yahoo's `parse_teams` didn't — it now
+    stores `team_key` the same way), persisted as `settings.opponentIds`,
+    index-aligned with `settings.opponents` — the pair `sync_draft` needs to
+    resolve on id INSTEAD of name for leagues imported after this change.
+    `base.py resolve_opponent_index(pairs, ext_id, name)` tries the id match
+    first (exact, immune to any rename) and falls back to
+    `resolve_my_team_index`'s name tiers only when no id is available on
+    either side — an older league imported before ext_ids were captured, or
+    a Yahoo-paste import, which has no platform credentials to pull one
+    from and so never gets one. `test_sync_draft_opponent_rename` was
+    rewritten to cover exactly the case the name-only fix could not: a
+    completely unrecognizable new name still resolves correctly when the
+    platform id is present, and the old refuse-on-no-match behavior is
+    unchanged when it isn't.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

@@ -23,7 +23,7 @@ from models import (
 from integrations import espn as espn_provider, yahoo as yahoo_provider, yahoo_paste
 from integrations import fantasypros_aav_paste as aav_paste
 from integrations import athletic_upload
-from integrations.base import NormPlayer, opponent_team_ids, resolve_my_team_index
+from integrations.base import NormPlayer, opponent_team_ids, resolve_opponent_index
 from integrations.matching import build_index, match_player, keeper_candidates
 import live_ws_registry
 
@@ -515,11 +515,18 @@ async def import_league(
     #    auto-pull the prior season's draft (ESPN ids are stable across seasons).
     #    Opponent labels are the REAL team names from the platform (index =
     #    DraftPick.team_id below), not generic "Team 2" placeholders.
-    opponent_names, team_id_by_name = opponent_team_ids(norm.teams)
+    opponent_names, team_id_by_name, opponent_ext_ids = opponent_team_ids(norm.teams)
 
     settings = {**norm.settings, "source": {"provider": norm.provider, "extId": norm.ext_id}}
     if opponent_names:
         settings["opponents"] = opponent_names
+        # The platform's own team id per opponent (index-aligned) — the
+        # STABLE key live-draft sync (`sync_draft`) matches on first, since
+        # it survives a rename that even tiered name matching cannot always
+        # recover from. `None` for every entry (a provider/import path with
+        # no platform id) is worth skipping rather than storing dead weight.
+        if any(opponent_ext_ids):
+            settings["opponentIds"] = opponent_ext_ids
     league = League(user_id=user.id, name=data.name or norm.name,
                     format=LeagueFormat(norm.fmt), settings=settings)
     db.add(league)
@@ -614,10 +621,12 @@ async def import_yahoo_paste(
                             detail="No teams found — check that the Starting Rosters paste "
                                    "includes the 'Pos / Player' header for each team.")
 
-    opponent_names, _ = opponent_team_ids(norm.teams)
+    opponent_names, _, opponent_ext_ids = opponent_team_ids(norm.teams)
     settings = {**norm.settings}
     if opponent_names:
         settings["opponents"] = opponent_names
+        if any(opponent_ext_ids):  # paste import never has one; no-op today
+            settings["opponentIds"] = opponent_ext_ids
     # Round one of the pasted draft gives every team's slot, not just yours.
     # Persist the whole map: opponent keeper predictions price a rival's
     # forfeited pick from THEIR slot, so importing the names without the order
@@ -1415,18 +1424,17 @@ async def sync_draft(
 
     settings = league.settings or {}
     opponents = settings.get("opponents") or []
-    # NOT a plain `{name: i}` dict lookup — `opponents` is a snapshot frozen
-    # at IMPORT time, while `lp.owner` comes from a FRESH live-draft poll. A
-    # team renamed on the platform between import and draft day makes those
-    # two strings differ, and an exact lookup then silently returns None:
-    # the pick still logs (mine=False, off the board) but `team_id` never
-    # resolves, so it can't be attributed to that opponent's roster or
-    # budget — the identical "shows as sold but unassigned" bug already hit
-    # and fixed twice for keepers (KeeperPlanner/KeeperRecommendations/
-    # KeeperAutofill), now via the SAME tiered, refuse-on-ambiguity resolver
-    # `opponent_team_ids`/`resolve_my_team` already use for import-time
-    # attribution, reused per-pick here instead of a fresh exact dict.
-    opponent_pairs = [(None, name) for name in opponents]
+    # `opponentIds` is each opponent's PLATFORM team id (ESPN teamId / Yahoo
+    # team_key), captured at import time by `opponent_team_ids` and
+    # index-aligned with `opponents` — the STABLE key `resolve_opponent_index`
+    # below prefers over matching by name, since it survives a team rename of
+    # ANY size, not just what tiered name-folding happens to catch. Missing or
+    # mismatched-length (an older league imported before this was captured)
+    # degrades to name-only, same as before.
+    opponent_ids = settings.get("opponentIds") or []
+    if len(opponent_ids) != len(opponents):
+        opponent_ids = [None] * len(opponents)
+    opponent_pairs = list(zip(opponent_ids, opponents))
 
     # The player currently up for auction (see LiveDraftWatcher
     # .current_nomination_id's docstring) — resolved to OUR internal player
@@ -1465,7 +1473,8 @@ async def sync_draft(
             db.add(DraftPick(
                 league_id=league_id, player_id=pid, overall_pick=overall,
                 mine=lp.is_mine,
-                team_id=None if lp.is_mine else resolve_my_team_index(opponent_pairs, lp.owner),
+                team_id=None if lp.is_mine else resolve_opponent_index(
+                    opponent_pairs, lp.owner_ext_id, lp.owner),
                 price=lp.bid, slot=None,
             ))
         have.add(pid)

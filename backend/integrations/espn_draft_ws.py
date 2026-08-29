@@ -262,6 +262,7 @@ def sold_events_to_picks(events: list[SoldEvent], pos_by_id: dict[int, dict],
         picks.append(LivePick(
             overall=start_overall + i, name=info["name"], pos=info.get("pos", ""),
             team=info.get("team", ""), owner=(teams_by_id or {}).get(ev.winning_team_id),
+            owner_ext_id=str(ev.winning_team_id),
             is_mine=(my_team_id is not None and ev.winning_team_id == my_team_id),
             bid=ev.price,
         ))

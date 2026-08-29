@@ -39,6 +39,12 @@ class LivePick:
     team: str = ""                    # NFL team abbrev
     round: int | None = None
     owner: str | None = None          # fantasy team display name
+    # The platform's own team id (ESPN numeric teamId, Yahoo team_key) behind
+    # `owner`, when the source has one. This is the STABLE identifier a team
+    # rename doesn't touch — `resolve_opponent_index` in base.py prefers it
+    # over matching `owner` by name, which a "serious" rename can defeat even
+    # with tiered fuzzy matching.
+    owner_ext_id: str | None = None
     is_mine: bool = False
     bid: int | None = None            # auction price, when it's an auction
 

@@ -533,6 +533,7 @@ def parse_live_draft(data: dict, my_team: str | None = None,
             name=pl["name"], pos=pl["pos"], team=pl["team"],
             round=int(p["roundId"]) if p.get("roundId") else None,
             owner=teams_by_id.get(tid),
+            owner_ext_id=str(tid) if tid is not None else None,
             is_mine=tid in mine_ids,
             bid=int(p["bidAmount"]) if p.get("bidAmount") is not None else None,
         ))

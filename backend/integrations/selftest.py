@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import json
 
-from .base import NormLeague, NormPlayer, NormTeam, opponent_team_ids, resolve_my_team, resolve_my_team_index
+from .base import (NormLeague, NormPlayer, NormTeam, opponent_team_ids, resolve_my_team,
+                   resolve_my_team_index, resolve_opponent_index)
 from .matching import build_index, match_player, keeper_candidates
 from . import espn, espn_draft_ws, live, yahoo, yahoo_paste
 from . import fantasypros_aav_paste as aav_paste
@@ -209,26 +210,31 @@ def test_espn():
 def test_opponent_team_ids():
     """Real team names -> settings.opponents + a name->team_id lookup, so an
     imported opponent's picks attribute to the right label instead of an
-    'Unassigned' bucket or generic 'Team N' placeholder."""
+    'Unassigned' bucket or generic 'Team N' placeholder. Also returns each
+    opponent's platform team id (ext_id), index-aligned with names — the
+    STABLE key `resolve_opponent_index` prefers over matching by name during
+    live-draft sync (see `test_sync_draft_opponent_rename`)."""
     teams = [
-        NormTeam(name="Me", is_mine=True),
-        NormTeam(name="The Gridiron Gurus", is_mine=False),
-        NormTeam(name="Dynasty Warriors", is_mine=False),
+        NormTeam(name="Me", is_mine=True, ext_id="1"),
+        NormTeam(name="The Gridiron Gurus", is_mine=False, ext_id="2"),
+        NormTeam(name="Dynasty Warriors", is_mine=False, ext_id="3"),
     ]
-    names, by_name = opponent_team_ids(teams)
+    names, by_name, ext_ids = opponent_team_ids(teams)
     assert names == ["The Gridiron Gurus", "Dynasty Warriors"], names
     assert by_name == {"The Gridiron Gurus": 0, "Dynasty Warriors": 1}, by_name
+    assert ext_ids == ["2", "3"], ext_ids
     # "my" team never appears in opponents / gets no team_id.
     assert "Me" not in by_name
 
     # A name clash keeps the first team's index (stable, doesn't crash).
     clash = [NormTeam(name="Team A", is_mine=False), NormTeam(name="Team A", is_mine=False)]
-    names2, by_name2 = opponent_team_ids(clash)
+    names2, by_name2, ext_ids2 = opponent_team_ids(clash)
     assert names2 == ["Team A", "Team A"]
     assert by_name2 == {"Team A": 0}
+    assert ext_ids2 == [None, None]
 
     # No opponents (single-team fixture / everyone unnamed) -> empty, not an error.
-    assert opponent_team_ids([NormTeam(name="Me", is_mine=True)]) == ([], {})
+    assert opponent_team_ids([NormTeam(name="Me", is_mine=True)]) == ([], {}, [])
 
 
 def test_resolve_my_team():
@@ -274,7 +280,7 @@ def test_resolve_my_team():
     # And the whole point: when a team IS resolved, it drops out of opponents.
     for i, t in enumerate(teams):
         t.is_mine = (i == 1)
-    names, _ = opponent_team_ids(teams)
+    names, _, _ = opponent_team_ids(teams)
     assert names == ["Team 1", "andrew's Angry Team"], names
 
 
@@ -284,33 +290,51 @@ def test_sync_draft_opponent_rename():
     `test_resolve_team_ids` already regression-test twice over, found while
     answering "what happens if someone renames their team right before the
     draft?". `settings.opponents` is a snapshot frozen at IMPORT time; a
-    live-sync pick's `owner` (here modeled as `lp.owner`, i.e. `NormPick
-    .owner`) comes from a FRESH poll of the platform's live draft data. A
-    team renamed on the platform between import and draft day made those two
-    strings differ, and the original `{name: i for i, name in
-    enumerate(opponents)}` dict lookup returned None silently — the pick
-    still logged (`mine=False`, off the board) but its `team_id` never
-    resolved, the identical "shows as sold but unassigned" bug already fixed
-    twice over for keepers. Fixed by routing through `resolve_my_team_index`
-    (the exact tiered resolver `opponent_team_ids`/`resolve_my_team` already
-    use) instead, over `[(None, name) for name in opponents]` — the same
-    call shape `main.py` now uses per-pick.
+    live-sync pick's `owner` (here modeled as `lp.owner`) comes from a FRESH
+    poll of the platform's live draft data. A team renamed on the platform
+    between import and draft day made those two strings differ, and the
+    original `{name: i for i, name in enumerate(opponents)}` dict lookup
+    returned None silently — the pick still logged (`mine=False`, off the
+    board) but its `team_id` never resolved, the identical "shows as sold but
+    unassigned" bug already fixed twice over for keepers.
+
+    First fix: route through `resolve_my_team_index`'s tiered name match.
+    Real improvement, but still name-based — a rename severe enough to defeat
+    every tier (folding punctuation, a unique substring) still loses. Asked
+    directly afterward: "map team names to team ids throughout and use that
+    as the constant? that would survive a serious name change." Correct, and
+    ESPN/Yahoo already hand over a stable platform team id (teamId /
+    team_key) with every live pick — it just wasn't being carried past
+    `LivePick.owner` into anything that could use it. `resolve_opponent_index`
+    tries that id FIRST, over `opponent_pairs = list(zip(opponentIds,
+    opponents))` — the exact call shape `main.py` now uses per-pick — and
+    only falls back to the name tiers when no id is available on either side.
     """
     opponents = ["Team 1", "Ari's Astounding Team", "andrew's Angry Team"]
-    pairs = [(None, name) for name in opponents]
+    ext_ids = ["101", "102", "103"]
+    pairs = list(zip(ext_ids, opponents))
 
-    # Untouched name -> exact match, same as before.
-    assert resolve_my_team_index(pairs, "Ari's Astounding Team") == 1
+    # Untouched name -> exact match, same as before (no ext_id offered here).
+    assert resolve_opponent_index(pairs, None, "Ari's Astounding Team") == 1
 
     # Renamed on the platform since import (apostrophe dropped/retyped) ->
-    # the OLD dict lookup returns None here; the tiered resolver still finds it.
-    assert resolve_my_team_index(pairs, "Aris Astounding Team") == 1
-    assert resolve_my_team_index(pairs, "ARI'S ASTOUNDING TEAM") == 1
+    # falls back to the tiered name match and still finds it.
+    assert resolve_opponent_index(pairs, None, "Aris Astounding Team") == 1
+    assert resolve_opponent_index(pairs, None, "ARI'S ASTOUNDING TEAM") == 1
 
-    # Renamed past recognition -> still refuses rather than guessing, so the
-    # pick logs with team_id=None (visibly unassigned) instead of landing on
-    # the wrong roster.
-    assert resolve_my_team_index(pairs, "The Renamed Squad") is None
+    # THE serious rename: the new name shares nothing with the old one, so
+    # EVERY name tier fails — this is exactly the case the first fix could
+    # not recover from. The platform's own team id hasn't changed, though,
+    # and resolving on it survives a rename of any size.
+    assert resolve_opponent_index(pairs, "102", "The Completely Renamed Squad") == 1
+
+    # No ext_id available anywhere (an older league imported before this was
+    # captured) and the name is unrecognizable -> still refuses rather than
+    # guessing, so the pick logs with team_id=None (visibly unassigned)
+    # instead of landing on the wrong roster.
+    assert resolve_opponent_index(pairs, None, "The Renamed Squad") is None
+    no_ids_pairs = [(None, name) for name in opponents]
+    assert resolve_opponent_index(no_ids_pairs, "102", "The Renamed Squad") is None
 
 
 def test_resolve_team_ids():
@@ -1034,7 +1058,7 @@ def test_yahoo_paste():
     # The paste knows every team's identity AND slot; the route writes both
     # (settings.opponents + settings.teamSlots), so opponent keeper predictions
     # start from the real draft order instead of a mid-round guess.
-    names, by_name = opponent_team_ids(lg.teams)
+    names, by_name, _ = opponent_team_ids(lg.teams)
     assert names == ["McLaurin Order", "Let's Play Golf!"], names   # mine excluded
     assert by_name["McLaurin Order"] == 0
     assert set(rep["draft_slots"]) == set(rep["team_names"]), "every team needs a slot"
