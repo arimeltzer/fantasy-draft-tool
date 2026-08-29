@@ -449,6 +449,24 @@ export const api = {
     method: "POST", body: JSON.stringify(data),
   }),
 
+  /** Match report for a platform's own Scoring settings page, pasted as
+   *  text — no write, no admin gate, no player pool (this is league-wide
+   *  RULES, not per-player values). Only the 8 ScoringRules categories this
+   *  app actually models come back in `scoring` (+`ppr`, when the page
+   *  named a reception value); `unmapped` lists everything the page had
+   *  that this engine has no field for (Kicker/Defense rules, bonus-only
+   *  categories) so nothing is silently dropped. The caller merges
+   *  `scoring`/`ppr` into their OWN league's settings via `patchLeague`. */
+  scoringPasteCandidates: (provider: "yahoo" | "espn", data: { text: string }) => req<{
+    scoring: Partial<ScoringRules>;
+    ppr: number | null;
+    matched: { label: string; raw: string; field: string; value: number }[];
+    unmapped: { label: string; raw: string; section: string }[];
+    warnings: string[];
+  }>(`/api/integrations/${provider}/scoring-paste-candidates`, {
+    method: "POST", body: JSON.stringify(data),
+  }),
+
   /** Match report for an uploaded copy of The Athletic's projections
    *  workbook — no write, second-opinion display only (see LeagueSettings
    *  .athleticProjections). Multipart, so this bypasses `req()`'s JSON

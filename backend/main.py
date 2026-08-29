@@ -23,6 +23,7 @@ from models import (
 from integrations import espn as espn_provider, yahoo as yahoo_provider, yahoo_paste
 from integrations import fantasypros_aav_paste as aav_paste
 from integrations import athletic_upload
+from integrations import scoring_paste
 from integrations.base import NormPlayer, opponent_team_ids, resolve_opponent_index
 from integrations.matching import build_index, match_player, keeper_candidates
 import live_ws_registry
@@ -846,6 +847,63 @@ async def fantasypros_aav_paste_candidates(
         "unmatched": len(unmatched),
         "unmatched_names": unmatched[:40],
     }
+
+
+class ScoringPasteRequest(BaseModel):
+    text: str = ""   # the platform's own Scoring settings page, copied as text
+
+
+def _scoring_paste_response(report: "scoring_paste.ScoringPasteReport") -> dict:
+    return {
+        "scoring": report.scoring,
+        "ppr": report.ppr,
+        "matched": report.matched,
+        "unmapped": report.unmapped,
+        "warnings": report.warnings,
+    }
+
+
+@app.post("/api/integrations/yahoo/scoring-paste-candidates")
+async def yahoo_scoring_paste_candidates(
+    data: ScoringPasteRequest,
+    _: User = Depends(get_current_user),
+) -> dict:
+    """Match report ONLY — no write, no admin gate, no player pool needed at
+    all (this is league-wide scoring RULES, not per-player values). Yahoo's
+    API only labels a scoring rule by a numeric `stat_id` this app has no
+    verified mapping for beyond receptions (see `yahoo.raw_stat_modifiers`);
+    Yahoo's own Scoring settings PAGE labels every rule in plain English, so
+    pasting it needs no guessing. Reported live: "my Yahoo import only
+    imported PPR, 42 other scoring rules not auto-mapped." The caller merges
+    `scoring` (+ `ppr`, if the page named a reception value) into their OWN
+    league's `settings.scoring`/`settings.ppr` via the existing
+    `PATCH /api/leagues/{id}` — same hand-off shape as `aavPasteCandidates`.
+    """
+    if not data.text.strip():
+        raise HTTPException(status_code=400,
+                            detail="Paste the League Settings -> Scoring page from Yahoo.")
+    report = scoring_paste.parse_yahoo_scoring_page(data.text)
+    if not report.matched and not report.unmapped:
+        raise HTTPException(status_code=422,
+                            detail="Could not parse any scoring rules from the pasted text.")
+    return _scoring_paste_response(report)
+
+
+@app.post("/api/integrations/espn/scoring-paste-candidates")
+async def espn_scoring_paste_candidates(
+    data: ScoringPasteRequest,
+    _: User = Depends(get_current_user),
+) -> dict:
+    """ESPN counterpart of the route above — see `scoring_paste
+    .parse_espn_scoring_page` for the page shape this expects."""
+    if not data.text.strip():
+        raise HTTPException(status_code=400,
+                            detail="Paste the League Settings -> Scoring Settings page from ESPN.")
+    report = scoring_paste.parse_espn_scoring_page(data.text)
+    if not report.matched and not report.unmapped:
+        raise HTTPException(status_code=422,
+                            detail="Could not parse any scoring rules from the pasted text.")
+    return _scoring_paste_response(report)
 
 
 @app.post("/api/integrations/athletic/upload-candidates")

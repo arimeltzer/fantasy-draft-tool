@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { X, RotateCcw, ListOrdered } from "lucide-react";
+import { X, RotateCcw, ListOrdered, ClipboardPaste } from "lucide-react";
 import { KEEPER_PRESETS, normalizeKeeperRule } from "@/engine/keeper.js";
 import { DEFAULT_SCORING, resolveScoring } from "@/engine/valuation-engine.js";
 import { applyOpponentNames } from "@/engine/draft-order.js";
 import type { TeamRename } from "@/engine/draft-order.js";
 import { LeagueSettings, KeeperRule, ScoringRules } from "@/lib/api";
 import Tip from "@/components/shared/Tip";
+import ScoringPasteImport from "@/components/shared/ScoringPasteImport";
 
 /** One team per line; blanks and stray whitespace are ignored, not stored. */
 const parseOpponents = (text: string) =>
@@ -30,6 +31,7 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
   // — the newline vanished and the caret jumped to the end, making it
   // impossible to start a second name. Raw text in, parsed array derived out.
   const [oppText, setOppText] = useState(() => (settings.opponents ?? []).join("\n"));
+  const [showScoringPaste, setShowScoringPaste] = useState(false);
   const keeper: KeeperRule = normalizeKeeperRule(local.keeper, format);
   const isAuction = format === "auction";
   // How many picks changed hands, for the badge next to the board link.
@@ -55,6 +57,16 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
   const setScoring = (k: keyof ScoringRules, v: number) =>
     setLocal((s) => ({ ...s, scoring: { ...s.scoring, [k]: v } }));
   const resetScoring = () => setLocal((s) => ({ ...s, scoring: {} }));
+  // Merges a paste-import's matched rules into the SAME pending edit the
+  // number fields below write to — nothing is saved until the drawer's own
+  // Save, so a pasted value is reviewable/adjustable first, same as typing
+  // it in by hand.
+  const applyScoringPaste = (patch: { scoring: Partial<ScoringRules>; ppr?: number }) =>
+    setLocal((s) => ({
+      ...s,
+      scoring: { ...s.scoring, ...patch.scoring },
+      ppr: patch.ppr ?? s.ppr,
+    }));
   // Effective values (defaults merged with any override) — what actually
   // drives valuations right now, whether or not the league has customized it.
   const sc = resolveScoring(local);
@@ -201,16 +213,30 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
           <span className="chip border-line bg-raised text-muted">
             Points / reception is set above ({local.ppr})
           </span>
-          {scoringCustomized && (
+          <div className="ml-auto flex items-center gap-3">
             <button
-              onClick={resetScoring}
-              className="ml-auto flex items-center gap-1 text-2xs text-muted hover:text-ink"
-              title="Clear all overrides and go back to standard scoring for every category below"
+              onClick={() => setShowScoringPaste((v) => !v)}
+              className="flex items-center gap-1 text-2xs text-muted hover:text-ink"
+              title="Paste your league's real Scoring settings page from Yahoo or ESPN"
             >
-              <RotateCcw className="h-3 w-3" /> Reset to standard
+              <ClipboardPaste className="h-3 w-3" /> Paste real rules
             </button>
-          )}
+            {scoringCustomized && (
+              <button
+                onClick={resetScoring}
+                className="flex items-center gap-1 text-2xs text-muted hover:text-ink"
+                title="Clear all overrides and go back to standard scoring for every category below"
+              >
+                <RotateCcw className="h-3 w-3" /> Reset to standard
+              </button>
+            )}
+          </div>
         </div>
+        {showScoringPaste && (
+          <div className="-mx-4 mb-2.5">
+            <ScoringPasteImport onApply={applyScoringPaste} onClose={() => setShowScoringPaste(false)} />
+          </div>
+        )}
         <p className="mb-2.5 text-2xs text-faint leading-snug">
           Every category below feeds directly into projections and dollar values — a league using 6pt
           passing TDs or -1 INTs (instead of the 4pt / -2 standard) should enter that here, or QB value

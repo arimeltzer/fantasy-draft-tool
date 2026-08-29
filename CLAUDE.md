@@ -236,13 +236,17 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     teams' logged picks. `DraftOrderBoard`/`orderWarnings` already warned
     about this on the snake side; the auction room, where it was actually
     hit, had no equivalent.
-  - **Scoring**: only points-per-reception is auto-detected (ESPN statId 53,
-    Yahoo stat_id 11 — both validated). Full per-stat scoring (pass/rush/rec
-    yards+TDs, INTs, fumbles) is NOT auto-mapped from ESPN/Yahoo — their statId
-    schemes for the rest are undocumented/unlabeled and a wrong guess would be
-    a *silent* valuation bug, so it's left to the League Settings → Scoring
-    editor instead (raw rules are still pulled + counted in the import report,
-    just not category-mapped). See `docs/METHODOLOGY.md` §2.
+  - **Scoring**: only points-per-reception is auto-detected on IMPORT (ESPN
+    statId 53, Yahoo stat_id 11 — both validated). Full per-stat scoring
+    (pass/rush/rec yards+TDs, INTs, fumbles) is NOT auto-mapped from the
+    import API on either platform — their statId schemes for the rest are
+    undocumented/unlabeled and a wrong guess would be a *silent* valuation
+    bug, so it's left to the League Settings → Scoring editor instead (raw
+    rules are still pulled + counted in the import report, just not
+    category-mapped). See `docs/METHODOLOGY.md` §2. **The scoring-page paste
+    importer below closes this gap without guessing** — it reads the
+    platform's own PAGE, which labels every rule in English, rather than the
+    API's numeric ids.
 - **Live draft sync** (`integrations/live.py` + `parse_live_draft` on both
   adapters, `POST /api/leagues/{id}/sync-draft`): follows a draft in progress and
   logs picks. **Polling, not push** — neither platform exposes its draft-room
@@ -683,6 +687,58 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     client for this one (reads the sheet from a file; a curl one-liner can't
     survive the `$` and apostrophes in it). Still no frontend UI for this
     path, matching how `reload-sos`/`admin/refresh` are operated.
+- **Full scoring rules, pasted** (`backend/integrations/scoring_paste.py`,
+  roadmap "ESPN/Yahoo full scoring auto-detect"): reported live — "when I
+  imported my Yahoo league it only imported ppr. 42 other scoring rules not
+  auto-mapped." Real, by design (see Integrations above): neither platform's
+  import API labels a scoring rule with anything beyond receptions
+  (`stat_id`/statId are numeric and unverified for everything else) — but
+  each platform's own Scoring settings PAGE labels every rule in plain
+  English, so pasting IT needs no guessing, same fix as the Yahoo
+  draft-results and FantasyPros AAV importers for the identical root cause
+  (no reliable API access).
+  - **Scope is exactly `ScoringRules`' 8 fields** (pass/rush/rec yards+TDs,
+    interceptions, fumbles lost) **plus `ppr`** — everything Kicker/Defense
+    (field goals by distance, points-allowed brackets, sacks, ...) is NOT a
+    stat category anywhere in this engine (K/DST is valued from historical
+    fantasy points directly), so those rows come back as `unmapped` —
+    visible in the UI, never applied, never silently dropped either. A
+    bonus clause a flat per-yard/per-TD rate can't express ("5 points at
+    360 yards", a 40+-yard-TD kicker) is called out in `warnings`; the base
+    rate is used on its own.
+  - **Yahoo's page** renders each category as a name line, an optional
+    "Yahoo Default" badge (present only when the league's value differs
+    from Yahoo's own default), then a value row — both the badge and
+    no-badge shapes appear in a real captured page and are handled the
+    same way: the league value is whatever comes right after the name,
+    skipping a lone badge line. Rate categories are phrased "N yards per
+    point" (stored as the per-yard rate, 1/N). Sections (Offense/Kickers/
+    Defense/Special Teams) gate which rows are even candidates for mapping
+    — Defense's "Interception" (a takeaway, +2) would otherwise read as
+    similar enough to Offense's "Interceptions" (a QB's turnover, -2) to
+    risk conflation by label alone.
+  - **ESPN's page** renders each rule as ONE line, `"<label> (<CODE>)
+    <value>"` with no space before the value; rate categories spell the
+    denominator INTO the label ("Every 25 passing yards") rather than as a
+    separate phrase, so the rate is `value / N` instead of Yahoo's `1/N`.
+    Same section-gating discipline — a defensive "Each Interception" reuses
+    the SAME `(INT)` code as Passing's "Interceptions Thrown" in a real
+    captured page, and only the section (not the code or the label) decides
+    which one is eligible to map to `ptsPerInt`.
+  - **Both parsers are fixture-tested against the REAL pages a user
+    pasted**, not synthetic examples — `integrations/selftest.py
+    test_yahoo_scoring_paste`/`test_espn_scoring_paste`, including the
+    same-looking-but-different-section INT case on both platforms and the
+    bonus-bracket warning.
+  - **UI**: `POST /api/integrations/{yahoo,espn}/scoring-paste-candidates`
+    (any signed-in user, no admin gate, no write, no player pool needed at
+    all — this is league-wide rules, not per-player values) returns the
+    match report; `ScoringPasteImport.tsx` ("Paste real rules" button next
+    to the Scoring section in `SettingsDrawer`, shared by both rooms) merges
+    `scoring`/`ppr` into the SAME pending edit the number fields below it
+    already write to — nothing is persisted until the drawer's own Save, so
+    a pasted value is reviewable/adjustable first, identical to typing it
+    in by hand.
 - **Scheduled data refresh** (`.github/workflows/refresh-data.yml`): runs the
   full pipeline (ingest → FantasyPros enrichment → load_to_db) on a recurring
   cadence — weekly (Mondays) most of the year, daily every day in August and
@@ -2074,10 +2130,13 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   picks). Draft slots and traded picks are handled, for you and per opponent.
 - **FantasyPros**: AAV is wired (migration `002_add_aav.sql`); tier surfacing
   is shipped — see below.
-- **ESPN/Yahoo full scoring auto-detect** (optional): currently PPR-only by
-  design (see Integrations) — could be added for real if calibrated against a
-  captured live payload cross-checked against the league's own scoring page,
-  same evidence-driven approach that resolved the waiver-transactions endpoint.
+- **ESPN/Yahoo full scoring auto-detect from the import API itself**: still
+  PPR-only by design (see Integrations) — the numeric statId scheme for
+  everything else remains unverified, and guessing there is still the wrong
+  trade. The gap this originally described is now covered a different way:
+  the scoring-PAGE paste importer (see Integrations → "Full scoring rules,
+  pasted") reads each platform's own human-labeled Scoring settings page
+  instead, with nothing to guess.
 - **This is a DRAFT-DAY app — there is no in-season state anywhere in it.**
   Worth knowing before scoping any Phase 4 (in-season) work: there is no
   `current_week`, no FAAB budget field, no rest-of-season projection path,

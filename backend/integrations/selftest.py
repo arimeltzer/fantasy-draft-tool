@@ -18,6 +18,7 @@ from .matching import build_index, match_player, keeper_candidates
 from . import espn, espn_draft_ws, live, yahoo, yahoo_paste
 from . import fantasypros_aav_paste as aav_paste
 from . import athletic_upload
+from . import scoring_paste
 
 
 def test_matching():
@@ -900,6 +901,8 @@ def main():
     test_fantasypros_aav_paste(); print("✓ fantasypros aav paste import")
     test_athletic_upload(); print("✓ athletic projections upload (second-opinion display)")
     test_espn_draft_ws(); print("✓ espn draft websocket (protocol + accumulator)")
+    test_yahoo_scoring_paste(); print("✓ yahoo scoring-page paste import")
+    test_espn_scoring_paste(); print("✓ espn scoring-page paste import")
     print("\nALL INTEGRATION SELFTESTS PASS")
 
 
@@ -1308,6 +1311,140 @@ def test_espn_draft_ws():
     w2.add_player_info({999999: {"name": "Nobody Known", "pos": "RB", "team": "XX"}})
     assert w2.state().picks[0].is_mine is True   # winning_team_id == my_team_id
     assert w2.state().picks[0].overall == 1      # default start_overall
+
+
+def test_yahoo_scoring_paste():
+    """Yahoo's League Settings -> Scoring page, pasted as plain text — the
+    real fix for "my Yahoo import only auto-mapped PPR, 42 other scoring
+    rules not auto-mapped." `raw_stat_modifiers()` only ever sees a numeric
+    `stat_id` this app has no verified mapping for; Yahoo's SCORING PAGE, by
+    contrast, labels every rule in plain English, so there is nothing to
+    guess. This fixture is the REAL page a user pasted, verbatim."""
+    text = (
+        "Offense\tLeague Value\tYahoo Default Value\n"
+        "Completions\nYahoo Default\n0.5\t0\n"
+        "Passing Yards\nYahoo Default\n"
+        "35 yards per point; 5 points at 360 yards; 5 points at 450 yards; 5 points at 600 yards"
+        "\t25 yards per point\n"
+        "Passing Touchdowns\nYahoo Default\n6\t4\n"
+        "Interceptions\nYahoo Default\n-2\t-1\n"
+        "Rushing Yards\t10 yards per point; 5 points at 150 yards; 5 points at 250 yards\n"
+        "Rushing Touchdowns\t6\n"
+        "Receptions\nYahoo Default\n1\t0.5\n"
+        "Receiving Yards\nYahoo Default\n"
+        "15 yards per point; 5 points at 150 yards; 5 points at 250 yards\t10 yards per point\n"
+        "Receiving Touchdowns\t6\n"
+        "Return Yards\t35 yards per point\t0\n"
+        "Return Touchdowns\t6\n"
+        "2-Point Conversions\t2\n"
+        "Fumbles Lost\t-2\n"
+        "Offensive Fumble Return TD\t6\n"
+        "40+ Yard Passing Touchdowns\nYahoo Default\n0.5\t0\n"
+        "40+ Yard Rushing Touchdowns\nYahoo Default\n1\t0\n"
+        "40+ Yard Receiving Touchdowns\nYahoo Default\n0.5\t0\n"
+        "Kickers\tLeague Value\tYahoo Default Value\n"
+        "Field Goals 0-19 Yards\t3\n"
+        "Field Goals 40-49 Yards\nYahoo Default\n3\t4\n"
+        "Point After Attempt Made\t1\n"
+        "Point After Attempt Missed\nYahoo Default\n-1\t0\n"
+        "Defense/Special Teams\tLeague Value\tYahoo Default Value\n"
+        "Sack\t1\n"
+        "Interception\t2\n"          # DEFENSE'S "Interception" — must NOT hit ptsPerInt
+        "Points Allowed 0 points\nYahoo Default\n15\t10\n"
+        "Extra Point Returned\t2\n"
+    )
+    r = scoring_paste.parse_yahoo_scoring_page(text)
+
+    # The 8 ScoringRules fields this app actually models, at the LEAGUE
+    # value (not Yahoo's default) — bonus brackets included in the raw
+    # value are ignored (base rate only), a real value materially
+    # different from this app's own DEFAULT_SCORING (0.04/4/0.1/0.1).
+    assert abs(r.scoring["ptsPerPassYd"] - 1 / 35) < 1e-9
+    assert r.scoring["ptsPerPassTD"] == 6
+    assert r.scoring["ptsPerInt"] == -2          # OFFENSE's Interceptions, not Defense's
+    assert abs(r.scoring["ptsPerRushYd"] - 0.1) < 1e-9
+    assert r.scoring["ptsPerRushTD"] == 6
+    assert abs(r.scoring["ptsPerRecYd"] - 1 / 15) < 1e-9
+    assert r.scoring["ptsPerRecTD"] == 6
+    assert r.scoring["ptsPerFumble"] == -2
+    assert r.ppr == 1
+    assert len(r.scoring) == 8, r.scoring
+
+    # Bonus brackets are called out, not silently dropped.
+    assert any("Passing Yards" in w for w in r.warnings)
+    assert any("Rushing Yards" in w for w in r.warnings)
+    assert any("Receiving Yards" in w for w in r.warnings)
+
+    # Everything this engine has no field for (Completions, Return Yards,
+    # 2-Point Conversions, every Kicker/Defense row) is surfaced, not lost.
+    unmapped_labels = {u["label"] for u in r.unmapped}
+    assert "Completions" in unmapped_labels
+    assert "Return Yards" in unmapped_labels
+    assert "2-Point Conversions" in unmapped_labels
+    assert "Field Goals 0-19 Yards" in unmapped_labels
+    # Defense's "Interception" (+2, a takeaway) is unmapped, NOT folded into
+    # ptsPerInt (-2, a QB's turnover) just because the words are similar.
+    defense_int = [u for u in r.unmapped if u["label"] == "Interception"]
+    assert len(defense_int) == 1 and defense_int[0]["raw"] == "2"
+
+
+def test_espn_scoring_paste():
+    """ESPN's League Settings -> Scoring Settings page, pasted as plain
+    text. Real captured page: each rule is one line, "<label> (<CODE>)
+    <value>" with no space before the value, and per-yard categories spell
+    the denominator INTO the label ("Every 25 passing yards") rather than as
+    a separate phrase the way Yahoo does it."""
+    text = (
+        "Scoring\n"
+        "Passing\n"
+        "Every 25 passing yards (PY25)1\n"
+        "TD Pass (PTD)4\n"
+        "50+ yard TD pass bonus (PTD50)1\n"
+        "Interceptions Thrown (INT)-2\n"
+        "2pt Passing Conversion (2PC)2\n"
+        "300-399 yard passing game (P300)2\n"
+        "Rushing\n"
+        "Every 10 rushing yards (RY10)1\n"
+        "TD Rush (RTD)6\n"
+        "40+ yard TD rush bonus (RTD40)2\n"
+        "Receiving\n"
+        "Every 10 receiving yards (REY10)1\n"
+        "TD Reception (RETD)6\n"
+        "Kicking\n"
+        "Each PAT Made (PAT)1\n"
+        "FG Made (0-39 yards) (FG0)3\n"
+        "Team Defense / Special Teams\n"
+        "Each Sack (SK)0.5\n"
+        "Each Interception (INT)1\n"    # DEFENSE'S — same code "INT" as Passing's, must not collide
+        "0 points allowed (PA0)10\n"
+        "Miscellaneous\n"
+        "Kickoff Return TD (KRTD)6\n"
+        "Total Fumbles Lost (FUML)-2\n"
+    )
+    r = scoring_paste.parse_espn_scoring_page(text)
+
+    assert r.scoring["ptsPerPassYd"] == 1 / 25
+    assert r.scoring["ptsPerPassTD"] == 4
+    assert r.scoring["ptsPerInt"] == -2       # Passing's "Interceptions Thrown"
+    assert r.scoring["ptsPerRushYd"] == 0.1
+    assert r.scoring["ptsPerRushTD"] == 6
+    assert r.scoring["ptsPerRecYd"] == 0.1
+    assert r.scoring["ptsPerRecTD"] == 6
+    assert r.scoring["ptsPerFumble"] == -2     # from Miscellaneous, not Passing/Rushing/Receiving
+    assert r.ppr is None                       # this page never carries PPR; ESPN's own statId-53 owns it
+    assert len(r.scoring) == 8, r.scoring
+
+    # Same-CODE collision across sections resolves by SECTION, not by the
+    # "(INT)" code the two rows happen to share.
+    defense_int = [u for u in r.unmapped if u["label"] == "Each Interception"]
+    assert len(defense_int) == 1 and defense_int[0]["raw"] == "1"
+
+    unmapped_labels = {u["label"] for u in r.unmapped}
+    assert "50+ yard TD pass bonus" in unmapped_labels
+    assert "2pt Passing Conversion" in unmapped_labels
+    assert "Each PAT Made" in unmapped_labels
+    assert "0 points allowed" in unmapped_labels
+    assert "Kickoff Return TD" in unmapped_labels
 
 
 if __name__ == "__main__":
