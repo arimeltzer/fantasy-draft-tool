@@ -7,6 +7,7 @@ import type { BoardPlayer } from "@/engine/valuation-engine.js";
 import { LeagueSettings, KeeperCandidate } from "@/lib/api";
 import { DraftEntry } from "@/store/draftStore";
 import { decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
+import { resolveOpponentIndex } from "@/lib/teamMatch";
 import { posStyle } from "@/lib/posStyles";
 
 interface Props {
@@ -226,11 +227,22 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
   // pick to no specific team, so it can never show up on that opponent's
   // roster or count against their budget — reported live as a keeper
   // showing sold but not on the team that kept it.
+  //
+  // `p.owner` names a team in the PRIOR season the ESPN keeper-candidates
+  // pull read, not this one — a plain exact match against THIS season's
+  // `settings.opponents` silently fails the moment a manager renamed their
+  // team, reported live a second time as "still isn't correct... unassigned
+  // instead of on the right team." `resolveOpponentIndex` applies the same
+  // tiered, refuse-on-ambiguity matching `resolve_my_team_index` already
+  // uses server-side (exact -> punctuation-folded -> unique substring).
+  const opponentNames = settings.opponents?.length
+    ? settings.opponents
+    : Array.from({ length: Math.max(0, settings.teams - 1) }, (_, i) => `Team ${i + 2}`);
   const confirmOpp = async (p: { id: number; owner: string; base: number | null; cost: { price: number | null; round: number | null } }) => {
-    const idx = (settings.opponents ?? []).indexOf(p.owner);
+    const idx = resolveOpponentIndex(p.owner, opponentNames);
     await addPick({
       playerId: p.id, mine: false,
-      teamId: idx >= 0 ? idx : undefined,
+      teamId: idx,
       price: priceBasis ? (p.cost.price ?? undefined) : undefined,
       slot: encodeKeeper({ k: 1, owner: p.owner, basis: rule.basis, kept: 0, base: p.base, round: p.cost.round ?? undefined }),
     });

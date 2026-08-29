@@ -6,6 +6,7 @@ import { LeagueSettings, KeeperCandidate, KeeperImportCache } from "@/lib/api";
 import { usePatchLeague } from "@/hooks/useLeague";
 import { DraftEntry } from "@/store/draftStore";
 import { decodeKeeper, encodeKeeper } from "@/lib/keeperPick";
+import { resolveOpponentIndex } from "@/lib/teamMatch";
 import { posStyle } from "@/lib/posStyles";
 import KeeperAutofill from "./KeeperAutofill";
 import YahooPasteImport from "./YahooPasteImport";
@@ -62,17 +63,32 @@ export default function KeeperPlanner({
       : Array.from({ length: Math.max(0, settings.teams - 1) }, (_, i) => `Team ${i + 2}`))];
   }, [settings.teams, settings.opponents]);
 
-  // `DraftPick.team_id` is an index into `settings.opponents[]` (`owners`
-  // minus the leading "Me") — the SAME convention AuctionRoom/SnakeRoom's own
-  // winner dropdown already writes. A committed keeper used to omit this
-  // entirely: `addPick({ mine: owner === "Me" })` alone marks an opponent
-  // keeper as taken (off the board) but attributes it to NO specific team,
-  // so it can't show up on that opponent's roster or count against their
-  // budget — reported live as "keepers... are just off the board," not on
-  // the team that kept them.
+  const opponentNames = useMemo(() => owners.slice(1), [owners]);
+
+  // `DraftPick.team_id` is an index into `settings.opponents[]` — the SAME
+  // convention AuctionRoom/SnakeRoom's own winner dropdown already writes.
+  // A committed keeper used to omit this entirely: `addPick({ mine: owner
+  // === "Me" })` alone marks an opponent keeper as taken (off the board)
+  // but attributes it to NO specific team — reported live as "keepers...
+  // are just off the board," not on the team that kept them.
+  //
+  // Fixed once with a plain `owners.indexOf(owner)`, then reported AGAIN as
+  // "still isn't correct... unassigned instead of on the right team." Root
+  // cause: an owner label from the ESPN keeper-candidates pull (ANY of
+  // KeeperAutofill's bulk commit, or KeeperRecommendations' predicted/
+  // confirmed list) names a team in a PRIOR season's league, not this one —
+  // a manager who renamed their team between seasons makes that string
+  // differ from this season's `settings.opponents`, and a plain exact match
+  // then silently fails. `resolveOpponentIndex` applies the SAME tiered,
+  // refuse-on-ambiguity matching `resolve_my_team_index` already uses
+  // server-side for "which team is mine" (exact -> punctuation-folded ->
+  // unique substring). The manual "Add a keeper" form's own owner is always
+  // picked verbatim from this same `owners` list, so it still resolves on
+  // tier 1 exactly as before — this only changes behavior for owner labels
+  // from a DIFFERENT source.
   const teamIdFor = (owner: string): number | undefined => {
-    const i = owners.indexOf(owner);
-    return i > 0 ? i - 1 : undefined;
+    if (owner === "Me") return undefined;
+    return resolveOpponentIndex(owner, opponentNames);
   };
 
   const playerById = useMemo(() => new Map(board.map((p) => [p.id as number, p])), [board]);
@@ -136,6 +152,27 @@ export default function KeeperPlanner({
       slot: encodeKeeper({
         k: 1, owner: row.owner, basis: rule.basis, kept: row.kept,
         base: row.base, waiver, round: cost.round ?? undefined,
+      }),
+    });
+  };
+
+  // Manual escape hatch for whatever automatic owner matching can't resolve
+  // — a team renamed beyond what `resolveOpponentIndex`'s tiers can follow,
+  // or a league whose `settings.opponents` never got real names at all.
+  // Reported live, twice, before this existed: "still isn't correct...
+  // unassigned instead of on the right team." Same remove+re-add pattern as
+  // `saveWaiver` — markers aren't patchable in place.
+  const saveOwner = async (row: KeeperRow, newOwner: string) => {
+    if (newOwner === row.owner) return;
+    await removePick(row.pick.pickId);
+    await addPick({
+      playerId: row.pick.playerId as number,
+      mine: newOwner === "Me",
+      teamId: teamIdFor(newOwner),
+      price: priceBasis ? (row.cost.price ?? undefined) : undefined,
+      slot: encodeKeeper({
+        k: 1, owner: newOwner, basis: rule.basis, kept: row.kept,
+        base: row.base, waiver: row.waiver, round: row.cost.round ?? undefined,
       }),
     });
   };
@@ -450,11 +487,29 @@ export default function KeeperPlanner({
               )}
               {keeperRows.map((r) => {
                 const st = r.player ? posStyle(r.player.pos) : null;
+                // The stored marker's owner label can be something that
+                // isn't (or isn't anymore) a real option here — a prior
+                // season's ESPN name `resolveOpponentIndex` couldn't match
+                // at all. A native <select> with no matching <option>
+                // silently shows the FIRST one (misleadingly "Me"), so keep
+                // the row's actual stored label selectable even when it's
+                // stale, rather than letting the dropdown lie about it.
+                const ownerOptions = owners.includes(r.owner) ? owners : [r.owner, ...owners];
                 return (
                   <div key={r.pick.pickId} className={`flex items-center gap-2 border-l-[3px] px-3 py-2 text-sm ${st?.accent ?? "border-l-transparent"}`}>
-                    <span className={`w-10 font-mono text-2xs font-semibold ${r.owner === "Me" ? "text-brand" : "text-faint"}`}>
-                      {r.owner === "Me" ? "Me" : r.owner.replace("Team ", "T")}
-                    </span>
+                    <select
+                      value={r.owner}
+                      onChange={(e) => saveOwner(r, e.target.value)}
+                      title="Owner — reassign here if this keeper landed on the wrong team"
+                      className={`w-20 shrink-0 truncate rounded-lg border border-transparent bg-transparent px-1 py-0.5 text-2xs font-mono font-semibold hover:border-line hover:bg-raised focus:outline-none focus:border-brand ${r.owner === "Me" ? "text-brand" : "text-faint"}`}
+                    >
+                      {ownerOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                    {r.owner !== "Me" && r.pick.teamId == null && (
+                      <span title="Couldn't match this owner to a team in your league (often a team renamed since last season) — pick the right one from the dropdown to the left.">
+                        <AlertTriangle className="h-3 w-3 shrink-0 text-amber-600" />
+                      </span>
+                    )}
                     <span className="min-w-0 flex-1 truncate text-ink">
                       {r.player?.name ?? `#${r.pick.playerId}`}
                       {r.player && <span className="ml-1 font-mono text-2xs text-faint">{r.player.pos}·{r.player.team}</span>}

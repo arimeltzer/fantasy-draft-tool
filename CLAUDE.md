@@ -1929,6 +1929,35 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   correctly, by design, so they never showed the symptom.
   `KeeperPlanner.test.tsx` pins both directions: an opponent keeper
   resolves to their real index, a keeper kept by "Me" still omits it.
+- **Reported a second time after that fix shipped: "still isn't
+  correct... unassigned instead of on the right team."** The first fix
+  wired `teamId` through everywhere, but resolved it with a plain exact
+  `owners.indexOf(owner)`. That silently fails whenever the owner label
+  doesn't match a current opponent name byte-for-byte — and for
+  `KeeperAutofill`'s bulk commit and `KeeperRecommendations.confirmOpp`,
+  that label comes from a DIFFERENT season's ESPN pull (the keeper-
+  candidates endpoint reads the PRIOR season's league, since that's when
+  the keeper was actually drafted) than `settings.opponents` (THIS
+  season's real names) — a manager renaming their team between seasons,
+  common on ESPN, breaks the match outright. `frontend/src/lib/
+  teamMatch.ts` (`resolveOpponentIndex`) ports the exact same tiered,
+  refuse-on-ambiguity matching `backend/integrations/base.py
+  resolve_my_team_index` already uses for "which team is mine" (exact →
+  punctuation/case-folded → unique substring), used by both
+  `KeeperPlanner`'s `teamIdFor` and `KeeperRecommendations.confirmOpp`.
+  The manual "Add a keeper" form's own owner is picked verbatim from the
+  same `settings.opponents` list it's matched against, so it still
+  resolves on tier 1 exactly as before — only owner labels from the OTHER
+  season's data actually needed the extra tiers.
+  **Also added a manual escape hatch**, since even tiered matching can't
+  resolve every case (a team renamed past recognition, or a league whose
+  `settings.opponents` never got real names at all): each committed
+  keeper's owner is now an editable dropdown (same remove+re-add pattern
+  `saveWaiver` already uses), with a warning icon when `team_id` never
+  resolved — so a still-wrong keeper is visibly flagged and fixable in
+  one click rather than silently wrong. `teamMatch.test.ts` pins the
+  tiers directly (mirrors `test_resolve_my_team`'s own cases);
+  `KeeperPlanner.test.tsx` pins the manual fix end-to-end.
 - **ESPN auto-fill**: `POST /api/integrations/espn/keeper-candidates` reads a
   prior-season ESPN league's draft (bid + round via `espn.py`/`matching.keeper_candidates`,
   fixture-tested) and maps it to the current pool; `KeeperAutofill.tsx` pre-fills

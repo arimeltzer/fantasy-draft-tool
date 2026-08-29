@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { screen, fireEvent, waitFor } from "@testing-library/react";
+import { screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { renderInApp, BOARD, SETTINGS } from "@/test/fixtures";
+import { encodeKeeper } from "@/lib/keeperPick";
+import type { DraftEntry } from "@/store/draftStore";
 import KeeperPlanner from "./KeeperPlanner";
 
 /**
@@ -17,16 +19,20 @@ import KeeperPlanner from "./KeeperPlanner";
  */
 type AddPickArg = { playerId?: number; mine: boolean; teamId?: number; price?: number; slot?: string };
 
-function renderPlanner(addPick: (d: AddPickArg) => Promise<void>) {
+function renderPlanner(
+  addPick: (d: AddPickArg) => Promise<void>,
+  picks: DraftEntry[] = [],
+  removePick: (pickId: number) => Promise<void> = async () => {},
+) {
   return renderInApp(
     <KeeperPlanner
       format="auction"
       leagueId={1}
       settings={SETTINGS}
       board={BOARD}
-      picks={[]}
+      picks={picks}
       addPick={addPick}
-      removePick={async () => {}}
+      removePick={removePick}
       onClose={() => {}}
     />,
   );
@@ -67,5 +73,34 @@ describe("KeeperPlanner — opponent keeper attribution", () => {
     const call = addPick.mock.calls[0][0];
     expect(call.mine).toBe(true);
     expect(call.teamId).toBeUndefined();
+  });
+
+  it("reported a second time — a committed keeper whose owner didn't resolve can be fixed by hand", async () => {
+    // Simulates exactly the reported state: an opponent keeper that DID get
+    // committed (mine: false) but whose team_id never resolved (null) —
+    // e.g. an owner label from a prior-season ESPN pull that no longer
+    // matches this season's settings.opponents at all.
+    const existing: DraftEntry = {
+      pickId: 501, playerId: 2, overallPick: 1, mine: false, teamId: null,
+      price: 12,
+      slot: encodeKeeper({ k: 1, owner: "Some Old Team Name", basis: "price", kept: 0, base: 12 }),
+    };
+    const addPick = vi.fn(async (_d: AddPickArg) => {});
+    const removePick = vi.fn(async (_id: number) => {});
+    renderPlanner(addPick, [existing], removePick);
+
+    // The warning icon flags the unresolved attribution.
+    const row = screen.getByText("Ja'Marr Chase").closest("div") as HTMLElement;
+    expect(within(row).getByTitle(/couldn't match this owner/i)).toBeTruthy();
+
+    // Fix it by hand: reassign to a real opponent from the dropdown.
+    const ownerSelect = within(row).getByDisplayValue("Some Old Team Name");
+    fireEvent.change(ownerSelect, { target: { value: "Team Three" } });
+
+    await waitFor(() => expect(addPick).toHaveBeenCalled());
+    expect(removePick).toHaveBeenCalledWith(501);
+    const call = addPick.mock.calls[0][0];
+    expect(call.mine).toBe(false);
+    expect(call.teamId).toBe(1);
   });
 });
