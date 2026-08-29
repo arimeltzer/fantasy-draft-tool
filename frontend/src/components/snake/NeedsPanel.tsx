@@ -12,12 +12,22 @@ interface Props {
 }
 
 export interface Needs {
-  QB: number; RB: number; WR: number; TE: number; FLEX: number;
+  QB: number; RB: number; WR: number; TE: number; FLEX: number; K: number; DST: number;
   [key: string]: number;
 }
 
+/**
+ * Starting-lineup shortfalls by position — INCLUDING K/DST, which this used
+ * to silently drop (`counts` was never seeded with them, so `needs.K`/
+ * `needs.DST` were always `undefined`). Two real consequences: the "Still
+ * need" panel never told you a kicker or defense was still open, and
+ * `pickScore`'s `needMult` never gave K/DST its "haven't got one yet"
+ * priority bump for the SAME reason (`needs?.[pos] > 0` is false when the
+ * key is missing) — every team needs exactly one of each, and the
+ * recommender had no way to know it was still owed one. See CLAUDE.md.
+ */
 export function computeNeeds(mine: BoardPlayer[], settings: LeagueSettings): Needs {
-  const counts: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0 };
+  const counts: Record<string, number> = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DST: 0 };
   mine.forEach((p) => { if (p.pos in counts) counts[p.pos]++; });
   const r = settings.roster;
   const flexSurplus = Math.max(0, counts.RB - r.RB) + Math.max(0, counts.WR - r.WR) + Math.max(0, counts.TE - r.TE);
@@ -27,6 +37,8 @@ export function computeNeeds(mine: BoardPlayer[], settings: LeagueSettings): Nee
     WR: Math.max(0, r.WR - counts.WR),
     TE: Math.max(0, r.TE - counts.TE),
     FLEX: Math.max(0, r.FLEX - flexSurplus),
+    K: Math.max(0, r.K - counts.K),
+    DST: Math.max(0, r.DST - counts.DST),
   };
 }
 

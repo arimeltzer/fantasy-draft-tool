@@ -72,6 +72,37 @@ const qb3sf = pickScore(player("QB", 60), state({
 }));
 check("but a third QB is allowed in superflex", Number.isFinite(qb3sf.score), JSON.stringify(qb3sf));
 
+// ── the reported bug: no roster-completion urgency for K/DST ──────────────
+// "every team needs a kicker and a defense... the app shouldn't be
+// recommending position players when I only have one slot left and need a
+// kicker." A 15-slot roster (QB1 RB2 WR2 TE1 FLEX1 K1 DST1 BENCH6), 14
+// already drafted (this is the 15th and LAST pick), every starter filled
+// except a kicker.
+const KDST_ROSTER = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 6 };
+const lastSlot = state({
+  roster: KDST_ROSTER, round: 15,
+  counts: { QB: 1, RB: 5, WR: 5, TE: 2, K: 0, DST: 1 },   // sums to 14
+  needs: { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, K: 1, DST: 0 },
+});
+const wrLastSlot = pickScore(player("WR", 90), lastSlot);
+check("with no slack left, a bench WR is blocked while a kicker is still owed",
+      wrLastSlot.score === -Infinity, JSON.stringify(wrLastSlot));
+check("...and says why", /still need K/.test(wrLastSlot.blocked || ""), wrLastSlot.blocked);
+const kLastSlot = pickScore(player("K", 10), lastSlot);
+check("...while the kicker itself is NOT blocked by the new gate",
+      Number.isFinite(kLastSlot.score), JSON.stringify(kLastSlot));
+
+// Same shortfall, but with real bench room left (round 10 of 15, not the
+// last slot) — the gate must not fire early just because a K/DST is owed.
+const plentyOfSlack = state({
+  roster: KDST_ROSTER, round: 10,
+  counts: { QB: 1, RB: 2, WR: 2, TE: 1, K: 0, DST: 1 },   // sums to 9
+  needs: { QB: 0, RB: 0, WR: 0, TE: 0, FLEX: 0, K: 1, DST: 0 },
+});
+const wrWithSlack = pickScore(player("WR", 90), plentyOfSlack);
+check("...but NOT once bench slack is available — the gate only bites at the true endgame",
+      Number.isFinite(wrWithSlack.score), JSON.stringify(wrWithSlack));
+
 // ── a backup at a one-starter position must not outrank real depth ────────
 // Equal VBD, starters already filled: the RB is startable via FLEX or a bye,
 // the second QB only plays if the starter is hurt.

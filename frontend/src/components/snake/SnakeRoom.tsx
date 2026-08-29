@@ -549,6 +549,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
                   onUndo={undo}
                   byeWarn={byeWarnByPlayer.get(p.id as number)}
                   stackWarn={stackWarnByPlayer.get(p.id as number)}
+                  bye={p.team && byeByTeam ? byeByTeam[p.team] ?? null : null}
                 />
               ))}
               {filtered.length === 0 && (
@@ -592,7 +593,7 @@ export default function SnakeRoom({ league, settings, board, leagueId }: Props) 
  * data really does — so logging a pick now re-renders one row, not the board.
  */
 const PlayerRow = memo(function PlayerRow({
-  p, idx, pick, rank, maxVbd, opponents, getOnClock, onDraft, onUndo, byeWarn, stackWarn,
+  p, idx, pick, rank, maxVbd, opponents, getOnClock, onDraft, onUndo, byeWarn, stackWarn, bye,
 }: {
   p: BoardPlayer;
   idx: number;
@@ -605,6 +606,7 @@ const PlayerRow = memo(function PlayerRow({
   onUndo: (pickId: number) => void;
   byeWarn: { week: number; names: string[] } | undefined;
   stackWarn: { have: number; sibling: string; siblingHave: number; siblingCapacity: number } | undefined;
+  bye: number | null;
 }) {
   const st = posStyle(p.pos);
   const mine = pick?.mine ?? false;
@@ -648,9 +650,19 @@ const PlayerRow = memo(function PlayerRow({
                             <AlertTriangle className="w-3 h-3 text-amber-600" aria-label={`risk ${p.risk}`} />
                           </span>
                         )}
-                        {byeWarn && (
-                          <span title={`Same wk ${byeWarn.week} bye as your ${p.pos}: ${byeWarn.names.join(", ")}. Not priced in — your call.`}>
-                            <CalendarX className="w-3 h-3 text-amber-600" aria-label={`bye clash week ${byeWarn.week}`} />
+                        {bye != null && (
+                          <span
+                            className={`flex items-center gap-0.5 text-2xs font-mono font-bold px-1.5 py-0.5 rounded-md ${
+                              byeWarn
+                                ? "bg-amber-100 border border-amber-300 text-amber-800"
+                                : "bg-raised border border-line text-muted"
+                            }`}
+                            title={byeWarn
+                              ? `Bye week ${bye} — CONFLICTS with your ${p.pos}${byeWarn.names.length > 1 ? "s" : ""} already rostered: ${byeWarn.names.join(", ")}. Not priced in — your call.`
+                              : `Bye week ${bye}`}
+                          >
+                            {byeWarn && <CalendarX className="w-3 h-3" aria-label={`bye clash week ${bye}`} />}
+                            Bye {bye}
                           </span>
                         )}
                         {stackWarn && (

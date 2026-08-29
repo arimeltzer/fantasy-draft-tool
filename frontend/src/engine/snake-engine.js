@@ -214,6 +214,34 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
   // which a high-VBD quarterback simply out-scored.
   const cap = maxUseful(pos, s.roster || {}, superflex);
   if (have >= cap) return { score: -Infinity, blocked: `enough ${pos} (${have})` };
+
+  // Roster-completion gate — reported live: "every team needs a kicker and a
+  // defense... the app shouldn't be recommending position players when I
+  // only have one slot left and need a kicker." needMult's "haven't got one
+  // yet" bump (below) is a soft multiplier on VBD, and K/DST's own VBD is
+  // small by construction (replacement-level kickers/defenses are all close
+  // in value) — no multiplier on a small number reliably outscores a real
+  // bench RB/WR, so a soft bump alone can lose every time right up until
+  // it's too late to recover. This is a hard, structural constraint instead:
+  // once you have exactly as many picks left as unfilled MANDATORY starting
+  // spots (bench depth doesn't count — same "still need" definition
+  // NeedsPanel already shows you), every remaining pick is spoken for, and a
+  // pick that doesn't address one of them means finishing the draft short at
+  // that position. Same category as the capacity gate just above — a
+  // roster-legality constraint, not a valuation claim, so it isn't
+  // backtested like the model's scoring weights are.
+  const totalRosterSize = Object.values(s.roster || {}).reduce((a, b) => a + (b || 0), 0);
+  const openRosterSlots = totalRosterSize - (round - 1);
+  const need = s.needs || {};
+  const mandatoryOpen = (need.QB || 0) + (need.RB || 0) + (need.WR || 0) + (need.TE || 0) +
+    (need.FLEX || 0) + (need.K || 0) + (need.DST || 0);
+  if (mandatoryOpen > 0 && openRosterSlots <= mandatoryOpen) {
+    const fillsNeed = (need[pos] || 0) > 0 || (flexEligible && (need.FLEX || 0) > 0);
+    if (!fillsNeed) {
+      const owed = Object.entries(need).filter(([, n]) => n > 0).map(([p]) => p).join("/");
+      return { score: -Infinity, blocked: `no slack left — still need ${owed}` };
+    }
+  }
   if (pos === "QB" && have === 0 && round < cfg.QB_MIN) return { score: -Infinity, blocked: "QB too early" };
   if (pos === "QB" && have >= 1 && round < cfg.QB2_MIN) return { score: -Infinity, blocked: "QB2 too early" };
   if (pos === "TE" && have === 0 && round < P.teMinRound) return { score: -Infinity, blocked: "TE too early" };

@@ -1236,6 +1236,50 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
 - Separately, `Recommendations.tsx` caps one position at 2 of the 6 panel slots.
   You make one pick, so the 3rd-best QB isn't a choice — it's the same choice
   repeated, and it used to fill four slots the round a gate opened.
+- **A second mock draft surfaced two more real problems, reported directly:
+  "every team needs a kicker and a defense. the app shouldn't be
+  recommending position players when I only have one slot left and need a
+  kicker."**
+  - **Root cause #1 — `computeNeeds()` (`NeedsPanel.tsx`) never tracked K/
+    DST at all.** `counts` was seeded with only `{QB,RB,WR,TE}`, so
+    `needs.K`/`needs.DST` were always `undefined` — the "Still need" panel
+    never told you a kicker or defense was still open, and `needMult`'s
+    own "haven't got one yet" priority bump (`belowStarter`) could never
+    fire for K/DST either, since it reads off the same `needs` object.
+    Fixed by seeding `counts`/the returned `Needs` with `K`/`DST` too — a
+    real, if narrow, gap that both rooms share since AuctionRoom also
+    renders `NeedsPanel`.
+  - **Root cause #2, the actual reported behavior — a soft multiplier can
+    never guarantee urgency.** Even with #1 fixed, `needMult("K", have=0,
+    ...)` only returns 1.30× — a proportional bump on K's OWN vbd, which
+    is small by construction (replacement-level kickers are all close in
+    value). 1.30× a small number routinely loses to a real bench RB/WR's
+    much larger raw vbd, right up until it's too late to recover. Fixed
+    with a genuine hard gate in `pickScore`, structurally the same
+    category as the roster-capacity gate right above it (a legality
+    constraint, not a valuation claim — not backtested for the same
+    reason that one wasn't): once your remaining draft slots equal your
+    remaining MANDATORY starter shortfall (bench slack has run out —
+    same "still need" definition `computeNeeds` already uses), every
+    candidate that doesn't fill one of those shortfalls is blocked
+    outright, not merely discounted. `snake-engine.selftest.mjs` pins a
+    bench WR getting blocked on the literal last pick while a kicker is
+    still owed, a kicker passing through untouched, and — the control
+    that matters — the SAME shortfall NOT blocking anything while real
+    bench slack remains, so this only bites at the genuine endgame.
+- **The same mock draft: "the bye flag needs to be more prominent — list
+  the bye week in the player menu with the flag that there is a
+  conflict."** The bye-collision flag (`byeCollisions`, roadmap "real-time
+  bye-collision flag") existed but rendered as a bare `CalendarX` icon with
+  no visible text at all — the week number lived ONLY in the hover
+  tooltip, and a player with no collision showed nothing, so you couldn't
+  see anyone's bye week without hovering one row at a time. Both rooms now
+  render a `Bye {n}` badge for EVERY player with schedule data loaded (not
+  gated on a collision), styled muted like the other tier badges normally
+  and switching to amber-with-icon when it collides with a player you
+  already have at that position — same "flag it, I decide live" philosophy
+  as the collision detector itself, just actually visible without a
+  hover.
 
 ## Bye-aware lineup value replaces `byeClash` in the snake recommender (roadmap 2.4)
 
