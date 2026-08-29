@@ -21,7 +21,7 @@ function ok(cond, msg, detail = "") {
 function approx(a, b, tol = 1e-9) { return Math.abs(a - b) <= tol; }
 
 const SC = { ptsPerPassYd: 0.04, ptsPerPassTD: 4, ptsPerInt: -2, ptsPerRushYd: 0.1, ptsPerRushTD: 6,
-             ptsPerRec: 0.5, ptsPerRecYd: 0.1, ptsPerRecTD: 6, ptsPerFumble: -2 };
+             ptsPerRec: 0.5, ptsPerRecYd: 0.1, ptsPerRecTD: 6, ptsPerFumble: -2, ptsPerCompletion: 0 };
 
 // ── opportunity(): field sums per position ──────────────────────────────
 eq(opportunity({ carries: 15, targets: 5 }, "RB"), 20, "RB sums carries+targets");

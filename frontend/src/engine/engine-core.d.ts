@@ -43,6 +43,7 @@ export interface Scoring {
   ptsPerRushYd: number; ptsPerRushTD: number;
   ptsPerRec: number; ptsPerRecYd: number; ptsPerRecTD: number;
   ptsPerFumble: number;
+  ptsPerCompletion: number;
 }
 
 export interface RosterConfig {

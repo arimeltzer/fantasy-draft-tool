@@ -33,8 +33,9 @@ const PROVIDERS: { key: "yahoo" | "espn"; label: string; placeholder: string; he
  * auto-mapped." The platform's own Scoring PAGE, by contrast, labels every
  * rule in plain English — nothing to guess there.
  *
- * Only the 8 categories `ScoringRules` actually models (pass/rush/rec
- * yards+TDs, INTs, fumbles) plus PPR can come back as `scoring`/`ppr`.
+ * Only the 9 categories `ScoringRules` actually models (pass/rush/rec
+ * yards+TDs, INTs, fumbles, completions) plus PPR can come back as
+ * `scoring`/`ppr`.
  * Kicker and Defense/Special Teams rules, and any bonus-only category
  * (40+-yard bonuses, points-in-a-game brackets), are NOT modeled anywhere
  * in this engine — they're surfaced under `unmapped` so nothing pasted is
@@ -106,7 +107,7 @@ export default function ScoringPasteImport({ onApply, onClose }: Props) {
           Neither platform's API labels most scoring rules with anything reliable to auto-map (only
           points/reception is auto-detected on import) — but {cfg.label}'s own Scoring settings page
           ({cfg.helpUrl}) labels every rule in plain English. Copy that whole page's text and paste it
-          below. Only pass/rush/rec yards & TDs, interceptions, and fumbles lost feed this app's model —
+          below. Only pass/rush/rec yards & TDs, interceptions, fumbles lost, and completions feed this app's model —
           Kicker and Defense/Special Teams rules aren't scored from a stat line here, so they're listed
           but not applied.
         </p>

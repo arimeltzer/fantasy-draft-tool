@@ -44,6 +44,13 @@ COMP = {
     "passing_yards": "passYd", "passing_tds": "passTD", "interceptions": "int",
     "rushing_yards": "rushYd", "rushing_tds": "rushTD",
     "receptions": "rec", "receiving_yards": "recYd", "receiving_tds": "recTD",
+    # Linear, per-event, and nflverse tracks it every week -- same shape as
+    # the 8 categories above, just not worth points in a "standard" league
+    # (DEFAULT_SCORING's ptsPerCompletion is 0). Real signal for a league
+    # that DOES score it though: reported live, a real Yahoo league scores
+    # 0.5/completion, which for a high-volume passer (35 comp/game) is
+    # BIGGER than the passing-yardage line item alone.
+    "completions": "completions",
 }
 
 # Opportunity counts (roadmap 1.1) -- not worth points on their own
@@ -74,6 +81,21 @@ def _num(r, k):
     except (TypeError, ValueError):
         return 0.0
 
+def _fumbles_lost_col(df):
+    """Fumbles lost across every ballhandling context a skill player can
+    lose one in — rushing, receiving, AND sacked-while-holding-the-ball —
+    matching `fantasy_points()`'s own definition below exactly. The season
+    aggregation (`_agg_season`/`build_players_base`) used to sum ONLY
+    `rushing_fumbles_lost` into `last.fumbles`/`last2.fumbles`, silently
+    undercounting a real (if less common) turnover for any pass-catcher or
+    a QB stripped on a sack — `ptsPerFumble` then applied to a number that
+    was quietly missing two of its three real components. Guarded per
+    column since a given season's columns aren't a hard promise."""
+    cols = [c for c in ("rushing_fumbles_lost", "receiving_fumbles_lost", "sack_fumbles_lost")
+            if c in df.columns]
+    return df[cols].sum(axis=1) if cols else 0.0
+
+
 def fantasy_points(r):
     fum = _num(r, "rushing_fumbles_lost") + _num(r, "receiving_fumbles_lost") + _num(r, "sack_fumbles_lost")
     two = _num(r, "passing_2pt_conversions") + _num(r, "rushing_2pt_conversions") + _num(r, "receiving_2pt_conversions")
@@ -93,6 +115,7 @@ def load_weekly(season):
     df = df[df[team].notna() & df["opponent_team"].notna()]
     df["off_team"] = df[team]
     df["fp"] = df.apply(fantasy_points, axis=1)
+    df["fum_lost"] = _fumbles_lost_col(df)
     return df
 
 # ---------- builders ----------
@@ -136,7 +159,7 @@ def _agg_season(df):
     have_vol = [c for c in VOLUME if c in df.columns]
     agg = (df.groupby(["player_id", "player_display_name", "position"])
            .agg(gp=("week", "nunique"),
-                fum=("rushing_fumbles_lost", "sum"),
+                fum=("fum_lost", "sum"),
                 **{c: (c, "sum") for c in have}, **{c: (c, "sum") for c in have_vol})
            .reset_index())
     out = {}
@@ -170,7 +193,7 @@ def build_players_base(df_last, df_last2, upcoming, baseline_proj):
     have_vol = [c for c in VOLUME if c in df_last.columns]
     agg = (df_last.groupby(["player_id", "player_display_name", "position"])
            .agg(gp=("week", "nunique"),
-                fum=("rushing_fumbles_lost", "sum"),
+                fum=("fum_lost", "sum"),
                 **{c: (c, "sum") for c in have}, **{c: (c, "sum") for c in have_vol})
            .reset_index())
     last2_by_id = _agg_season(df_last2)   # 2-years-ago season, keyed by player_id

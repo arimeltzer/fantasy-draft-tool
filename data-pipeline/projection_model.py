@@ -57,6 +57,7 @@ DEFAULT_SCORING = {
     "ptsPerRushYd": 0.1,  "ptsPerRushTD": 6,
     "ptsPerRecYd": 0.1,   "ptsPerRecTD": 6,
     "ptsPerFumble": -2,
+    "ptsPerCompletion": 0,   # mirrors engine-core.js DEFAULT_SCORING exactly
 }
 
 
@@ -91,6 +92,10 @@ def points(line: dict | None, sc: dict) -> float:
         + g("rushYd") * sc["ptsPerRushYd"] + g("rushTD") * sc["ptsPerRushTD"]
         + g("rec") * sc["ptsPerRec"] + g("recYd") * sc["ptsPerRecYd"] + g("recTD") * sc["ptsPerRecTD"]
         + g("fumbles") * sc["ptsPerFumble"]
+        # `.get(..., 0)`, unlike every other term above (see engine-core.js
+        # points() for why): a caller with a pre-existing, hand-built `sc`
+        # dict that predates this field would otherwise KeyError here.
+        + g("completions") * sc.get("ptsPerCompletion", 0)
     )
 
 

@@ -249,6 +249,7 @@ export default function SettingsDrawer({ settings, onSave, onClose, format = "au
             {numField("Pts / pass yard", sc.ptsPerPassYd, (v) => setScoring("ptsPerPassYd", v), 0.01)}
             {numField("Pts / pass TD", sc.ptsPerPassTD, (v) => setScoring("ptsPerPassTD", v), 0.5)}
             {numField("Pts / INT", sc.ptsPerInt, (v) => setScoring("ptsPerInt", v), 0.5)}
+            {numField("Pts / completion", sc.ptsPerCompletion, (v) => setScoring("ptsPerCompletion", v), 0.1)}
           </div>
           <div className="space-y-2">
             <h4 className="text-2xs font-semibold uppercase tracking-wide text-faint">Rushing</h4>

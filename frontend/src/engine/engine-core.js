@@ -79,6 +79,12 @@ export const DEFAULT_SCORING = {
   ptsPerRushYd: 0.1,  ptsPerRushTD: 6,
   ptsPerRecYd: 0.1,   ptsPerRecTD: 6,
   ptsPerFumble: -2,
+  // 0 by default — most leagues don't score completions at all, so a
+  // league that never sets this gets byte-identical behavior to before
+  // this field existed. Real signal for one that DOES: reported live, a
+  // real Yahoo league scores 0.5/completion, which for a high-volume
+  // passer (35 comp/game) is BIGGER than the passing-yardage line alone.
+  ptsPerCompletion: 0,
 };
 
 export function defaultScoring(ppr = 0.5) {
@@ -91,7 +97,7 @@ export function defaultScoring(ppr = 0.5) {
  * `settings.ppr` remains the single source of truth for reception points
  * (unchanged from before — it's what every league form already edits).
  * `settings.scoring` is an optional partial override for every OTHER stat
- * category (pass/rush/rec yards+TDs, INTs, fumbles); any field left unset
+ * category (pass/rush/rec yards+TDs, INTs, fumbles, completions); any field left unset
  * falls back to DEFAULT_SCORING, so a league that never touches `scoring`
  * gets byte-identical behavior to the old defaultScoring(ppr) call — this is
  * a pure additive capability, not a behavior change for existing leagues.
@@ -109,7 +115,16 @@ export function points(line = {}, sc) {
     g("passYd") * sc.ptsPerPassYd + g("passTD") * sc.ptsPerPassTD + g("int") * sc.ptsPerInt +
     g("rushYd") * sc.ptsPerRushYd + g("rushTD") * sc.ptsPerRushTD +
     g("rec") * sc.ptsPerRec + g("recYd") * sc.ptsPerRecYd + g("recTD") * sc.ptsPerRecTD +
-    g("fumbles") * sc.ptsPerFumble
+    g("fumbles") * sc.ptsPerFumble +
+    // `|| 0`, unlike every other term above: this field is newer and OFF by
+    // default, so a hand-built `sc` object that predates it (a test
+    // fixture, a caller that never went through resolveScoring()) has
+    // `ptsPerCompletion === undefined` — without the fallback,
+    // `0 * undefined` is NaN in JS, silently poisoning the ENTIRE points
+    // total for every player, even one with zero completions. Caught by
+    // projection-opportunity.selftest.mjs's own hand-built `SC` failing
+    // outright the moment this field shipped.
+    g("completions") * (sc.ptsPerCompletion || 0)
   );
 }
 

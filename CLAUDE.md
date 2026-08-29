@@ -739,6 +739,69 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     already write to — nothing is persisted until the drawer's own Save, so
     a pasted value is reviewable/adjustable first, identical to typing it
     in by hand.
+- **Completions added as a real scoring category; fumbles undercount fixed
+  (roadmap follow-up).** Asked directly, right after the paste importer
+  shipped: "should we expand the rules we consider? Things like point
+  bonuses for yards? Or is our modeling not granular enough?" Completions is
+  a genuinely linear, per-event stat nflverse already tracks every week —
+  and a real gap, not a hypothetical one: a reported Yahoo league scores
+  0.5/completion, which for a high-volume passer (35 comp/game) is BIGGER
+  than that same QB's passing-yardage line, and nothing in this engine
+  modeled it at all before (not defaulted wrong — simply absent as a
+  category). `ScoringRules.ptsPerCompletion` (default 0 — a league that
+  never sets it is byte-identical to before), `DEFAULT_SCORING`/`points()`
+  in both `engine-core.js` and its Python port `projection_model.py`
+  (kept in lockstep — `projection_parity.py` still passes 2220/2220), a
+  "Pts / completion" field in `SettingsDrawer`'s Scoring editor, and both
+  scoring-paste parsers now map "Completions" (Yahoo, confirmed from the
+  real page) / "Each Completion" (ESPN, **best-effort** — the real page
+  this parser was built from didn't score completions, so this exact label
+  was never observed; included because it follows the identical "Each
+  &lt;event&gt;" convention confirmed five times over in that same real
+  page, and a wrong label fails SAFELY by falling to `unmapped` rather than
+  silently applying a wrong number). `ingest_nflverse.py`'s `COMP` dict
+  gained a `completions` entry so `last`/`last2` carry it forward.
+  - **A real, separate bug found while auditing this exact code path**:
+    the season aggregation's fumbles-lost sum used ONLY
+    `rushing_fumbles_lost`, silently missing `receiving_fumbles_lost` and
+    `sack_fumbles_lost` that the pipeline's own historical `fantasy_points()`
+    ground-truth formula already includes — so `ptsPerFumble` was applying
+    to a number quietly missing two of its three real components for any
+    pass-catcher or a QB stripped on a sack. Fixed via a single derived
+    `fum_lost` column computed once in `load_weekly()` (summing whichever
+    of the three columns exist, guarded per-column) and reused by both
+    `_agg_season()`/`build_players_base()`'s `.agg()` calls — a data
+    pipeline fix, so it takes effect on the next scheduled ingest run, not
+    retroactively.
+  - **A real regression caught by the existing test suite, not shipped**:
+    `points()`'s new `g("completions") * sc.ptsPerCompletion` term broke
+    `projection-opportunity.selftest.mjs` outright — its own hand-built
+    `SC` fixture predates this field, so `sc.ptsPerCompletion` was
+    `undefined`, and `0 * undefined` is `NaN` in JS, silently poisoning the
+    ENTIRE points total for every player regardless of whether they had any
+    completions at all. Fixed two ways: the specific fixture now includes
+    the field, AND — since a hand-built `sc`-shaped object predating this
+    field could exist anywhere, now or later — `points()` defaults a
+    missing `ptsPerCompletion` to 0 (`sc.ptsPerCompletion || 0`, mirrored
+    as `sc.get("ptsPerCompletion", 0)` in the Python port), unlike every
+    other term in the formula, which still assumes a complete `Scoring`
+    object. The asymmetry is deliberate: this field is newer and OFF by
+    default, so defensive-by-default here is the safer contract; the
+    other 8 fields are load-bearing enough that a caller missing one is a
+    real bug worth surfacing, not papering over.
+  - **Deliberately NOT expanded further** — 2-point conversions, return
+    yardage, and per-game yardage BONUS BRACKETS (Yahoo's "5 points at 360
+    passing yards", ESPN's 40+-yard-TD bonuses) were all considered and
+    rejected for now. FantasyPros' projected stat line never forecasts
+    2pt/return-yardage at all (nothing to multiply a rate against), and
+    both are rare enough in practice that the achievable signal is tiny.
+    Bonus brackets are a structurally different problem: this engine values
+    a SEASON TOTAL as one expected-points number, and a threshold bonus is
+    a nonlinear function of GAME-TO-GAME variance, not the average — the
+    same variance modeling roadmap 2.1's outcome distributions attempted
+    and could not get QB coverage to calibrate on in three tries, the exact
+    position these bonuses matter most for. See `docs/METHODOLOGY.md` §2
+    for the full reasoning.
 - **Scheduled data refresh** (`.github/workflows/refresh-data.yml`): runs the
   full pipeline (ingest → FantasyPros enrichment → load_to_db) on a recurring
   cadence — weekly (Mondays) most of the year, daily every day in August and

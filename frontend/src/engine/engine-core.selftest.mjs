@@ -44,6 +44,17 @@ const stdPts = points(line, standard);
 const sixPts = points(line, sixPtQB);
 eq(+(sixPts - stdPts).toFixed(1), 30 * 2, "30 pass TDs at +2pts each (4->6) adds exactly 60pts");
 
+// ── completions: 0 by default (no behavior change for a league that never
+//    sets it), real signal for one that does — reported live, a real Yahoo
+//    league scores 0.5/completion. ──────────────────────────────────────────
+eq(DEFAULT_SCORING.ptsPerCompletion, 0, "completions score 0 by default");
+const completionsLine = { ...line, completions: 28 };
+eq(points(completionsLine, standard), stdPts,
+   "a league that never sets ptsPerCompletion is unaffected by a completions count in the line");
+const halfPtPerComp = resolveScoring({ ppr: 0.5, scoring: { ptsPerCompletion: 0.5 } });
+eq(+(points(completionsLine, halfPtPerComp) - stdPts).toFixed(1), 14,
+   "0.5 pts/completion x 28 completions adds exactly 14pts");
+
 // ── Superflex-style QB-premium league (6pt pass TD, -1 INT) changes VBD ─────
 // A pass-heavy QB should score relatively better under 6pt/-1 than a
 // rush-heavy RB with the same total line, proving the override actually

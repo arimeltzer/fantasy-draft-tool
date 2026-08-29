@@ -32,20 +32,57 @@ it → the browser computes values.
 Fully configurable per-stat-category, not just PPR. A stat line → fantasy points:
 `passYd*ptsPerPassYd + passTD*ptsPerPassTD + int*ptsPerInt + rushYd*ptsPerRushYd
 + rushTD*ptsPerRushTD + rec*ppr + recYd*ptsPerRecYd + recTD*ptsPerRecTD
-+ fumbles*ptsPerFumble`. K/DST may carry a pre-scored `pts`.
++ fumbles*ptsPerFumble + completions*ptsPerCompletion`. K/DST may carry a
+pre-scored `pts`.
 
 `resolveScoring(settings)` (`engine-core.js`) builds this per-stat table: every
 field defaults to standard (`DEFAULT_SCORING`: 0.04/4/-2 passing yard/TD/INT,
-0.1/6 rushing yard/TD, 0.1/6 receiving yard/TD, -2 fumble lost) and
-`settings.scoring` overrides only the categories a league sets explicitly —
-omitting it entirely reproduces the old PPR-only behavior byte for byte, so
-existing leagues are unaffected. `settings.ppr` remains the single source of
-truth for receptions (edited in one place; `scoring` never duplicates it).
-This is the one place valuations turn league scoring into points — get it
-wrong and every downstream number (VBD, dollar values, tiers) is off by
-however much that stat category matters to a given player, so a league running
-non-standard rules (6pt passing TDs, -1 INT, TE premium, etc.) should set them
-under League Settings → Scoring.
+0.1/6 rushing yard/TD, 0.1/6 receiving yard/TD, -2 fumble lost, 0 per
+completion) and `settings.scoring` overrides only the categories a league
+sets explicitly — omitting it entirely reproduces the old PPR-only behavior
+byte for byte, so existing leagues are unaffected. `settings.ppr` remains the
+single source of truth for receptions (edited in one place; `scoring` never
+duplicates it). This is the one place valuations turn league scoring into
+points — get it wrong and every downstream number (VBD, dollar values, tiers)
+is off by however much that stat category matters to a given player, so a
+league running non-standard rules (6pt passing TDs, -1 INT, TE premium,
+points/completion, etc.) should set them under League Settings → Scoring.
+
+**Completions was added, not assumed** — asked directly ("should we expand
+the rules we consider?") after the scoring-page paste importer made a real
+gap visible: a reported Yahoo league scores 0.5/completion, a real,
+non-trivial category (35 comp/game × 0.5 = 17.5 pts, bigger than that same
+QB's passing-yardage line) that nothing in this engine modeled at all before
+— not defaulted wrong, simply absent as a category. It's a genuinely linear,
+per-event stat nflverse already tracks every week, unlike bonus brackets or
+2-point conversions/return yardage (see below), which stay out of scope.
+`fumbles` was ALSO undercounted independent of this — the season aggregation
+(`ingest_nflverse.py`) summed only `rushing_fumbles_lost`, missing
+`receiving_fumbles_lost`/`sack_fumbles_lost` that the pipeline's own
+historical `fantasy_points()` ground truth already includes; fixed in the
+same pass since it was found while auditing this exact code path.
+
+**Why NOT bonus brackets, 2-point conversions, or return yardage.** Asked
+directly whether the model should get more granular now that full scoring
+rules can be pasted in. Two separate walls, not one: (1) FantasyPros'
+projected stat line (`proj`, `PROJ_SYN` in `projections.py`) never forecasts
+2-point conversions or return yardage at all — there's no forward-looking
+number to multiply a rate against, and both are rare enough (most players:
+0-1 two-point conversions a season; meaningful return yardage is mostly
+confined to non-startable special-teamers) that the achievable signal is
+tiny even if a historical rate were built instead. (2) Yardage BONUS
+brackets ("5 points at 360+ passing yards") are fundamentally incompatible
+with this engine's architecture: valuation runs on a single EXPECTED-POINTS
+number per category (a season total), and a threshold bonus is a nonlinear
+function of the underlying GAME-TO-GAME distribution, not the average — you
+cannot compute "how often does he cross 300 yards" from his season pace
+alone. That's exactly the outcome-distribution modeling roadmap 2.1 already
+attempted and could not get QB coverage to calibrate on in three separate
+tries — the position these bonuses matter most for. Building bonus pricing
+on that same foundation would risk inheriting the identical problem, for a
+category that's usually a few points out of a 300+ point season even when
+priced correctly. Not pursued without first revisiting why 2.1's QB modeling
+failed.
 
 **Import auto-detection is PPR-only, by design.** ESPN and Yahoo both expose a
 league's full scoring rules, but only as raw numeric stat IDs with no

@@ -1355,7 +1355,7 @@ def test_yahoo_scoring_paste():
     )
     r = scoring_paste.parse_yahoo_scoring_page(text)
 
-    # The 8 ScoringRules fields this app actually models, at the LEAGUE
+    # The 9 ScoringRules fields this app actually models, at the LEAGUE
     # value (not Yahoo's default) — bonus brackets included in the raw
     # value are ignored (base rate only), a real value materially
     # different from this app's own DEFAULT_SCORING (0.04/4/0.1/0.1).
@@ -1367,18 +1367,18 @@ def test_yahoo_scoring_paste():
     assert abs(r.scoring["ptsPerRecYd"] - 1 / 15) < 1e-9
     assert r.scoring["ptsPerRecTD"] == 6
     assert r.scoring["ptsPerFumble"] == -2
+    assert r.scoring["ptsPerCompletion"] == 0.5   # a real, materially non-default value
     assert r.ppr == 1
-    assert len(r.scoring) == 8, r.scoring
+    assert len(r.scoring) == 9, r.scoring
 
     # Bonus brackets are called out, not silently dropped.
     assert any("Passing Yards" in w for w in r.warnings)
     assert any("Rushing Yards" in w for w in r.warnings)
     assert any("Receiving Yards" in w for w in r.warnings)
 
-    # Everything this engine has no field for (Completions, Return Yards,
+    # Everything this engine has no field for (Return Yards,
     # 2-Point Conversions, every Kicker/Defense row) is surfaced, not lost.
     unmapped_labels = {u["label"] for u in r.unmapped}
-    assert "Completions" in unmapped_labels
     assert "Return Yards" in unmapped_labels
     assert "2-Point Conversions" in unmapped_labels
     assert "Field Goals 0-19 Yards" in unmapped_labels
@@ -1393,12 +1393,19 @@ def test_espn_scoring_paste():
     text. Real captured page: each rule is one line, "<label> (<CODE>)
     <value>" with no space before the value, and per-yard categories spell
     the denominator INTO the label ("Every 25 passing yards") rather than as
-    a separate phrase the way Yahoo does it."""
+    a separate phrase the way Yahoo does it.
+
+    "Each Completion (INC)1" below is NOT part of the real captured page
+    (that league didn't score completions) — it's a synthetic line pinning
+    the best-effort "each <event>" label match documented on
+    `_ESPN_FLAT_LABELS`, so a regression there is caught even though no real
+    example was available to build it from."""
     text = (
         "Scoring\n"
         "Passing\n"
         "Every 25 passing yards (PY25)1\n"
         "TD Pass (PTD)4\n"
+        "Each Completion (INC)1\n"
         "50+ yard TD pass bonus (PTD50)1\n"
         "Interceptions Thrown (INT)-2\n"
         "2pt Passing Conversion (2PC)2\n"
@@ -1431,8 +1438,9 @@ def test_espn_scoring_paste():
     assert r.scoring["ptsPerRecYd"] == 0.1
     assert r.scoring["ptsPerRecTD"] == 6
     assert r.scoring["ptsPerFumble"] == -2     # from Miscellaneous, not Passing/Rushing/Receiving
+    assert r.scoring["ptsPerCompletion"] == 1  # the synthetic "Each Completion" line
     assert r.ppr is None                       # this page never carries PPR; ESPN's own statId-53 owns it
-    assert len(r.scoring) == 8, r.scoring
+    assert len(r.scoring) == 9, r.scoring
 
     # Same-CODE collision across sections resolves by SECTION, not by the
     # "(INT)" code the two rows happen to share.

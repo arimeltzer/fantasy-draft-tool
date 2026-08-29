@@ -20,22 +20,24 @@ the other hand, labels every rule in plain English ("Passing Yards",
 gap for every category this app's scoring model actually represents.
 
 WHAT THIS APP CAN REPRESENT. `ScoringRules` (engine-core.js
-`resolveScoring`) covers exactly 8 offensive stat categories, all
+`resolveScoring`) covers exactly 9 offensive stat categories, all
 QB/RB/WR/TE: pass yards/TDs, interceptions, rush yards/TDs, rec yards/TDs,
-fumbles lost — plus `ppr` (receptions) at the top level of LeagueSettings.
-Kicker and Defense/Special Teams scoring (field goals by distance,
-points-allowed brackets, sacks, etc.) are NOT modeled as stat categories
-anywhere in this engine — K/DST valuation comes from historical fantasy-
-point totals directly, not a reconstructed stat line — so those rows come
-back as `unmapped` (visible, not silently dropped) rather than attempted.
-Per-category BONUS brackets ("5 points at 360 yards") and 40+-yard-TD
-bonuses are real Yahoo features this app's flat per-yard/per-TD model has
-no way to express; the base rate is used and the bonus is called out in
-`warnings` rather than silently ignored.
+fumbles lost, completions — plus `ppr` (receptions) at the top level of
+LeagueSettings. Kicker and Defense/Special Teams scoring (field goals by
+distance, points-allowed brackets, sacks, etc.) are NOT modeled as stat
+categories anywhere in this engine — K/DST valuation comes from historical
+fantasy-point totals directly, not a reconstructed stat line — so those
+rows come back as `unmapped` (visible, not silently dropped) rather than
+attempted. Per-category BONUS brackets ("5 points at 360 yards") and
+40+-yard-TD bonuses are real Yahoo features this app's flat per-yard/per-TD
+model has no way to express; the base rate is used and the bonus is called
+out in `warnings` rather than silently ignored.
 
 `parse_espn_scoring_page` below is the ESPN counterpart, built and verified
 against a real captured ESPN Scoring page — same discipline, same scope
-(the 8 `ScoringRules` fields; everything else surfaced as `unmapped`).
+(the 9 `ScoringRules` fields; everything else surfaced as `unmapped`).
+Completions specifically is a documented exception to "verified against a
+real page" — see `_ESPN_FLAT_LABELS`'s own comment.
 """
 from __future__ import annotations
 
@@ -69,6 +71,7 @@ _OFFENSE_FIELDS: dict[str, tuple[str, str]] = {
     "receiving yards": ("ptsPerRecYd", "rate"),
     "receiving touchdowns": ("ptsPerRecTD", "flat"),
     "fumbles lost": ("ptsPerFumble", "flat"),
+    "completions": ("ptsPerCompletion", "flat"),
 }
 
 _RATE_RE = re.compile(r"([\d.]+)\s*yards?\s*per\s*point", re.IGNORECASE)
@@ -216,6 +219,16 @@ _ESPN_FLAT_LABELS = {
     "td rush": "ptsPerRushTD",
     "td reception": "ptsPerRecTD",
     "total fumbles lost": "ptsPerFumble",
+    # UNCONFIRMED against a real captured page — the sample this parser was
+    # built from didn't score completions, so this specific label was never
+    # observed. Included anyway because it follows the EXACT "Each <event>"
+    # naming convention confirmed five separate times in that real page
+    # (Each Sack, Each PAT Made, Each Fumble Recovered, Each Interception,
+    # Each Safety), and — unlike guessing a numeric statId — a wrong label
+    # here fails SAFELY: it just won't match, and the row falls to
+    # `unmapped` (visible) rather than silently applying a wrong value.
+    # Update this the moment a real ESPN league's completions row is seen.
+    "each completion": "ptsPerCompletion",
 }
 
 # ScoringRules field -> regex pulling the yardage denominator out of an

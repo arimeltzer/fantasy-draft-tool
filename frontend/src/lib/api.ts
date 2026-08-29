@@ -238,6 +238,7 @@ export interface ScoringRules {
   ptsPerRushYd?: number; ptsPerRushTD?: number;
   ptsPerRecYd?: number; ptsPerRecTD?: number;
   ptsPerFumble?: number;
+  ptsPerCompletion?: number;
 }
 
 export interface LeagueSettings {
@@ -451,7 +452,7 @@ export const api = {
 
   /** Match report for a platform's own Scoring settings page, pasted as
    *  text — no write, no admin gate, no player pool (this is league-wide
-   *  RULES, not per-player values). Only the 8 ScoringRules categories this
+   *  RULES, not per-player values). Only the 9 ScoringRules categories this
    *  app actually models come back in `scoring` (+`ppr`, when the page
    *  named a reception value); `unmapped` lists everything the page had
    *  that this engine has no field for (Kicker/Defense rules, bonus-only
