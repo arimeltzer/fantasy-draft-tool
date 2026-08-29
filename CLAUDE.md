@@ -1695,6 +1695,31 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   different question (which weeks leave a STARTER SLOT short) from this one
   (which specific candidate on the board shares a week with a player I
   already have).
+- **Nomination bye-gap exclusion (shipped, auction only) — a follow-up on
+  the flag above, once bench mode starts.** A user's own explicit ask:
+  "when we get into bench mode, the nomination should not show players with
+  bye conflicts if I can't fill my spots on a bye week. For example, if I
+  only have one QB or TE, I should not nominate a QB or TE with the same
+  bye week. For RB/WR — don't nominate a player whose bye week overlaps...
+  if I don't have enough players to fill the roster that week." Stricter
+  than `byeCollisions` (which flags ANY same-position/same-week pairing,
+  including harmless ones) and scoped to a different list entirely — this
+  EXCLUDES a candidate from `AuctionRoom.tsx`'s `nominations` ("Nominate
+  next", the who-to-put-up-for-bid panel), not the board or the "Targets to
+  consider" panel, and only once `openStartSlots.length === 0` (every
+  starting slot filled — the user's own "bench mode" framing).
+  `wouldCreateByeGap(p)` reuses `byeClash`'s existing "available < starters"
+  arithmetic directly rather than a new formula — its `unfilled > 0` is
+  exactly the signal needed. QB/TE are checked strictly against
+  `roster[pos]` (one starter slot, no FLEX partner) — matches "if I only
+  have one QB or TE"; RB/WR are pooled (`roster.RB + roster.WR +
+  roster.FLEX`, roster bytes from both positions combined) since either
+  fills that slot — matches "enough players to fill the roster," not
+  "enough at the exact position." `AuctionRoom.test.tsx`'s new describe
+  block pins both halves: excluded once bench mode starts (QB, TE, and the
+  pooled RB/WR case, plus a bye-free control that's never excluded), and
+  explicitly NOT excluded while a starting slot is still open — proving the
+  gate is real, not just always-on filtering.
 - **`byeLineupMult` reused as an auction bench-phase `$Max` multiplier
   (shipped, roadmap 3.9)** — 2.4's own record explicitly left this as a
   named next step ("a smaller extrapolation than a new model... but still

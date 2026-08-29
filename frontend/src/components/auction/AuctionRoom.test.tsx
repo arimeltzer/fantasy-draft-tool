@@ -624,3 +624,77 @@ describe("AuctionRoom bye-collision flag (real-time, unpriced)", () => {
     expect(cells.length).toBeGreaterThan(0);
   });
 });
+
+/**
+ * A follow-up ask on the same bye-collision feature, once it's unpriced
+ * display only: "when we get into bench mode, the nomination should not
+ * show players with bye conflicts if I can't fill my spots on a bye week."
+ * Stricter than the flag above — this EXCLUDES a candidate from "Nominate
+ * next" specifically, and only once every starting slot is filled (recall
+ * `nominations` is the "who to put up for bid" panel, not "your targets").
+ * QB/TE are checked strictly (one starter slot, no FLEX partner); RB/WR are
+ * pooled with FLEX, since either position covers that slot.
+ */
+describe("AuctionRoom nomination bye-gap exclusion (bench phase only)", () => {
+  // SETTINGS.roster: QB1/RB2/WR2/TE1/FLEX1 — 7 starters. ATL and CAR both
+  // miss week 3 per SCHEDULE_FIXTURE; XX and CIN play every week (no bye).
+  const NOM_BOARD = [
+    player({ id: 1, name: "MyQB", pos: "QB", team: "ATL" }),
+    player({ id: 2, name: "CandQB", pos: "QB", team: "CAR" }),
+    player({ id: 3, name: "MyTE", pos: "TE", team: "ATL" }),
+    player({ id: 4, name: "CandTE", pos: "TE", team: "CAR" }),
+    player({ id: 5, name: "MyRB1", pos: "RB", team: "CAR" }),
+    player({ id: 6, name: "MyRB2", pos: "RB", team: "XX" }),
+    player({ id: 7, name: "MyWR1", pos: "WR", team: "XX" }),
+    player({ id: 8, name: "MyWR2", pos: "WR", team: "XX" }),
+    player({ id: 9, name: "MyFlex", pos: "RB", team: "XX" }),
+    // Shares week-3 with MyRB1 — the RB/WR/FLEX pool (5 starters) only has
+    // ONE other body on a known bye (MyRB1, week 3) and it matches, so
+    // availability for week 3 is 0 — a real shortfall, not merely "shares a
+    // bye with someone."
+    player({ id: 10, name: "CandRB", pos: "RB", team: "ATL" }),
+    // No bye at all in this fixture — never excluded, whatever phase.
+    player({ id: 11, name: "SafeRB", pos: "RB", team: "CIN" }),
+  ];
+  const nomRoom = () => (
+    <AuctionRoom league={AUCTION_LEAGUE} settings={SETTINGS} board={NOM_BOARD} leagueId={1} />
+  );
+  const nominateNext = () => screen.getByText("Nominate next").closest(".mb-4") as HTMLElement;
+  const draftMine = (ids: number[]) => useDraftStore.setState({
+    leagueId: 1, syncing: false,
+    picks: ids.map((id, i) => ({
+      pickId: i + 1, playerId: id, overallPick: i + 1, mine: true, teamId: null, price: 10, slot: null,
+    })),
+  });
+
+  it("excludes QB/TE/RB candidates that would create a real bye-week gap, once every starter is filled", async () => {
+    // Fill all 7 starting slots: QB(1), RB(5,6), WR(7,8), TE(3), FLEX(9).
+    draftMine([1, 5, 6, 7, 8, 3, 9]);
+    renderInApp(nomRoom());
+    // useByeWeeks() resolves async (react-query) — the FIRST render has no
+    // bye data yet, so the exclusion can't have applied yet either. `waitFor`
+    // retries each assertion until it settles rather than asserting against
+    // that initial paint.
+    // Only 1 QB rostered (week-3 bye) -> a 2nd QB on the same week leaves
+    // week 3 with zero available QBs.
+    await waitFor(() => expect(within(nominateNext()).queryByText("CandQB")).toBeNull());
+    // Same logic, TE.
+    await waitFor(() => expect(within(nominateNext()).queryByText("CandTE")).toBeNull());
+    // Pooled RB/WR/FLEX: MyRB1 (week 3) is the only known bye in the pool,
+    // and CandRB shares it -> week 3 availability in that pool is 0.
+    await waitFor(() => expect(within(nominateNext()).queryByText("CandRB")).toBeNull());
+    // Control: a genuinely bye-free candidate is never excluded — proves the
+    // panel isn't just empty by the time the above three settle.
+    expect(within(nominateNext()).getByText("SafeRB")).toBeTruthy();
+  });
+
+  it("does NOT exclude the same bye-conflicted QB before bench mode (starters still open)", async () => {
+    // Everything but one RB slot is filled, so RB is still an open starting
+    // slot — explicitly NOT bench phase yet — while keeping the undrafted
+    // pool small enough that CandQB isn't crowded out of the top-5 slice by
+    // unrelated nomination scoring.
+    draftMine([1, 6, 7, 8, 3, 9]);
+    renderInApp(nomRoom());
+    await waitFor(() => expect(within(nominateNext()).getByText("CandQB")).toBeTruthy());
+  });
+});

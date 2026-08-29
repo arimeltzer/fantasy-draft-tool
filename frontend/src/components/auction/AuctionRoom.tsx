@@ -13,7 +13,7 @@ import {
 } from "@/engine/auction-calibration.js";
 import { bidCeiling, remainingStartingSlots, firstBackupBoost, benchStackWarning, FLEX_SIBLING } from "@/engine/budget-path.js";
 import { maxUseful } from "@/engine/snake-engine.js";
-import { byeCollisions } from "@/engine/bye-weeks.js";
+import { byeCollisions, byeClash } from "@/engine/bye-weeks.js";
 import { byeLineupMult } from "@/engine/bye-lineup-value.js";
 import { useByeWeeks } from "@/hooks/useByeWeeks";
 import {
@@ -337,16 +337,10 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
     [availDollar],
   );
 
-  const nominations = useMemo(() => {
-    const ds = { oppBudgets, marketById, fractionDone };
-    return availDollar
-      .map((p) => ({ p, ...nominationScore(p, ds) }))
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 5);
-  }, [availDollar, oppBudgets, marketById, fractionDone]);
-
   // Budget path (roadmap 3.3): which starting slots are still open, and how
-  // much of the budget is spoken for by bench/K/DST at minimum bid.
+  // much of the budget is spoken for by bench/K/DST at minimum bid. Moved
+  // ahead of `nominations` below (was declared after it) so the bench-phase
+  // gate there (`openStartSlots.length === 0`) has something to read.
   const { slots: openStartSlots, reserveSpots } = useMemo(
     () => remainingStartingSlots(settings.roster as unknown as Record<string, number>, minePlayers),
     [settings.roster, minePlayers],
@@ -355,6 +349,48 @@ export default function AuctionRoom({ league, settings, board, leagueId }: Props
   // every slot the DP does not optimize (see budget-path.js's stated
   // approximations). Never negative.
   const dpBudget = Math.max(0, myBudgetLeft - reserveSpots);
+
+  // Bench-phase nomination exclusion (a user's own explicit ask): once
+  // starters are filled, don't RECOMMEND nominating a player whose bye would
+  // leave a real week-of-the-season gap — not merely "shares a bye with
+  // someone" (that's `byeWarnByPlayer` above, deliberately unpriced and
+  // still shown on the board so the drafter decides), but the specific case
+  // where you would not have enough bodies to start that week AT ALL. Reuses
+  // byeClash's own "available < starters" arithmetic rather than a new one —
+  // its `unfilled` is exactly this signal. QB/TE are checked strictly
+  // (one starter slot, no FLEX partner: "if I only have one QB or TE, don't
+  // nominate one on the same bye"); RB/WR are pooled with FLEX, since either
+  // position can cover that slot ("enough players to fill the roster that
+  // week", not enough at the exact position).
+  const wouldCreateByeGap = useCallback((p: BoardPlayer): boolean => {
+    if (!byeByTeam || !p.team) return false;
+    const bye = byeByTeam[p.team];
+    if (bye == null) return false;
+    const roster = settings.roster as unknown as Record<string, number>;
+    if (p.pos === "QB" || p.pos === "TE") {
+      const byes = myRosterByes.filter((r) => r.pos === p.pos).map((r) => r.bye);
+      return byeClash(bye, byes, roster[p.pos] || 0).unfilled > 0;
+    }
+    if (p.pos === "RB" || p.pos === "WR") {
+      const byes = myRosterByes
+        .filter((r) => r.pos === "RB" || r.pos === "WR")
+        .map((r) => r.bye);
+      const starters = (roster.RB || 0) + (roster.WR || 0) + (roster.FLEX || 0);
+      return byeClash(bye, byes, starters).unfilled > 0;
+    }
+    return false;
+  }, [byeByTeam, myRosterByes, settings.roster]);
+
+  const nominations = useMemo(() => {
+    const ds = { oppBudgets, marketById, fractionDone };
+    const pool = openStartSlots.length
+      ? availDollar
+      : availDollar.filter((p) => !wouldCreateByeGap(p));
+    return pool
+      .map((p) => ({ p, ...nominationScore(p, ds) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+  }, [availDollar, oppBudgets, marketById, fractionDone, openStartSlots, wouldCreateByeGap]);
   const priceOfPlayer = useCallback(
     (p: BoardPlayer) => marketById[p.id as number] ?? 1,
     [marketById],
