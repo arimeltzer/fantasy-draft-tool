@@ -3955,6 +3955,66 @@ range in either direction if a boundary value wins.
 beats it by `mean/SE > 2` on the HELD-OUT split. An in-sample win alone is
 not evidence, same bar every gate in this document uses.
 
+**FIRST-PASS RESULT (12 seeds × slots {1,4,7,10}, GitHub Actions runs
+[QB](https://github.com/arimeltzer/fantasy-draft-tool/actions/runs/33803752719)/
+[TE](https://github.com/arimeltzer/fantasy-draft-tool/actions/runs/33803760583))
+— **TE confirms the shipped default; QB surfaces a real signal that needs a
+bigger run before it ships.**
+
+TE (shipped `teMinRound=4`): every candidate tested is worse than or
+indistinguishable from shipped on the held-out split — round 4 is not just
+untested, it is the best value in the tested range:
+
+| round | fit | held |
+|---|---|---|
+| 1 | -4.4 ± 7.4 (t=-0.60) | -23.4 ± 6.9 (t=**-3.39**) |
+| 2 | -15.7 ± 7.8 (t=-2.01) | -21.8 ± 6.9 (t=**-3.16**) |
+| 3 | -12.2 ± 5.7 (t=-2.15) | -14.4 ± 6.5 (t=**-2.21**) |
+| 4 (shipped) | 0 | 0 |
+| 5 | -5.2 ± 6.2 (t=-0.84) | -8.6 ± 6.1 (t=-1.42) |
+| 6 | -10.4 ± 7.4 (t=-1.40) | -15.9 ± 7.6 (t=**-2.10**) |
+| 7 | -12.5 ± 7.7 (t=-1.61) | -33.5 ± 7.3 (t=**-4.59**) |
+
+**No change to `teMinRound`.**
+
+QB (shipped `QB_MIN=8`) is messier, and reading it honestly needs more than
+the script's own mechanical "best held mean that clears the bar" pick
+(round 6) — that pick ignores whether a candidate's FIT and HELD signs
+agree, which is exactly the kind of consistency check the fit/held split
+exists to provide:
+
+| round | fit | held |
+|---|---|---|
+| 5 | -49.8 ± 8.8 (t=**-5.62**) | +24.4 ± 8.3 (t=**2.94**) — **sign flip** |
+| 6 | -19.5 ± 7.0 (t=**-2.77**) | +26.7 ± 5.9 (t=**4.49**) — **sign flip** |
+| 7 | +26.1 ± 4.9 (t=**5.27**) | +16.0 ± 4.7 (t=**3.39**) — **consistent** |
+| 8 (shipped) | 0 | 0 |
+| 9 | -42.1 ± 6.1 (t=-6.87) | -23.9 ± 4.8 (t=-4.97) |
+| 10 | -63.5 ± 7.5 (t=-8.49) | -48.0 ± 6.6 (t=-7.29) |
+| 11 | -53.7 ± 7.3 (t=-7.35) | -45.0 ± 7.5 (t=-5.96) |
+
+Rounds 5 and 6 both clear `|t|>2` held-out, but their FIT-split sign is the
+OPPOSITE of their held-out sign — moving QB_MIN to 5 or 6 measurably HURT on
+2017-2021 and measurably HELPED on 2022-2025. That is the specific pattern
+the fit/held split exists to catch: a value that only looks good on the
+seasons it wasn't checked against is a candidate for "this happens to fit
+recent seasons' quirks," not a structural improvement, however large its
+held-out t-value. **Round 7 is different** — the ONLY candidate with the
+SAME sign, both clearing significance, in BOTH splits (+26.1 fit, +16.0
+held) — a real, consistent, one-round-earlier signal. Rounds 9-11
+(later than shipped) are uniformly and heavily worse in both splits,
+confirming the gate direction matters, not just its exact value.
+
+**Not shipped yet.** Round 7's effect size (+16 to +26 pts) is larger than
+most gates that DID ship in this document (2.4's own confirmed effect was
++4.67 pts), but it rests on the same n (192-240 paired drafts) that made
+2.4's and 3.9's own FIRST passes read as "underpowered, not null" before a
+~4x larger run confirmed them — and a ROUND GATE is a binary block, a
+bigger behavioral lever than either of those multipliers, so getting it
+wrong costs more than getting a multiplier wrong. Recommendation: run a
+bigger confirmatory sweep centered on rounds 6-8 (more seeds, more slots)
+before changing `QB_MIN`, same fork 2.4 and 3.9 both faced — user's call.
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.
