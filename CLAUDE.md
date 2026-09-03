@@ -1586,6 +1586,72 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   untouched — a different, already-transparent fallback for when every
   candidate is gated, not what was reported here.
 
+## Snake QB round gate backtested and shipped (roadmap 3.10)
+
+- **Asked directly, in the course of explaining `pickScore`'s hard round
+  gates**: "did we set these gates or were they based on the sims?"
+  Checked via git history rather than assumed: `DEFAULT_SNAKE_PARAMS`'s
+  `QB_MIN`/`QB2_MIN`/`teMinRound`/`te2MinRound` (and every other field in
+  `SLOT_DEFAULT`) are ported wholesale from the pre-repo offline research
+  model — `SLOT_DEFAULT` IS literally slot 2/3's config from the original
+  ten-slot grid search roadmap 0.2 collapsed away. **0.2 never tested
+  whether these VALUES are right — only whether TEN different values (one
+  per slot) beat ONE shared value.** The shared value itself had never
+  been fit or validated in this repo.
+- **Follow-up, when asked whether it's worth backtesting**: "assuming we
+  would go back further (earlier rounds) if we clear the kill gates, this
+  makes sense." `frontend/src/engine/round-gate-test.mjs` reuses
+  `draft-sim.mjs`'s `simulateDraft`/`realizedWeeklyPoints` (same pair every
+  gate since 2.4 has used, avoiding the circularity of scoring an agent on
+  the metric it optimizes) to sweep candidate rounds against the real
+  shipped config, one mode at a time (`--mode QB` touches
+  `QB_MIN`/`QB2_MIN`, `--mode TE` touches `teMinRound`/`te2MinRound`, each
+  keeping the shipped gap between the pair). **Guards against repeating
+  0.2's own root problem**: fit on seasons up to `--fitUpto` (default
+  2021), hold out the rest — a candidate only counts if it clears
+  `mean/SE > 2` on the HELD-OUT split, and unlike 0.2's split (fixed by
+  when the original, unreproducible grid search happened to run), this one
+  is chosen deliberately: fit on OLDER seasons, validate on the more
+  RECENT ones, the direction that matters for a tool drafting in 2026.
+  Search range spans genuinely earlier rounds (QB 5-11, TE 1-7), not a
+  narrow band hugging the inherited value, per the instruction above.
+- **First pass** (12 seeds × slots {1,4,7,10}): TE confirmed the shipped
+  `teMinRound=4` cleanly — every candidate tested was worse than or
+  indistinguishable from it on held-out data. QB was messier: rounds 5-6
+  cleared the held-out bar but FLIPPED SIGN against their own fit-split
+  result (worse 2017-2021, better 2022-2025) — exactly the pattern the
+  fit/held split exists to catch, so neither was trusted despite
+  technically clearing the mechanical bar. Round 7 was the one candidate
+  with the SAME sign, both splits significant (+26.1 fit, +16.0 held) — a
+  real, consistent, one-round-earlier signal, bigger than most gates that
+  have shipped in this codebase but resting on the same n that made 2.4's
+  and 3.9's own first passes read as "promising but underpowered."
+  Recommended (not shipped): a bigger confirmatory run before touching
+  `QB_MIN`, the same fork 2.4/3.9 both faced.
+- **"Yes, run the bigger confirmatory sweep for QB_MIN."** 48 seeds × slots
+  {1,3,5,7,9} (~5x scale-up, same ratio class as 2.4's/3.9's own second
+  runs), narrowed to rounds 6-9 (10-11 already conclusively worse at the
+  first pass). Round 7 held up at the same magnitude (+19.2 fit, +26.4
+  held) with the confidence up an order of magnitude (t=8-13 vs 3-5 at the
+  smaller n) — the signature of a real, reproducible effect. Round 6's
+  sign flip got MORE pronounced with more data (both sides `|t|>6`), which
+  strengthens rather than weakens the case against it: it isn't sampling
+  noise settling down, it's a genuinely era-dependent pattern (helps
+  2022-2025, hurts 2017-2021) that the fit/held split exists precisely to
+  screen out — a rule that inverts across eras isn't a stable improvement.
+- **SHIPPED.** `DEFAULT_SNAKE_PARAMS.SLOT_DEFAULT` in `snake-engine.js`:
+  `QB_MIN: 8 → 7`, `QB2_MIN: 9 → 8` (keeping the shipped +1 gap between
+  them, itself never tested and out of scope here). `teMinRound`/
+  `te2MinRound` are unchanged — already confirmed as the best values in
+  the tested range at the first pass. This is the first constant in
+  `DEFAULT_SNAKE_PARAMS` that is actually backtested IN THIS REPO rather
+  than inherited from the pre-repo offline model. No selftest depended on
+  the literal shipped value (`snake-engine.selftest.mjs`/`draft-sim
+  .selftest.mjs` both construct their own explicit `QB_MIN` overrides for
+  what they test), so nothing else needed updating. Full frontend build +
+  selftest + vitest (103/103) passes clean with the new default. See
+  `docs/ROADMAP.md` 3.10 for the full result tables from both runs.
+
 ## Bye-aware lineup value replaces `byeClash` in the snake recommender (roadmap 2.4)
 
 - **The idea, proposed directly while revisiting the (rejected) roadmap 2.3**:

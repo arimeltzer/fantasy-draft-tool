@@ -65,8 +65,30 @@ export const DEFAULT_SNAKE_PARAMS = {
   // The config every draft slot now uses — see SLOTS below for why there is
   // only one. Held-out simulation could not distinguish ten tuned configs from
   // this single shared one, so this is the whole per-slot strategy.
+  //
+  // QB_MIN/QB2_MIN are the one pair here actually BACKTESTED in this repo
+  // (roadmap 3.10) — every other field in this object, like the rest of
+  // DEFAULT_SNAKE_PARAMS, is still ported wholesale from the pre-repo
+  // offline research model. Asked directly whether QB_MIN=8/teMinRound=4
+  // were fit here or inherited: git history showed inherited (SLOT_DEFAULT
+  // IS slot 2/3's config from the original ten-slot grid search 0.2
+  // collapsed). `round-gate-test.mjs` swept QB_MIN 5-11 against realized
+  // weekly points, fit on 2017-2021 / held out on 2022-2025: round 7 was
+  // the ONE candidate with the SAME sign, both splits significant, in
+  // BOTH the first pass (n=240/192: +26.1 fit t=5.27, +16.0 held t=3.39)
+  // and a ~5x-bigger confirmatory run (n=1200/960: +19.2 fit t=8.02,
+  // +26.4 held t=13.09) — rounds 5/6 also cleared the held-out bar in
+  // isolation but FLIPPED SIGN against their own fit-split result at BOTH
+  // sample sizes (round 6: -19.7 fit t=-6.49 / +28.9 held t=10.91 on the
+  // bigger run), the exact "looks good only on the seasons it wasn't
+  // checked against" pattern the fit/held split exists to catch, so
+  // neither was trusted despite technically clearing the mechanical bar.
+  // teMinRound was also swept (1-7) and confirmed AS SHIPPED — every
+  // candidate tested was worse than or indistinguishable from 4 on the
+  // held-out split, so it is untouched. See docs/ROADMAP.md 3.10 for the
+  // full tables.
   SLOT_DEFAULT: {
-    QB_MIN: 8, QB2_MIN: 9,
+    QB_MIN: 7, QB2_MIN: 8,
     WR_P1: 1.35, WR_P2: 1.25, WR_P3: 1.12, WR_P4: 1.06,
     ADP_W: 0.15, AGE29: 1.00, AGE31: 1.00, adpAbsActive: false,
   },

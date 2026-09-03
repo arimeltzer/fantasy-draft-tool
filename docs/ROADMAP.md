@@ -3906,7 +3906,7 @@ selftests, `npm run build`, and `npm test`'s 87 vitest assertions
 including `AuctionRoom.test.tsx`'s own budget-path coverage) passes clean
 with the change in place.
 
-### 3.10 Snake: backtest the QB/TE round gates (`QB_MIN`/`teMinRound`) — PRE-REGISTERED
+### 3.10 Snake: backtest the QB/TE round gates (`QB_MIN`/`teMinRound`) — DONE, QB_MIN shipped (8→7), teMinRound confirmed as shipped
 
 **Asked directly, in the course of explaining `pickScore`'s hard round
 gates**: are `QB_MIN`/`QB2_MIN`/`teMinRound`/`te2MinRound` (`snake-engine.js
@@ -4014,6 +4014,44 @@ bigger behavioral lever than either of those multipliers, so getting it
 wrong costs more than getting a multiplier wrong. Recommendation: run a
 bigger confirmatory sweep centered on rounds 6-8 (more seeds, more slots)
 before changing `QB_MIN`, same fork 2.4 and 3.9 both faced — user's call.
+
+**BIGGER RUN — CONFIRMS ROUND 7, DECISIVELY. "Yes, run the bigger
+confirmatory sweep for QB_MIN."** 48 seeds × slots {1,3,5,7,9} (a ~5x
+scale-up, same ratio class as 2.4's/3.9's own second runs), narrowed to
+rounds 6-9 (10/11 already conclusively worse in both splits at the first
+pass — no need to re-run them), GitHub Actions run
+[33809791940](https://github.com/arimeltzer/fantasy-draft-tool/actions/runs/33809791940):
+
+| round | fit (n=1200) | held (n=960) |
+|---|---|---|
+| 6 | -19.7 ± 3.0 (t=**-6.49**) | +28.9 ± 2.7 (t=**10.91**) — **sign flip persists** |
+| 7 | +19.2 ± 2.4 (t=**8.02**) | +26.4 ± 2.0 (t=**13.09**) — **consistent, confirmed** |
+| 8 (shipped) | 0 | 0 |
+| 9 | -39.1 ± 2.7 (t=-14.43) | -28.5 ± 2.2 (t=-13.04) |
+
+Round 7 held up at the same magnitude (+19-26 pts, same ballpark as the
+first pass's +16-26) with the confidence up an order of magnitude
+(t=8-13, vs 3-5 at the smaller n) — the signature of a real, reproducible
+effect, not noise that happened to look good once. Round 6's sign flip
+also got MORE pronounced with more data (both sides now `|t|>6`), which if
+anything strengthens the case against trusting it: it isn't sampling
+noise settling down, it's a genuinely era-dependent pattern (helps
+2022-2025, hurts 2017-2021) — exactly what the fit/held split exists to
+screen out, since a rule that inverts across eras isn't a stable
+improvement to ship. Round 9 stayed decisively worse in both splits.
+
+**SHIPPED.** `DEFAULT_SNAKE_PARAMS.SLOT_DEFAULT` in `snake-engine.js`:
+`QB_MIN: 8 → 7`, `QB2_MIN: 9 → 8` (keeping the shipped +1 gap between
+them — never itself tested, out of scope here). `teMinRound`/`te2MinRound`
+are unchanged — the first pass already confirmed the shipped values as
+the best in the tested range. No selftest depended on the literal shipped
+value (`snake-engine.selftest.mjs`/`draft-sim.selftest.mjs` both construct
+their own explicit QB_MIN overrides for what they test), so nothing else
+needed updating; full frontend build + selftest + vitest (103/103) passes
+clean with the new default in place. This is the first constant in
+`DEFAULT_SNAKE_PARAMS` that is actually backtested IN THIS REPO rather
+than ported from the pre-repo offline model — see the comment above
+`SLOT_DEFAULT` in `snake-engine.js` for the full reasoning inline.
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
