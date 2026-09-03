@@ -231,9 +231,21 @@ export function projectPoints(player, sc, P = DEFAULT_PARAMS) {
  * in defenses and kickers." Valuation (risk, blendExpertAll's skip) is left
  * alone — this is a display-only distinction, same as the rookies filter
  * itself.
+ *
+ * A SECOND over-broad case, reported live: "is there a way to distinguish
+ * rookies from players who did not play for other reasons last year
+ * (injury)? ... it is some of the players currently indicated as rookies."
+ * `player.rookie` means "no last/last2 to project from" — true for a
+ * genuine rookie AND for a returning veteran who missed all of last season
+ * (injury, suspension, ...). `yearsExp` (nflverse rosters, 0 for the
+ * current draft class — confirmed real, no nulls) is the ground-truth
+ * signal that tells them apart. `yearsExp == null` (roster fetch didn't
+ * have him) falls back to today's behavior — still filter-eligible —
+ * rather than guessing a veteran off the list on missing data.
  */
 export function isRookieFilterMatch(player) {
-  return !!player.rookie && player.pos !== "K" && player.pos !== "DST";
+  return !!player.rookie && player.pos !== "K" && player.pos !== "DST"
+    && (player.yearsExp == null || player.yearsExp === 0);
 }
 
 export function projectValue(player, sc, P = DEFAULT_PARAMS) {

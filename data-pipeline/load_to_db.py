@@ -124,21 +124,23 @@ def main():
         if pos not in ("QB", "RB", "WR", "TE", "K", "DST"):
             continue
         cur.execute("""
-            INSERT INTO fantasy_players (season, name, pos, team, age, proj, last, last2, ecr, adp, aav, fp_tier, injury)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s::jsonb)
+            INSERT INTO fantasy_players (season, name, pos, team, age, years_exp, proj, last, last2, ecr, adp, aav, fp_tier, injury)
+            VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s::jsonb)
             ON CONFLICT (season, name, pos, team) DO UPDATE SET
-                injury  = EXCLUDED.injury,
-                age     = EXCLUDED.age,
-                proj    = EXCLUDED.proj,
-                last    = EXCLUDED.last,
-                last2   = EXCLUDED.last2,
-                ecr     = EXCLUDED.ecr,
-                adp     = EXCLUDED.adp,
-                aav     = EXCLUDED.aav,
-                fp_tier = EXCLUDED.fp_tier
+                injury    = EXCLUDED.injury,
+                age       = EXCLUDED.age,
+                years_exp = EXCLUDED.years_exp,
+                proj      = EXCLUDED.proj,
+                last      = EXCLUDED.last,
+                last2     = EXCLUDED.last2,
+                ecr       = EXCLUDED.ecr,
+                adp       = EXCLUDED.adp,
+                aav       = EXCLUDED.aav,
+                fp_tier   = EXCLUDED.fp_tier
             RETURNING id
         """, (args.season, p["name"], pos, normalize_team(p.get("team"))[:5],
               int(p["age"]) if p.get("age") else None,
+              int(p["yearsExp"]) if p.get("yearsExp") is not None else None,
               json.dumps(p.get("proj")), json.dumps(p.get("last")),
               json.dumps(p.get("last2")), p.get("ecr"), p.get("adp"), p.get("aav"),
               p.get("fpTier"),

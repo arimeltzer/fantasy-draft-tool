@@ -1,0 +1,22 @@
+-- 007 — years of NFL experience on the player row.
+--
+-- create_all() never ALTERs an existing table, so this must run BEFORE the
+-- code that selects the column, or the ORM 500s on every /api/players call.
+--
+-- WHY: the board's `rookie` flag (engine-core.js projectPoints, "no last/
+-- last2 to project from") is correct for VALUATION -- no prior-season stats
+-- either way -- but conflates a TRUE rookie (drafted/signed this offseason)
+-- with a returning VETERAN who has no last-season stat line for some OTHER
+-- reason (season-ending injury, suspension, practice squad...). Reported
+-- live: "is there a way to distinguish rookies from players who did not
+-- play for other reasons last year? ... it is some of the players
+-- currently indicated as rookies." nflverse's own roster data settles this
+-- with a verified, real field (years_exp: 0 for the current draft class,
+-- confirmed against a real 2025 roster pull -- no nulls, no guessing).
+--
+-- Nullable: a player not in the fetched roster snapshot (rosters fetch
+-- failed, or he's not on any current-season roster yet) has no value here
+-- -- the "Rookies only" filter degrades to today's behavior (treat as
+-- rookie-eligible) rather than guessing in either direction.
+
+ALTER TABLE fantasy_players ADD COLUMN IF NOT EXISTS years_exp integer;

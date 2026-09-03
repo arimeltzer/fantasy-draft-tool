@@ -67,7 +67,7 @@ VBD/auction values client-side from the player rows + league settings.
 
 ## Database tables
 
-- `fantasy_players` `(season, name, pos, team, age, proj jsonb, last jsonb, last2 jsonb, ecr, adp, aav)`, uniq `(season,name,pos,team)` — `last2` = 2-years-ago totals for the projection blend; `aav` = FantasyPros consensus auction average value (drives `marketPrice()`, falls back to the modeled log curve when null)
+- `fantasy_players` `(season, name, pos, team, age, years_exp, proj jsonb, last jsonb, last2 jsonb, ecr, adp, aav)`, uniq `(season,name,pos,team)` — `last2` = 2-years-ago totals for the projection blend; `aav` = FantasyPros consensus auction average value (drives `marketPrice()`, falls back to the modeled log curve when null); `years_exp` = years of NFL experience from nflverse rosters (0 for the current draft class), distinguishing a true rookie from a returning veteran with no last-season stats for the "Rookies only" filter
 - `fantasy_draft_picks` also has `team_id int` (opponent slot; index into `League.settings.opponents[]`, NULL for mine)
 - `fantasy_schedule` `(season, team, week, opp)`, uniq `(season,team,week)`
 - `fantasy_player_logs` `(season, player_id, week, opp, fp)`, uniq `(season,player_id,week)`
@@ -1336,6 +1336,54 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   predicate AND their rookie count — display-only, `BoardPlayer.rookie`
   itself and everything downstream of it (risk, `blendExpertAll`'s skip)
   is untouched.
+- **A THIRD over-broad case, asked directly rather than waiting for it to
+  be reported: "is there a way to distinguish rookies from players who did
+  not play for other reasons last year (injury)? ... it is some of the
+  players currently indicated as rookies."** Correct, and a different root
+  cause from K/DST — `player.rookie` means "no `last`/`last2` to project
+  from," which is equally true for a genuine rookie AND a returning
+  veteran who missed all of last season (injury, suspension, practice
+  squad...). The clearest instance was traced to `projections.py`'s
+  "added" block (players FantasyPros ranks but nflverse has zero games for
+  last season — the exact population this question is about): it
+  HARDCODED `"rookie": True` for every one of them, no distinction
+  possible at all. That specific key turned out to be dead weight past
+  that file (`load_to_db.py` has no `rookie` column — the live signal the
+  frontend reads is computed at runtime by `projectPoints()` from
+  `last`/`last2` presence), but the same conflation reaches the frontend
+  through that runtime path regardless, in `isRookieFilterMatch`.
+  - **Checked whether a real disambiguating signal exists before building
+    anything** (same discipline as `injury_probe.py`/0.3): nflverse's own
+    roster data carries `years_exp`, confirmed real against a live 2025
+    pull — 0 nulls across 3,137 players, `years_exp == 0` lining up exactly
+    with the actual incoming draft class (spot-checked: a real 2025 rookie
+    reads 0, Josh Allen reads 7, Aaron Rodgers reads 20).
+  - **Threaded through as a real column**, not folded into `last`/`proj`
+    (a player-attribute like `age`, not a per-season stat — and folding it
+    into `last` specifically would leave it unreachable for exactly the
+    zero-`last` population this exists to disambiguate). Migration
+    `007_add_years_exp.sql`, `Player.years_exp`, `PlayerOut.years_exp` ->
+    `ApiPlayer.years_exp` -> `useBoard.ts toEnginePlayer` ->
+    `BoardPlayer.yearsExp` — same shape as `fp_tier`/`fpTier` before it.
+    `ingest_nflverse.py`'s existing roster pull (already fetching
+    team/age) now also captures `years_exp` for matched players;
+    `projections.py load_years_exp()` does its own pull (matched players
+    may be missing it if that run's roster fetch partially failed —
+    fills the gap, never overwrites) and is what actually fixes the
+    "added" block: `"rookie": exp is None or exp == 0` replaces the old
+    hardcoded `True`, and `yearsExp` rides along on every added player too.
+  - **`isRookieFilterMatch` gains the check**: `yearsExp == null` (roster
+    fetch never had him) falls back to today's behavior — still
+    filter-eligible — rather than guessing a real rookie off the list on
+    missing data; `yearsExp > 0` is the one case with actual positive
+    evidence he isn't a rookie, and is excluded. Deliberately NOT touched:
+    valuation (`risk`, `blendExpertAll`'s skip, `rookieProjection`'s
+    ADP/ECR curve) — same "display-only" boundary the K/DST fix drew,
+    since correcting THOSE for this population is a bigger, separately
+    justified claim (a returning healthy veteran's true talent is better
+    known than an unproven rookie's, in a way the current rookie-curve
+    fallback doesn't capture) that would need its own backtest, not a
+    silent side effect of a filter fix.
 
 ## Outcome distributions (built + validated, roadmap 2.1 — NOT wired in)
 

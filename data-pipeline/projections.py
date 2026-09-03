@@ -42,6 +42,38 @@ def _col(df, *names):
             return n
     return None
 
+def load_years_exp(season) -> dict:
+    """{(norm_name, pos): years_exp} from nflverse rosters — 0 for the
+    current draft class, confirmed real against a live pull (no nulls).
+
+    WHY: the "added" block below used to hardcode `rookie: True` for every
+    player missing from the nflverse-stats base, which conflates a TRUE
+    rookie with a returning VETERAN who has no last-season stat line for
+    some other reason (season-ending injury, suspension, ...) — exactly the
+    population that's missing from the base and thus flows through here.
+    Reported live: "is there a way to distinguish rookies from players who
+    did not play for other reasons last year?" This is that distinction,
+    from ground truth rather than an inferred absence of stats.
+    """
+    try:
+        ros = _pd(nfl.load_rosters(season))
+    except Exception as e:
+        print(f"  ! load_rosters({season}) unavailable ({e}); years_exp left blank")
+        return {}
+    name_col = _col(ros, "full_name", "player_name")
+    pos_col = _col(ros, "position")
+    exp_col = _col(ros, "years_exp")
+    if not (name_col and pos_col and exp_col):
+        return {}
+    out = {}
+    for r in ros.itertuples():
+        pos = getattr(r, pos_col, None)
+        exp = getattr(r, exp_col, None)
+        if pos is None or exp is None or exp != exp:   # NaN guard
+            continue
+        out[(norm(getattr(r, name_col, None)), pos)] = int(exp)
+    return out
+
 # projection-CSV header synonyms -> engine `proj` fields (lowercased match)
 PROJ_SYN = {
     "passYd": ["pass_yds", "passing_yards", "pass_yards", "payds", "pass yds"],
@@ -181,6 +213,13 @@ def main():
         except Exception as e:
             print(f"  ! FantasyPros injuries failed ({e}); no injury flags this run")
 
+    # --- years of NFL experience --- distinguishes a TRUE rookie from a
+    # returning veteran with no last-season stats for some other reason
+    # (injury, suspension, ...). See load_years_exp's own docstring.
+    years_exp = load_years_exp(args.season)
+    if years_exp:
+        print(f"Pulling years of experience from nflverse rosters ({args.season})…  {len(years_exp)} players")
+
     n_ecr = n_adp = n_proj = n_aav = n_fp_tier = 0
     seen = set()
     for p in players:
@@ -196,26 +235,46 @@ def main():
             p["aav"] = aav[k]; n_aav += 1
         if k in fp_tier:
             p["fpTier"] = fp_tier[k]; n_fp_tier += 1
+        # Fill the gap only — ingest_nflverse.py's own roster pull already
+        # sets this for most matched players; this backfills anyone it
+        # missed (a failed/partial roster fetch that run) rather than
+        # overwriting a real value with a possibly-stale second pull.
+        if p.get("yearsExp") is None and k in years_exp:
+            p["yearsExp"] = years_exp[k]
         p["injury"] = injuries.get(k)
 
     # --- players the base doesn't have at all -------------------------------
-    # The base is built from LAST season's stats, so anyone who never played an
-    # NFL snap isn't in it — i.e. every incoming rookie. Enriching only existing
-    # rows meant a ranked rookie silently didn't exist on the draft board, which
-    # is worse than a bad projection: you can't draft, or plan around, a player
-    # the tool never shows. Add anyone FantasyPros ranks that we're missing.
+    # The base is built from LAST season's stats, so anyone with zero games
+    # last season isn't in it — every incoming rookie, AND a veteran who
+    # missed the whole season (injury, suspension, ...). Enriching only
+    # existing rows meant a ranked player like this silently didn't exist on
+    # the draft board, which is worse than a bad projection: you can't
+    # draft, or plan around, a player the tool never shows. Add anyone
+    # FantasyPros ranks that we're missing.
+    #
+    # `rookie` here used to be hardcoded True for every one of these —
+    # correct for the true rookies, WRONG for the returning-veteran case,
+    # and this exact code path is where that population enters the board
+    # (see load_years_exp's docstring). Note this key is presently dead
+    # weight past this file (load_to_db.py has no `rookie` column — the
+    # live signal the frontend actually reads is computed at runtime by
+    # engine-core.js projectPoints() from last/last2 presence) — computed
+    # correctly anyway rather than left knowingly wrong, in case a future
+    # consumer starts reading it.
     added = 0
     if fp_rank:
         for k, meta in fp_rank.items():
             if k in seen or not meta.get("name"):
                 continue
             name, pos = meta["name"], k[1]
+            exp = years_exp.get(k)
             players.append({
                 "id": None,
                 "name": name,
                 "pos": pos,
                 "team": normalize_team(meta.get("team")),
                 "age": None,
+                "yearsExp": exp,
                 # No NFL history — the engine already handles this (it leans on
                 # market rank when `last` is absent, and the board labels it
                 # "no '25").
@@ -226,7 +285,7 @@ def main():
                 "aav": aav.get(k),
                 "fpTier": fp_tier.get(k),
                 "injury": injuries.get(k),
-                "rookie": True,
+                "rookie": exp is None or exp == 0,
             })
             seen.add(k)
             added += 1

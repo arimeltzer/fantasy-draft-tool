@@ -55,6 +55,13 @@ class Player(Base):
     pos    = Column(String(4), nullable=False)
     team   = Column(String(5), nullable=False)
     age    = Column(Integer, nullable=True)
+    # Years of NFL experience (migration 007) — 0 for the current draft
+    # class, confirmed real against nflverse rosters (no nulls). Lets the
+    # "Rookies only" filter tell a TRUE rookie apart from a returning
+    # veteran with no last-season stats for some other reason (injury,
+    # suspension, ...) — both currently read as `rookie: true` from
+    # projectPoints()'s "no last/last2 to project from" branch.
+    years_exp = Column(Integer, nullable=True)
     proj   = Column(JSONB, nullable=True)
     last   = Column(JSONB, nullable=True)
     last2  = Column(JSONB, nullable=True)   # 2-years-ago season totals for the projection blend

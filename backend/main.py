@@ -215,6 +215,7 @@ class PlayerOut(BaseModel):
     pos: str
     team: str
     age: Optional[int]
+    years_exp: Optional[int]
     proj: Optional[dict]
     last: Optional[dict]
     last2: Optional[dict]

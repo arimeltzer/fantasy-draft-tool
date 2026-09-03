@@ -19,6 +19,10 @@ export interface Player {
   pos: "QB" | "RB" | "WR" | "TE" | "K" | "DST";
   team: string;
   age?: number;
+  /** Years of NFL experience — 0 for the current draft class. Distinguishes
+   *  a TRUE rookie from a returning veteran with no last-season stats for
+   *  some other reason; see `isRookieFilterMatch`. */
+  yearsExp?: number | null;
   proj?: StatLine;
   last?: StatLine | null;
   last2?: StatLine | null;
@@ -149,7 +153,7 @@ export declare function projectValue(
 /** Is this row worth surfacing in the "rookies only" board filter? Narrower
  *  than the `rookie` flag itself: excludes K/DST, where "no prior-season
  *  stats" is a data-completeness artifact rather than an actual rookie. */
-export declare function isRookieFilterMatch(player: { pos: string; rookie?: boolean }): boolean;
+export declare function isRookieFilterMatch(player: { pos: string; rookie?: boolean; yearsExp?: number | null }): boolean;
 /** Per-position weight on OUR model when blending with the FantasyPros expert
  *  projection (roadmap 0.1). QB/RB/TE/WR are backtested; K/DST stay at 1.0
  *  (pure model — never tested). */

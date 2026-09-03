@@ -9,6 +9,11 @@ export interface ApiPlayer {
   pos: string;
   team: string;
   age: number | null;
+  /** Years of NFL experience — 0 for the current draft class. Lets the
+   *  "Rookies only" filter tell a TRUE rookie apart from a returning
+   *  veteran with no last-season stats for some other reason (injury,
+   *  suspension, ...). Null when the roster fetch didn't have him. */
+  years_exp: number | null;
   proj: Record<string, number> | null;
   /** Scoring/volume components, StatLine-shaped. `last` also carries a
    *  `team` string — the team this player was on for that season's last

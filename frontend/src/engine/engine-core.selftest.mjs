@@ -125,6 +125,22 @@ ok(!isRookieFilterMatch({ pos: "DST", rookie: true }), "a statless DST does NOT 
 ok(!isRookieFilterMatch({ pos: "RB", rookie: false }), "a veteran never matches regardless of position");
 ok(!isRookieFilterMatch({ pos: "RB" }), "a missing rookie flag is treated as false, not a match");
 
+/* ── A SECOND over-broad case: a returning veteran who missed all of last
+ *    season (injury, suspension, ...) hits the identical rookie:true
+ *    fallback as a genuine rookie (no last/last2 to project from).
+ *    `yearsExp` (nflverse rosters, 0 for the current draft class) is the
+ *    ground-truth signal that tells them apart. ────────────────────────── */
+ok(isRookieFilterMatch({ pos: "RB", rookie: true, yearsExp: 0 }),
+   "yearsExp 0 (the current draft class) still matches — a real rookie");
+ok(isRookieFilterMatch({ pos: "RB", rookie: true, yearsExp: null }),
+   "yearsExp unknown (roster fetch didn't have him) still matches — don't guess a veteran off the list");
+ok(isRookieFilterMatch({ pos: "RB", rookie: true }),
+   "yearsExp absent entirely (same as null) still matches");
+ok(!isRookieFilterMatch({ pos: "RB", rookie: true, yearsExp: 3 }),
+   "yearsExp > 0 does NOT match — a returning veteran with no stats, not a rookie");
+ok(!isRookieFilterMatch({ pos: "QB", rookie: true, yearsExp: 1 }),
+   "same for QB — a real case: a 2nd-year QB who missed his rookie season to injury");
+
 /* ── market anchor ────────────────────────────────────────────────────────
    Ported from projection_backtest.blend_with_market; `anchor_parity.py`
    asserts the two stay numerically identical. These cover the STRUCTURAL

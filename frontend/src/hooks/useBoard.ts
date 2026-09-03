@@ -35,6 +35,7 @@ function toEnginePlayer(p: ApiPlayer) {
     pos: p.pos as "QB" | "RB" | "WR" | "TE" | "K" | "DST",
     team: p.team,
     age: p.age ?? undefined,
+    yearsExp: p.years_exp ?? undefined,
     proj: p.proj ?? {},
     last: p.last ?? null,
     last2: p.last2 ?? null,

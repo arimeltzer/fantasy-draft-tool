@@ -199,12 +199,16 @@ def build_players_base(df_last, df_last2, upcoming, baseline_proj):
     last2_by_id = _agg_season(df_last2)   # 2-years-ago season, keyed by player_id
     last_team_by_id = _last_team_by_id(df_last)
 
-    # 2026 team + age from rosters (offseason rosters exist by summer)
-    team_by_id, age_by_id = {}, {}
+    # 2026 team + age + years of NFL experience from rosters (offseason
+    # rosters exist by summer). years_exp distinguishes a TRUE rookie
+    # (years_exp == 0, confirmed real against a 2025 roster pull — no
+    # nulls) from a returning veteran with no last-season stat line for
+    # some OTHER reason; see 007_add_years_exp.sql for the full story.
+    team_by_id, age_by_id, years_exp_by_id = {}, {}, {}
     try:
         ros = _pd(nfl.load_rosters(upcoming))
         rid = _col(ros, "gsis_id", "player_id")
-        rteam, rage = _col(ros, "team"), _col(ros, "age")
+        rteam, rage, rexp = _col(ros, "team"), _col(ros, "age"), _col(ros, "years_exp")
         for r in ros.itertuples():
             pid = getattr(r, rid, None)
             if pid is None:
@@ -213,8 +217,11 @@ def build_players_base(df_last, df_last2, upcoming, baseline_proj):
             if rage:
                 a = getattr(r, rage)
                 if a == a: age_by_id[pid] = round(float(a), 1)
+            if rexp:
+                e = getattr(r, rexp)
+                if e == e: years_exp_by_id[pid] = int(e)
     except Exception as e:
-        print(f"  ! rosters({upcoming}) unavailable ({e}); team/age may be blank")
+        print(f"  ! rosters({upcoming}) unavailable ({e}); team/age/years_exp may be blank")
 
     rows = []
     for g in agg.itertuples():
@@ -232,6 +239,7 @@ def build_players_base(df_last, df_last2, upcoming, baseline_proj):
         rows.append({
             "id": g.player_id, "name": g.player_display_name, "pos": g.position,
             "team": team_by_id.get(g.player_id, ""), "age": age_by_id.get(g.player_id),
+            "yearsExp": years_exp_by_id.get(g.player_id),
             "last": last, "last2": last2_by_id.get(g.player_id), "proj": proj,
         })
     return rows
