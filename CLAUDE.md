@@ -1384,6 +1384,32 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     known than an unproven rookie's, in a way the current rookie-curve
     fallback doesn't capture) that would need its own backtest, not a
     silent side effect of a filter fix.
+  - **Reported live, right after this shipped and the DB was backfilled:
+    "Jonathon Brooks also shows up under the rookie filter; he is not [a
+    rookie]."** A real, precisely-diagnosable case — not a false alarm.
+    Brooks was drafted 2024, tore his ACL that preseason, and confirmed via
+    a live nflverse pull has ZERO game rows in BOTH 2024 and 2025 — so he
+    correctly has no `last`/`last2` and correctly reads `rookie: true` at
+    runtime, exactly the injured-veteran case this feature exists for. The
+    same live pull confirms nflverse's roster snapshot has him right there
+    with `years_exp = 2` — not missing, ruling out the "roster fetch never
+    had him" fallback case this section already documents. That narrows it
+    to the one link in this feature that ISN'T id-keyed: the "added"
+    block's own years_exp lookup joins on `(norm(name), pos)` against
+    FantasyPros' OWN rankings payload — a name/position STRING pair from a
+    different source than nflverse's roster, unlike `ingest_nflverse.py`'s
+    matched-player fill just above (joined on `gsis_id`, immune to this).
+    FantasyPros' position tag for a player two seasons removed from a snap
+    is a plausible place for that join to miss even though the name half
+    matches. `load_years_exp()` now returns a second index, `by_name` —
+    the identical roster pull keyed on name ALONE — and both the matched-
+    player backfill and the "added" block fall back to it when the exact
+    `(name, pos)` key misses. Kept deliberately UNAMBIGUOUS: a name that
+    resolves to two different `years_exp` values across the roster (two
+    different players sharing a name) is dropped from `by_name` entirely
+    rather than guessed at, the same "refuse rather than risk a wrong
+    silent merge" discipline `teams.py`'s alias pass and `resolve_my_team_
+    index`'s tiered matching already use elsewhere in this codebase.
 
 ## Outcome distributions (built + validated, roadmap 2.1 — NOT wired in)
 
@@ -1535,6 +1561,30 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   already have at that position — same "flag it, I decide live" philosophy
   as the collision detector itself, just actually visible without a
   hover.
+- **Reported live: "why is my snake draft now recommending two defenses
+  with 0 VBD for my first pick?"** — `Recommendations.tsx`'s panel, not
+  `pickScore` itself. In round 1, QB and TE are round-gated closed
+  (`QB_MIN`/`teMinRound`, both > round 1 for `have === 0`), so they're
+  excluded from `open` entirely; RB and WR each hit `MAX_PER_POS` (2) fast,
+  since they're the highest-scoring candidates by far this early. Once
+  both are capped, K and DST are the ONLY positions left unblocked to fill
+  the remaining panel slots with — and this early, the best available
+  K/DST is still genuinely at replacement level (0 VBD, `pickScore`'s
+  `base = player.vbd * nm` is exactly 0 regardless of the "haven't got one
+  yet" 1.30× need bump). Nothing in the fill loop or its backfill ever
+  required a candidate to be WORTH anything — only that it wasn't blocked
+  and wasn't already at its position cap — so the panel dutifully filled
+  slots 5-6 with a "recommendation" worth exactly as much as a waiver-wire
+  pickup. Fixed by gating `open` itself on `vbd > 0`, upstream of both the
+  capped fill and the backfill: a 0-or-negative-VBD player can no longer
+  occupy a "Recommended now" slot just because it's the only unblocked
+  position left standing. A thin early pool can now legitimately render
+  fewer than 6 cards rather than padding out with worthless picks — same
+  "short panel beats bad advice" trade the existing comment already made
+  for the position cap, just extended to value. The total-lockout last
+  resort (`recs.length === 0`, explicitly labeled "shown on value") is
+  untouched — a different, already-transparent fallback for when every
+  candidate is gated, not what was reported here.
 
 ## Bye-aware lineup value replaces `byeClash` in the snake recommender (roadmap 2.4)
 

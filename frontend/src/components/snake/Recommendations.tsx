@@ -30,7 +30,16 @@ export default function Recommendations({ board, draftedIds, live, onDraft }: Pr
   // choice repeated, crowding out the best available at every other position.
   // Before this, the round a position's gate opened could fill four of six
   // slots with it, which reads as advice to draft four of them.
-  const open = scored.filter((p) => !p.blocked);
+  //
+  // vbd > 0 is a real gate here, not just the cap's tiebreak: reported live
+  // — round 1, with QB and TE both round-gated closed (blocked, so excluded
+  // from `open` already) and RB/WR maxed out at MAX_PER_POS, the ONLY
+  // positions left unblocked to backfill slots 5-6 with were K and DST,
+  // whose best available player was still genuinely replacement-level
+  // (0 VBD) this early. A 0-VBD "recommendation" is not a recommendation —
+  // it's exactly as good as the guy on waivers — so it must never fill a
+  // slot just because it's the only unblocked position left standing.
+  const open = scored.filter((p) => !p.blocked && p.vbd > 0);
   const perPos: Record<string, number> = {};
   const recs = open.filter((p) => {
     if ((perPos[p.pos] ?? 0) >= MAX_PER_POS) return false;

@@ -42,9 +42,11 @@ def _col(df, *names):
             return n
     return None
 
-def load_years_exp(season) -> dict:
-    """{(norm_name, pos): years_exp} from nflverse rosters — 0 for the
-    current draft class, confirmed real against a live pull (no nulls).
+def load_years_exp(season) -> tuple[dict, dict]:
+    """(by_key, by_name) from nflverse rosters — 0 for the current draft
+    class, confirmed real against a live pull (no nulls). by_key is
+    {(norm_name, pos): years_exp}, the primary lookup; by_name is the same
+    thing keyed on norm_name ALONE, for the "added" block's fallback below.
 
     WHY: the "added" block below used to hardcode `rookie: True` for every
     player missing from the nflverse-stats base, which conflates a TRUE
@@ -54,25 +56,50 @@ def load_years_exp(season) -> dict:
     Reported live: "is there a way to distinguish rookies from players who
     did not play for other reasons last year?" This is that distinction,
     from ground truth rather than an inferred absence of stats.
+
+    WHY by_name too: the "added" block's own key comes from FantasyPros'
+    rankings payload, not this roster pull — the one name-STRING-keyed join
+    in an otherwise ID-keyed feature (ingest_nflverse.py's own years_exp
+    fill, above, joins on gsis_id and can't have this problem). Reported
+    live: Jonathon Brooks (a real case for this feature — drafted 2024,
+    tore his ACL that preseason, zero games logged in 2024 OR 2025, so he
+    correctly has no last/last2 and would otherwise read as a fresh rookie)
+    still showed under the rookies-only filter after years_exp shipped.
+    Confirmed via a live nflverse pull he's on the current roster with
+    years_exp=2, not missing — so the exact (name, pos) join is the
+    remaining suspect: FantasyPros' own position tag for a player who
+    hasn't taken a snap in two seasons is a plausible place for it to be
+    blank or stale, which a POSITION-scoped key can't recover from. Kept
+    UNAMBIGUOUS on purpose — dropped from by_name entirely (not merged
+    arbitrarily) whenever two same-named roster entries disagree on years of
+    experience, so this can't silently attribute one player's tenure to a
+    different one who happens to share a name.
     """
     try:
         ros = _pd(nfl.load_rosters(season))
     except Exception as e:
         print(f"  ! load_rosters({season}) unavailable ({e}); years_exp left blank")
-        return {}
+        return {}, {}
     name_col = _col(ros, "full_name", "player_name")
     pos_col = _col(ros, "position")
     exp_col = _col(ros, "years_exp")
     if not (name_col and pos_col and exp_col):
-        return {}
-    out = {}
+        return {}, {}
+    by_key, by_name, ambiguous = {}, {}, set()
     for r in ros.itertuples():
         pos = getattr(r, pos_col, None)
         exp = getattr(r, exp_col, None)
         if pos is None or exp is None or exp != exp:   # NaN guard
             continue
-        out[(norm(getattr(r, name_col, None)), pos)] = int(exp)
-    return out
+        nm, exp = norm(getattr(r, name_col, None)), int(exp)
+        by_key[(nm, pos)] = exp
+        if nm in by_name and by_name[nm] != exp:
+            ambiguous.add(nm)
+        else:
+            by_name[nm] = exp
+    for nm in ambiguous:
+        by_name.pop(nm, None)
+    return by_key, by_name
 
 # projection-CSV header synonyms -> engine `proj` fields (lowercased match)
 PROJ_SYN = {
@@ -216,7 +243,7 @@ def main():
     # --- years of NFL experience --- distinguishes a TRUE rookie from a
     # returning veteran with no last-season stats for some other reason
     # (injury, suspension, ...). See load_years_exp's own docstring.
-    years_exp = load_years_exp(args.season)
+    years_exp, years_exp_by_name = load_years_exp(args.season)
     if years_exp:
         print(f"Pulling years of experience from nflverse rosters ({args.season})…  {len(years_exp)} players")
 
@@ -239,8 +266,11 @@ def main():
         # sets this for most matched players; this backfills anyone it
         # missed (a failed/partial roster fetch that run) rather than
         # overwriting a real value with a possibly-stale second pull.
-        if p.get("yearsExp") is None and k in years_exp:
-            p["yearsExp"] = years_exp[k]
+        if p.get("yearsExp") is None:
+            if k in years_exp:
+                p["yearsExp"] = years_exp[k]
+            elif k[0] in years_exp_by_name:
+                p["yearsExp"] = years_exp_by_name[k[0]]
         p["injury"] = injuries.get(k)
 
     # --- players the base doesn't have at all -------------------------------
@@ -267,7 +297,16 @@ def main():
             if k in seen or not meta.get("name"):
                 continue
             name, pos = meta["name"], k[1]
+            # This is the one name-STRING-keyed join in the years_exp flow
+            # (k comes from FantasyPros' rankings, not nflverse) — fall back
+            # to the unambiguous name-only index when the position tag
+            # doesn't line up (see load_years_exp's docstring: caught via a
+            # real returning-injury case, Jonathon Brooks, whose exact
+            # (name, pos) key missed despite years_exp=2 being right there
+            # in the roster pull).
             exp = years_exp.get(k)
+            if exp is None:
+                exp = years_exp_by_name.get(k[0])
             players.append({
                 "id": None,
                 "name": name,
