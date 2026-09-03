@@ -1,0 +1,96 @@
+name: Round-gate backtest (roadmap 3.10)
+
+# Manual. Is the shipped QB_MIN/QB2_MIN (mode=QB) or teMinRound/te2MinRound
+# (mode=TE) round the right one, or just inherited from the pre-repo offline
+# research model? Sweeps candidate rounds against the shipped default,
+# scored on REALIZED weekly points (not the metric the agent optimizes).
+#
+# Fits on seasons <= fitUpto, validates on the rest — a candidate only counts
+# if it clears mean/SE > 2 on the HELD-OUT split, so this sweep can't commit
+# the exact sin (fit and never validate out of sample) that got the original
+# per-slot configs collapsed in roadmap 0.2.
+#
+# Needs FANTASYPROS_API_KEY — the opponent bots draft by that season's real
+# ADP. Without it they would draft by our own model, and the comparison would
+# be against a strawman sharing our biases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "QB (QB_MIN/QB2_MIN) or TE (teMinRound/te2MinRound)"
+        required: true
+        default: "QB"
+        type: choice
+        options: ["QB", "TE"]
+      values:
+        description: "Candidate rounds to test, comma-separated"
+        required: false
+        default: "5,6,7,8,9,10,11"
+        type: string
+      first:
+        description: "First season to export"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season to export"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated drafts per slot per season per candidate"
+        required: false
+        default: "12"
+        type: string
+      slots:
+        description: "Draft slots to test, comma-separated"
+        required: false
+        default: "1,4,7,10"
+        type: string
+      fitUpto:
+        description: "Seasons <= this are the fit split; the rest are held out"
+        required: false
+        default: "2021"
+        type: string
+
+jobs:
+  round-gate-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      # The simulator decides whether the swept round is worth shipping. It
+      # gets verified before it is allowed to produce a number.
+      - name: Simulator selftest
+        run: node frontend/src/engine/draft-sim.selftest.mjs
+
+      - name: Export historical draft boards (with weekly + bye data)
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Round-gate sweep
+        run: |
+          node frontend/src/engine/round-gate-test.mjs \
+            --mode ${{ inputs.mode }} \
+            --data data-pipeline/results/draft_seasons.json \
+            --values ${{ inputs.values }} \
+            --seeds ${{ inputs.seeds }} \
+            --slots ${{ inputs.slots }} \
+            --fitUpto ${{ inputs.fitUpto }} \
+            | tee data-pipeline/results/round_gate_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: round-gate-test-${{ inputs.mode }}
+          path: data-pipeline/results/

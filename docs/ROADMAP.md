@@ -3906,6 +3906,55 @@ selftests, `npm run build`, and `npm test`'s 87 vitest assertions
 including `AuctionRoom.test.tsx`'s own budget-path coverage) passes clean
 with the change in place.
 
+### 3.10 Snake: backtest the QB/TE round gates (`QB_MIN`/`teMinRound`) — PRE-REGISTERED
+
+**Asked directly, in the course of explaining `pickScore`'s hard round
+gates**: are `QB_MIN`/`QB2_MIN`/`teMinRound`/`te2MinRound` (`snake-engine.js
+DEFAULT_SNAKE_PARAMS`) something this repo fit, or an inherited number? Git
+history answers it precisely: `SLOT_DEFAULT`'s `QB_MIN: 8, QB2_MIN: 9` is
+literally slot 2/3's config from the original ten-slot grid search roadmap
+0.2 collapsed, and `teMinRound`/`te2MinRound`/the risk-gate constants were
+added in that same initial commit, under the same "ported from the offline
+research model" comment. **0.2 never tested whether these VALUES are right
+— it only tested whether TEN different values (one per slot) beat ONE
+shared value.** The shared value itself has never been fit or validated in
+this repo, same unverifiable-but-trusted status the per-slot configs were
+in before 0.2 ran.
+
+**Mechanism — no new harness, a new consumer of `draft-sim.mjs`'s
+`simulateDraft`/`realizedWeeklyPoints`**, the same pair every gate since 2.4
+has used (avoids the circularity of scoring an agent on the metric it
+optimizes — both arms draft off PROJECTIONS, both are scored on REALIZED
+weekly points against the real schedule). `round-gate-test.mjs` sweeps
+candidate rounds for one mode at a time (`--mode QB` touches
+`SLOT_DEFAULT.QB_MIN`/`QB2_MIN`, keeping the shipped gap of +1 between
+them; `--mode TE` touches `teMinRound`/`te2MinRound`, keeping the shipped
+gap of +3) against the real shipped `DEFAULT_SNAKE_PARAMS` (`SLOTS`
+stripped, matching production), paired per season/slot/seed.
+
+**The overfitting guard, because this step exists specifically to avoid
+repeating 0.2's own root problem.** If WE fit a value on every available
+season and report the in-sample winner, that is the exact sin that got the
+original per-slot configs collapsed — an overfit sweep always looks good on
+its own fit data. Seasons up to `--fitUpto` (default 2021) are the FIT
+split; the rest are HELD OUT. Unlike 0.2's split — fixed by when the
+original, unreproducible grid search happened to run, not chosen for
+validation quality — this one is chosen deliberately: fit on the OLDER
+seasons, validate on the more RECENT ones, the direction that actually
+matters for a tool drafting in 2026.
+
+**Search range, per the user's explicit instruction not to artificially
+narrow it around the current default**: "assuming we would go back further
+(earlier rounds) if we clear the kill gates, this makes sense." Default
+sweep is `--values 5,6,7,8,9,10,11` for QB (shipped: 8) and `--values
+1,2,3,4,5,6,7` for TE (shipped: 4) — spanning genuinely earlier rounds, not
+a narrow band hugging the inherited value, and re-runnable with a wider
+range in either direction if a boundary value wins.
+
+**Kill gate**: a candidate round only replaces the shipped default if it
+beats it by `mean/SE > 2` on the HELD-OUT split. An in-sample win alone is
+not evidence, same bar every gate in this document uses.
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.
