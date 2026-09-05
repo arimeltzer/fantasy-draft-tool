@@ -2374,6 +2374,39 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   `settings.keeperImport` (`KeeperImportCache.source` = `espn` | `yahoo-paste`),
   so the analysis is restored — and re-fed to the recommender — when the planner
   reopens. Committed keepers are separate: they're `DraftPick` rows.
+- **Yahoo OAuth auto-fill (`YahooKeeperAutofill.tsx`) identifies "my roster" by
+  manager GUID, not name** — `parse_teams()` flags a team `is_mine` when its
+  manager's guid matches the OAuth token's `xoauth_yahoo_guid`, which is why
+  this screen (unlike ESPN's) never asks for a team name at all: the guid is
+  unambiguous where a name can collide or get renamed.
+  - **Reported live: a real 172-player pull, ineligibility correctly flagged
+    on the "kept last year" players, and NO recommendations at all — with no
+    error, and the panel never asking for a team name, which the user
+    correctly guessed meant "it already knows" (it tries to).** Root cause:
+    `KeeperRecommendations.tsx`'s `myCandidates` only ever includes rows
+    where `c.is_mine` is true (`if (!c.is_mine || ...) continue`) — if the
+    guid match misses for ANY reason (an unverified payload-shape edge case;
+    Yahoo's `managers` node has never been checked against a real capture
+    the way ESPN's raw payloads repeatedly have been in this codebase), it
+    doesn't fail loudly — every candidate just reads `is_mine: false`,
+    `myCandidates` stays empty, and the panel shows only its generic
+    "auto-fill and this will analyze your roster" placeholder, identical to
+    having imported nothing at all.
+  - **Fixed the same way this codebase always closes a silent auto-detection
+    gap: give the user the raw facts and a manual override, never trust the
+    guess silently.** `YahooKeeperAutofill.tsx` keeps the raw pull
+    (`rawCandidates`) separately from what gets pushed to the recommender.
+    When at least one candidate already reads `is_mine`, nothing changes —
+    the picker defaults to "Me" and stays out of the way. When NONE do, an
+    amber notice explains why ("Yahoo didn't match your account to a team in
+    THIS league last season") and a dropdown lists the real team names the
+    pull already returned (candidates already carry `owner`, the platform's
+    own team name, for every non-mine row) — picking one reclassifies that
+    team's players as `is_mine: true` / `owner: "Me"` client-side and
+    re-feeds the recommender immediately, no separate "apply" step.
+    `YahooKeeperAutofill.test.tsx` pins both states (warning + picker when
+    unmatched, no warning when the guid match already worked) and the
+    reclassification itself.
 
 ## Draft order & traded picks (snake)
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link2, Loader2, AlertTriangle, Check, ChevronDown, LogOut } from "lucide-react";
 import { api, KeeperCandidate, KeeperImportCache } from "@/lib/api";
 import {
@@ -38,16 +38,79 @@ export default function YahooKeeperAutofill({
                  waivers: restored.waivers?.players ?? 0, kept: [] } : null);
   const [restoredAt] = useState<string | undefined>(restored?.fetchedAt);
 
-  // Re-feed a restored pull to the recommender on mount, same as the other
-  // importers, so reopening the planner doesn't require a refetch.
-  const rehydrated = useRef(false);
+  // "mine" here is decided by matching your Yahoo manager guid against each
+  // team's manager list server-side — the reason this screen never asks for
+  // a team name at all (unlike ESPN's, which needs one to break name ties).
+  // But that guid match is a single point of failure with no visibility if
+  // it misses: reported live — a real 172-player pull, ineligibility flagged
+  // correctly, and NO recommendations at all, because every candidate came
+  // back is_mine=false and KeeperRecommendations only ever scores candidates
+  // where is_mine is true. Rather than trust the guid match silently (the
+  // same "never guess who you are" discipline resolve_my_team_index/
+  // teamMatch.ts already apply elsewhere), keep the raw pull and let the
+  // user correct it from the real team names Yahoo already returned.
+  const [rawCandidates, setRawCandidates] = useState<KeeperCandidate[] | null>(restored?.candidates ?? null);
+  const [pulledWaivers, setPulledWaivers] = useState(restored?.waivers);
+  const [myTeamOverride, setMyTeamOverride] = useState<string>("");
+  const overrideInitialized = useRef(false);
+
+  // Default the picker to "Me" once a pull comes back ALREADY correctly
+  // matched (the common, working case) — only when nothing's been chosen
+  // yet, so a manual correction is never silently reverted.
   useEffect(() => {
-    if (restored?.candidates?.length && !rehydrated.current) {
-      rehydrated.current = true;
-      onCandidates(restored.candidates);
+    if (overrideInitialized.current || !rawCandidates) return;
+    if (rawCandidates.some((c) => c.is_mine)) {
+      overrideInitialized.current = true;
+      setMyTeamOverride("Me");
+    }
+  }, [rawCandidates]);
+
+  const distinctOwners = useMemo(() => {
+    if (!rawCandidates) return [];
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const c of rawCandidates) {
+      const o = c.is_mine ? "Me" : c.owner;
+      if (!seen.has(o)) { seen.add(o); out.push(o); }
+    }
+    return out;
+  }, [rawCandidates]);
+
+  const autoMatched = useMemo(() => rawCandidates?.some((c) => c.is_mine) ?? false, [rawCandidates]);
+
+  // Reclassify the selected team's rows as "Me". Only ever ADDS an is_mine —
+  // it can't retroactively un-flag a guid match that landed on the wrong
+  // team (that team's real name is already gone, overwritten to "Me" server
+  // side), but that's not the failure mode reported: a missed match reads
+  // as EVERY candidate is_mine=false, which this fully recovers from.
+  const correctedCandidates = useMemo(() => {
+    if (!rawCandidates || !myTeamOverride) return rawCandidates ?? [];
+    return rawCandidates.map((c) => {
+      const owner = c.is_mine ? "Me" : c.owner;
+      return owner === myTeamOverride && !c.is_mine ? { ...c, is_mine: true, owner: "Me" } : c;
+    });
+  }, [rawCandidates, myTeamOverride]);
+
+  // Push the corrected list up whenever the correction changes, so choosing
+  // your team from the dropdown feeds the recommender immediately — no
+  // separate "apply" step to miss.
+  const pushedRef = useRef<KeeperCandidate[] | null>(null);
+  useEffect(() => {
+    if (correctedCandidates.length && pushedRef.current !== correctedCandidates) {
+      pushedRef.current = correctedCandidates;
+      onCandidates(correctedCandidates);
+      if (rawCandidates) {
+        onCache?.({
+          season: matchSeason - 1,
+          fetchedAt: restoredAt ?? new Date().toISOString(),
+          candidates: correctedCandidates,
+          waivers: pulledWaivers,
+          source: "yahoo",
+        });
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restored]);
+  }, [correctedCandidates]);
 
   // The consent tab finishes the handshake itself, so reflect that here rather
   // than waiting for a code to be pasted into this panel.
@@ -106,19 +169,15 @@ export default function YahooKeeperAutofill({
         match_season: matchSeason,
         my_guid: loadYahooSession()?.guid,
       });
-      onCandidates(res.candidates);
+      overrideInitialized.current = false;
+      setMyTeamOverride("");
+      setPulledWaivers(res.waivers);
+      setRawCandidates(res.candidates);
       setResult({
         matched: res.matched,
         total: res.candidates.length,
         waivers: res.waivers?.players ?? 0,
         kept: res.kept_detected ?? [],
-      });
-      onCache?.({
-        season: matchSeason - 1,
-        fetchedAt: new Date().toISOString(),
-        candidates: res.candidates,
-        waivers: res.waivers,
-        source: "yahoo",
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -256,6 +315,40 @@ export default function YahooKeeperAutofill({
                   </div>
                 )}
               </div>
+
+              {!autoMatched && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-2xs text-amber-900">
+                  <div className="mb-1 flex items-center gap-1.5 font-medium">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    Couldn't tell which team is yours
+                  </div>
+                  <div className="leading-relaxed">
+                    Everyone imported correctly, but Yahoo didn't match your account to a team in
+                    THIS league last season (can happen if you weren't a manager here, or joined
+                    under a different Yahoo login) — with no team flagged as yours, there's nothing
+                    to base a recommendation on. Pick your team below to fix it.
+                  </div>
+                </div>
+              )}
+
+              {distinctOwners.length > 0 && (
+                <label className="block text-xs">
+                  <span className="mb-1 block text-muted">
+                    Which team was yours{" "}
+                    <span className="text-faint">{autoMatched ? "(auto-detected — change if wrong)" : ""}</span>
+                  </span>
+                  <select
+                    value={myTeamOverride}
+                    onChange={(e) => setMyTeamOverride(e.target.value)}
+                    className="w-full rounded-md border border-line bg-sunken px-2 py-1 text-xs text-ink focus:border-brand focus:outline-none"
+                  >
+                    <option value="" disabled>— pick your team —</option>
+                    {distinctOwners.map((o) => (
+                      <option key={o} value={o}>{o}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
               {result.kept.length > 0 && (
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-2xs text-amber-900">
