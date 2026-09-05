@@ -1218,6 +1218,12 @@ class LiveDraftRequest(BaseModel):
     match_season: int = 2026          # player pool the picks map onto
     access_token: Optional[str] = None    # yahoo
     my_guid: Optional[str] = None         # yahoo
+    # Manual override for "which team is mine" — wins outright over the guid
+    # match above. That match has no fallback and no visibility if it misses
+    # (a real Yahoo keeper pull hit exactly this — see YahooKeeperAutofill.tsx),
+    # so the panel lets the user pick from the real team list `state.meta`
+    # already returns (`yahoo_teams`) rather than trust the guid silently.
+    my_team_ext_id: Optional[str] = None  # yahoo team_key, e.g. "449.l.1.t.1"
     espn_s2: Optional[str] = None
     swid: Optional[str] = None
     my_team: Optional[str] = None         # espn team id/name to flag as yours
@@ -1395,7 +1401,8 @@ async def sync_draft(
             if not data.access_token:
                 raise HTTPException(status_code=400, detail="Yahoo access token required.")
             state = await yahoo_provider.fetch_live_draft(
-                data.ext_id, data.access_token, my_guid=data.my_guid)
+                data.ext_id, data.access_token, my_guid=data.my_guid,
+                my_team_key=data.my_team_ext_id)
         elif live_ws_registry.get_ingest_watcher(league_id) is not None:
             # Browser-bookmarklet ingest path (see live_ws_registry.py
             # "Browser-side ingest"): the bookmarklet on the ESPN draft page

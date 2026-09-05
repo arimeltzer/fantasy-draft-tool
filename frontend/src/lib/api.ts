@@ -198,6 +198,15 @@ export interface LiveSyncResult {
     teams_by_id?: Record<string, string>;
     recent_events?: { player_id: number; nominating_team_id: number; winning_team_id: number;
                       price: number; name: string | null }[];
+    /** Yahoo's "which team is mine" diagnostics — always present on a Yahoo
+     *  poll (not just on failure), since the guid match backing it has no
+     *  fallback and no visibility otherwise (a real keeper pull hit exactly
+     *  this — see YahooKeeperAutofill.tsx's fix for the same failure mode).
+     *  `yahoo_my_team_key` is null when nothing matched; the panel lets the
+     *  user pick their real team from `yahoo_teams` and resend it as
+     *  `my_team_ext_id` on the next poll, same as the keeper fix's picker. */
+    yahoo_teams?: { key: string; name: string }[];
+    yahoo_my_team_key?: string | null;
   };
   /** The player currently up for auction, resolved to OUR internal player
    *  id — tracked off BID, not NOMINATION (see the backend's
@@ -531,7 +540,8 @@ export const api = {
 
   syncDraft: (leagueId: number, data: {
     provider: "espn" | "yahoo"; ext_id: string; season?: number; match_season?: number;
-    access_token?: string; my_guid?: string; espn_s2?: string; swid?: string;
+    access_token?: string; my_guid?: string; my_team_ext_id?: string;
+    espn_s2?: string; swid?: string;
     my_team?: string; apply?: boolean; enable_backend_ws?: boolean; backfill?: boolean;
   }) => req<LiveSyncResult>(`/api/leagues/${leagueId}/sync-draft`, {
     method: "POST", body: JSON.stringify(data),

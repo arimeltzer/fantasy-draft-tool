@@ -632,6 +632,39 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
     completely unrecognizable new name still resolves correctly when the
     platform id is present, and the old refuse-on-no-match behavior is
     unchanged when it isn't.
+- **Yahoo "which team is mine" safety net, added proactively — asked
+  directly after the keeper-autofill fix above: "will live draft recognize
+  my team as well?"** It uses the IDENTICAL mechanism (`parse_teams`
+  matching the OAuth manager guid, no fallback) that had just been found
+  broken for a real account, and unlike keepers it had no fallback and no
+  visibility at all: a miss would attribute every one of the user's own
+  picks to an opponent's roster for the WHOLE draft, correctable only by
+  reassigning each pick by hand mid-draft via the Draft Log — the same
+  "shows as sold, not on my team" signature this file has documented four
+  times for ESPN, but with no name-based tiered fallback to catch it for
+  Yahoo at all. Fixed the same way as keepers, extended for the fact that
+  live sync WRITES picks to the DB on every poll (a client-side-only
+  relabel, like the keeper fix, can't undo an already-wrong write):
+  `parse_live_draft()` now always returns `state.meta.yahoo_teams` (every
+  real team name) and `yahoo_my_team_key` (which one matched, or `None`)
+  regardless of success — diagnostics present on EVERY poll, not just a
+  failure — and a new `my_team_key` parameter, when given, OVERRIDES the
+  guid match outright rather than merely relabeling its output.
+  `LiveDraftRequest.my_team_ext_id` threads a user's manual pick through
+  `sync_draft`'s Yahoo branch to `fetch_live_draft`. `LiveDraftPanel.tsx`
+  gets a "Check my team" button that fires one `apply: false` preview poll
+  (the existing preview/dry-run flag — the real fetch+parse runs and
+  `meta` comes back, but nothing is written to `DraftPick`) so the team
+  list and match status are visible and correctable BEFORE the user
+  starts the real polling loop, not discovered pick by pick once it's too
+  late to matter. Same amber-warning-plus-dropdown UI as the keeper fix;
+  the override defaults to whatever the guid match already found (once),
+  so a working match stays invisible and a manual correction is never
+  silently reverted by a later poll. Pinned in
+  `backend/integrations/selftest.py` (guid miss reads `yahoo_my_team_key:
+  None` and still resolves correctly once overridden) and
+  `LiveDraftPanel.test.tsx` (warning + picker shown/hidden correctly,
+  selection updates).
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

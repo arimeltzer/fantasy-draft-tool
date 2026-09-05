@@ -525,7 +525,8 @@ async def fetch_league(league_key: str, access_token: str, my_guid: str | None =
     return lg
 
 
-def parse_live_draft(draft_json, teams_json, my_guid: str | None = None) -> LiveDraftState:
+def parse_live_draft(draft_json, teams_json, my_guid: str | None = None,
+                     my_team_key: str | None = None) -> LiveDraftState:
     """Join Yahoo's draft results (order/owner/price) to the rosters (names).
 
     `draftresults` identifies players only by `player_key`, so on its own it
@@ -534,6 +535,20 @@ def parse_live_draft(draft_json, teams_json, my_guid: str | None = None) -> Live
     whose player isn't on any roster yet (the platform lagging between the two
     endpoints) is skipped rather than logged as an unknown player — the next
     poll picks it up.
+
+    "Mine" identification here is a SINGLE POINT OF FAILURE with no visibility
+    if it misses: unlike ESPN (whose raw payloads have been checked against
+    real captures repeatedly in this codebase), Yahoo's `managers` node has
+    never been verified that way, and `is_mine` matching the OAuth guid
+    against it can silently come back false for every team — exactly the
+    failure a real Yahoo keeper pull hit (see YahooKeeperAutofill.tsx).
+    Two things fix that here, mirroring that same fix: `my_team_key`, when
+    given, OVERRIDES the guid match outright (the caller already knows which
+    team is real, e.g. from a user's manual pick); and `state.meta` always
+    carries the raw team list + which key ended up "mine" (or None), so the
+    frontend can show a mismatch and let the user correct it BEFORE picks
+    get logged against the wrong roster, rather than discovering it pick by
+    pick during a live draft.
     """
     draft = parse_draft_results(draft_json)
 
@@ -569,9 +584,14 @@ def parse_live_draft(draft_json, teams_json, my_guid: str | None = None) -> Live
             pid = player_num(fields.get("player_key") or fields.get("player_id"))
             by_id[pid] = (_player_from_node(pnode), tkey)
 
-    mine_keys = {
-        meta_key for meta_key, team in zip(names_by_key.keys(), teams) if team.is_mine
-    } if len(teams) == len(names_by_key) else set()
+    if my_team_key:
+        # A manual pick always wins — it came from the user looking at the
+        # real team names this same function already returns, not a guess.
+        mine_keys = {my_team_key} if my_team_key in names_by_key else set()
+    else:
+        mine_keys = {
+            meta_key for meta_key, team in zip(names_by_key.keys(), teams) if team.is_mine
+        } if len(teams) == len(names_by_key) else set()
 
     picks: list[LivePick] = []
     for pid, d in draft.items():
@@ -592,11 +612,19 @@ def parse_live_draft(draft_json, teams_json, my_guid: str | None = None) -> Live
     picks = [p for p in picks if p.overall > 0]
     state = LiveDraftState(picks=order_picks(picks),
                            fmt="auction" if any(p.bid is not None for p in picks) else "snake")
-    state.meta = {"drafted": len(draft), "resolved": len(picks)}
+    state.meta = {
+        "drafted": len(draft), "resolved": len(picks),
+        # Diagnostics for the "which team is mine" match — always present
+        # (not just on failure) so the frontend can offer a correction
+        # up front rather than only after something's already gone wrong.
+        "yahoo_teams": [{"key": k, "name": n} for k, n in names_by_key.items()],
+        "yahoo_my_team_key": next(iter(mine_keys), None),
+    }
     return state
 
 
 async def fetch_live_draft(league_key: str, access_token: str, my_guid: str | None = None,
+                           my_team_key: str | None = None,
                            ca_bundle: str | None = None) -> LiveDraftState:
     """Poll a Yahoo draft in progress. Two calls: results (order) + rosters (names)."""
     verify = ca_bundle if ca_bundle else True
@@ -608,7 +636,7 @@ async def fetch_live_draft(league_key: str, access_token: str, my_guid: str | No
         rd.raise_for_status()
         rt = await client.get(f"{API}/league/{league_key}/teams/roster?format=json")
         rt.raise_for_status()
-    return parse_live_draft(rd.json(), rt.json(), my_guid)
+    return parse_live_draft(rd.json(), rt.json(), my_guid, my_team_key)
 
 
 async def fetch_keeper_league(league_key: str, access_token: str, my_guid: str | None = None,

@@ -10,6 +10,10 @@ export interface LiveDraftConfig {
   espnS2?: string;
   swid?: string;
   myTeam?: string;
+  /** Yahoo team_key override for "which team is mine" — wins outright over
+   *  the guid match, which has no fallback of its own. See
+   *  LiveDraftPanel.tsx's team picker. */
+  myTeamExtId?: string;
 }
 
 export interface LiveDraftStatus {
@@ -71,6 +75,7 @@ export function useLiveDraft(
         match_season: cfg.matchSeason ?? 2026,
         access_token: accessToken,
         my_guid: myGuid,
+        my_team_ext_id: cfg.myTeamExtId || undefined,
         espn_s2: cfg.espnS2 || undefined,
         swid: cfg.swid || undefined,
         my_team: cfg.myTeam || undefined,

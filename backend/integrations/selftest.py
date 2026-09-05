@@ -807,12 +807,34 @@ def test_live_draft():
     assert ys.picks[0].name == "A.J. Brown" and ys.picks[0].owner == "Rivals"
     assert ys.picks[1].name == "Bijan Robinson" and ys.picks[1].pos == "RB"
     assert ys.picks[1].owner == "Team Ari" and ys.picks[1].is_mine is True
-    assert ys.meta == {"drafted": 3, "resolved": 2}, ys.meta
+    assert ys.meta == {
+        "drafted": 3, "resolved": 2,
+        "yahoo_teams": [{"key": "449.l.1.t.1", "name": "Team Ari"},
+                        {"key": "449.l.1.t.2", "name": "Rivals"}],
+        "yahoo_my_team_key": "449.l.1.t.1",
+    }, ys.meta
     assert ys.complete_through == 2
+
+    # The guid match failing (a real case this was built for — see
+    # YahooKeeperAutofill.tsx's fix for the same failure mode): no manager
+    # guid on EITHER team matches, so nothing is "mine" and the diagnostics
+    # say so explicitly rather than silently attributing your own picks to
+    # an opponent.
+    missed = yahoo.parse_live_draft(draft_json, teams_json, my_guid="SOMEONE-ELSE")
+    assert missed.picks[1].is_mine is False
+    assert missed.meta["yahoo_my_team_key"] is None
+
+    # The manual override (the fix): the user picks "Team Ari" from the same
+    # team list the diagnostics above expose, and it wins outright — no guid
+    # needed at all.
+    overridden = yahoo.parse_live_draft(draft_json, teams_json, my_team_key="449.l.1.t.1")
+    assert overridden.picks[1].is_mine is True and overridden.picks[0].is_mine is False
+    assert overridden.meta["yahoo_my_team_key"] == "449.l.1.t.1"
 
     # Empty board before the draft starts: valid, just nothing to log.
     empty = yahoo.parse_live_draft({}, teams_json, my_guid="MEGUID")
     assert empty.picks == [] and empty.complete_through == 0
+    assert empty.meta["yahoo_my_team_key"] == "449.l.1.t.1"
     assert espn.parse_live_draft({}).picks == []
 
     # A gap (platform published 1 and 3 but not 2) must not claim 3 is done.

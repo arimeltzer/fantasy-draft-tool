@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Radio, Loader2, AlertTriangle, Pause, Play, RefreshCw, X, Link2, Download } from "lucide-react";
 import { LeagueSettings, api, BASE } from "@/lib/api";
 import { useLiveDraft, LiveDraftConfig } from "@/hooks/useLiveDraft";
@@ -55,18 +55,52 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
   const [s2, setS2] = useState(() => config?.espnS2 ?? loadEspnCreds()?.espnS2 ?? "");
   const [swid, setSwid] = useState(() => config?.swid ?? loadEspnCreds()?.swid ?? "");
 
+  // Yahoo "which team is mine" override — see sync_draft's docstring on
+  // my_team_ext_id. The guid match backing auto-detection has no fallback
+  // and no visibility if it misses (a real keeper pull hit exactly this —
+  // YahooKeeperAutofill.tsx's fix), so this lets the user pick from the
+  // real team list a poll already returns, BEFORE picks start logging
+  // against the wrong roster rather than discovering it pick by pick.
+  const [yahooTeamOverride, setYahooTeamOverride] = useState(config?.myTeamExtId ?? "");
+  const yahooOverrideInitialized = useRef(false);
+
   // What the FORM currently describes — not yet committed to the parent
   // (and therefore not yet what `live` is actually polling with) until
   // "Start watching" or "Sync now" is pressed.
   const formConfig: LiveDraftConfig | null = useMemo(
     () => (extId.trim()
-      ? { provider, extId: extId.trim(), espnS2: s2, swid, myTeam }
+      ? { provider, extId: extId.trim(), espnS2: s2, swid, myTeam,
+          myTeamExtId: provider === "yahoo" ? (yahooTeamOverride || undefined) : undefined }
       : null),
-    [provider, extId, s2, swid, myTeam],
+    [provider, extId, s2, swid, myTeam, yahooTeamOverride],
   );
 
   const res = live.lastResult;
   const yahooReady = provider !== "yahoo" || yahooConnected();
+  const yahooTeams = provider === "yahoo" ? res?.meta.yahoo_teams : undefined;
+  const yahooAutoMatched = !!res?.meta.yahoo_my_team_key;
+
+  // Default the picker to whatever the guid match already found — only
+  // once, so a manual correction is never silently reverted by a later poll.
+  useEffect(() => {
+    if (yahooOverrideInitialized.current || !res?.meta.yahoo_my_team_key || yahooTeamOverride) return;
+    yahooOverrideInitialized.current = true;
+    setYahooTeamOverride(res.meta.yahoo_my_team_key);
+  }, [res, yahooTeamOverride]);
+
+  const [teamCheckBusy, setTeamCheckBusy] = useState(false);
+  async function checkMyTeam() {
+    if (!formConfig) return;
+    setTeamCheckBusy(true);
+    try {
+      // apply=false: a side-effect-free preview. sync_draft still runs the
+      // full fetch/parse (so meta.yahoo_teams comes back), it just skips
+      // the DB writes — safe to call before picks should start logging.
+      await live.syncOnce(false, formConfig);
+    } finally {
+      setTeamCheckBusy(false);
+    }
+  }
 
   // Remember cookies that demonstrably WORKED. A sync that came back with a
   // result (rather than setting `live.error`) is ESPN having accepted them,
@@ -237,6 +271,52 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
               </span>
             )}
           </label>
+
+          {provider === "yahoo" && yahooConnected() && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void checkMyTeam()}
+                disabled={!formConfig || teamCheckBusy}
+                className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-2xs text-muted hover:border-faint disabled:opacity-50"
+              >
+                {teamCheckBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                Check my team
+              </button>
+              <span className="text-2xs text-faint">
+                Confirms which team is yours BEFORE picks start logging — the guid
+                match behind this has no fallback if it misses.
+              </span>
+            </div>
+          )}
+
+          {provider === "yahoo" && yahooTeams && yahooTeams.length > 0 && (
+            <div className="space-y-1.5">
+              {!yahooAutoMatched && (
+                <p className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-2xs text-amber-900">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                  Couldn't tell which team is yours — Yahoo didn't match your account to a
+                  team in this league. Pick it below before starting, or your own picks will
+                  log against an opponent's roster instead of yours.
+                </p>
+              )}
+              <label className="block text-xs">
+                <span className="mb-1 block text-muted">
+                  Which team was yours{" "}
+                  <span className="text-faint">{yahooAutoMatched ? "(auto-detected — change if wrong)" : ""}</span>
+                </span>
+                <select
+                  value={yahooTeamOverride}
+                  onChange={(e) => setYahooTeamOverride(e.target.value)}
+                  className="w-full rounded-lg border border-line bg-surface px-2 py-1 text-xs text-ink focus:border-faint focus:outline-none"
+                >
+                  <option value="" disabled>— pick your team —</option>
+                  {yahooTeams.map((t) => (
+                    <option key={t.key} value={t.key}>{t.name}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
 
           {provider === "espn" && (
             <details className="text-xs">
