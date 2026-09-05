@@ -232,5 +232,39 @@ const predUnknown = predictOpponentKeepers(
 );
 eq(predUnknown.byTeam["Mystery"].length, 1, "unknown team still predicted via mid-round fallback");
 
+// ── recommendKeepers stays fast on a REALISTIC candidate count ──────
+// Reported live: the snake keeper page went unresponsive after a real Yahoo
+// pull, dropdown included, and took a long time to produce recommendations.
+// Root cause: recommendKeepers used to walk the FULL power set of your own
+// candidates (2^n) and discard anything over maxKeepers afterward -- fine
+// for a short bench list, but a real keeper-eligible roster (bench/IR
+// included) can comfortably clear 24-28 players, and 2^n at that size is
+// 16.7M-268M masks. Measured before the fix: n=24 -> 2.0s, n=26 -> 7.9s,
+// n=28 -> 32.0s of blocked main-thread time (doubling every ~2 candidates,
+// exactly like 2^n) -- enough to freeze the whole page, an unrelated
+// dropdown included, since this runs synchronously inside a render.
+// maxKeepers is always small in real leagues, so walking only combinations
+// of size 0..maxKeepers (identical output -- those were the only subsets
+// ever KEPT, just not the only ones generated) turns that into
+// sum(C(n,0..maxKeepers)), a few thousand at this size instead of hundreds
+// of millions. This pins a generous wall-clock ceiling so the exponential
+// version can never silently come back.
+{
+  const bigBoard = Array.from({ length: 60 }, (_, i) => ({
+    id: i, pos: POS[i % 4], vbd: 120 - i, parValue: Math.max(1, 60 - i), adjValue: Math.max(1, 60 - i),
+  }));
+  const bigCandidates = Array.from({ length: 30 }, (_, i) => ({
+    id: i, player: bigBoard[i], cost: { round: (i % 15) + 1, price: (i % 40) + 1 },
+  }));
+  const t0 = performance.now();
+  recommendKeepers(bigCandidates, {
+    format: "snake", board: bigBoard, marketBoard: marketOrder(bigBoard),
+    settings: { teams: 10, draftSlot: 3, roster: { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 1, DST: 1, BENCH: 6 } },
+    allKeptIds: new Set(), maxKeepers: 3, flexFloor: 3,
+  });
+  const ms = performance.now() - t0;
+  ok(ms < 2000, `recommendKeepers stays fast (${ms.toFixed(0)}ms) at a realistic 30-candidate roster`);
+}
+
 console.log(`\nkeeperReco.selftest: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

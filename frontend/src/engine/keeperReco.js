@@ -201,15 +201,30 @@ export function recommendKeepers(candidates, ctx) {
     return { items, kept, totalKV };
   };
 
-  // Enumerate subsets up to maxKeepers (candidate count is tiny).
+  // Enumerate subsets of size 0..maxKeepers. This USED to walk every mask of
+  // the full power set (2^n) and discard anything over maxKeepers afterward
+  // — "candidate count is tiny" was true for a short bench list, but a real
+  // Yahoo pull's `myCandidates` (a full roster, sometimes IR/bench-heavy)
+  // measured at n=24 -> 2.0s of blocked main-thread time, n=26 -> 7.9s,
+  // n=28 -> 32.0s, doubling every ~2 candidates as 2^n does — reported live
+  // as the whole keeper page (an unrelated dropdown included, since this
+  // runs synchronously inside a render) going unresponsive. maxKeepers is
+  // always small in practice (a keeper rule capping how many you can even
+  // keep), so walking combinations of size 0..maxKeepers directly — the
+  // ONLY subsets this ever kept, identical output, nothing approximated —
+  // is sum(C(n,0..maxKeepers)) instead of 2^n: at n=28/maxKeepers=3 that's
+  // 3,589 instead of 268,435,456.
   const all = [];
   const n = candidates.length;
-  for (let mask = 0; mask < (1 << n); mask++) {
-    const subset = [];
-    for (let i = 0; i < n; i++) if (mask & (1 << i)) subset.push(candidates[i]);
-    if (subset.length > maxKeepers) continue;
-    all.push(subset);
-  }
+  (function combinations(start, chosen) {
+    all.push(chosen.slice());
+    if (chosen.length === maxKeepers) return;
+    for (let i = start; i < n; i++) {
+      chosen.push(candidates[i]);
+      combinations(i + 1, chosen);
+      chosen.pop();
+    }
+  })(0, []);
 
   let best = { ids: [], totalKV: 0, items: [] };
   for (const subset of all) {

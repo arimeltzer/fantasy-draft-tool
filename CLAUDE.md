@@ -2391,6 +2391,23 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   prior-season ESPN league's draft (bid + round via `espn.py`/`matching.keeper_candidates`,
   fixture-tested) and maps it to the current pool; `KeeperAutofill.tsx` pre-fills
   the planner from it. The keeper *rule* still comes from league settings.
+- **`recommendKeepers`'s set-optimization was exponential in candidate count,
+  reported live as the whole snake keeper page going unresponsive** — a
+  sibling dropdown (Yahoo's "which team is yours" picker) included, since
+  this runs synchronously inside a React render. It used to walk the FULL
+  power set of `myCandidates` (`2^n` masks) and discard anything over
+  `maxKeepers` afterward — fine for a short bench list, the population it
+  was written against, but a real Yahoo pull's keeper-eligible roster
+  (bench/IR included) comfortably clears 24-28 players. Measured before the
+  fix: n=24 -> 2.0s of blocked main-thread time, n=26 -> 7.9s, n=28 -> 32.0s
+  — doubling every ~2 candidates, exactly `2^n`'s signature. `maxKeepers` is
+  always small in a real keeper rule, so the fix walks only combinations of
+  size 0..`maxKeepers` directly — identical output (those were the only
+  subsets ever KEPT, nothing approximated, all 43 pre-existing assertions
+  pass unchanged) — turning `2^n` into `sum(C(n, 0..maxKeepers))`: at
+  n=28/maxKeepers=3 that's 3,589 instead of 268,435,456. Re-measured after:
+  n=28 in 53ms, n=45 in 219ms. `keeperReco.selftest.mjs` pins a 30-candidate
+  roster staying under 2s so the exponential version can't silently return.
 - **Recommendation**: `keeperReco.js` scores KV = surplus + scarcity + fit and
   set-optimizes (can keep fewer than max/none). Snake surplus is draft-slot aware
   (forfeited pick from `myPickNumbers`, which honors `settings.myPicks` for
