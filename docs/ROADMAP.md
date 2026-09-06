@@ -4249,6 +4249,82 @@ discount, but this specific fix for it does not actually help once properly
 tested — a naive "trust the upgrade" discount trades away more real value
 on the bench than it recovers at QB.
 
+### 3.11b Snake: opportunity-cost-aware keeper insurance discount — PRE-REGISTERED, GATE PENDING
+
+**User's own follow-up, immediately after 3.11's rejection**: "yes, let's
+try that" — i.e. the opportunity-cost-aware version already named as the
+natural next step in 3.11's own writeup, the same fix that rescued
+3.6h from 3.6f-snake's identical failure mode (a discount firing by one
+signal alone, blind to whether a real, more valuable alternative sits on
+the board right now).
+
+**Mechanism — `qualityAwareOpportunityMult` in `snake-engine.js`, a NEW
+function, NOT a modification of `qualityAwareInsuranceMult`** (which stays
+exactly as it was when it failed its own gate, so that rejected result
+stays reproducible). Computes the identical uncapped quality-aware BOOST
+(the amount above the flat 0.60 floor) that the rejected version does,
+then DAMPENS that boost — not the floor — by how comparable the best
+available bench RB/WR alternative (`bestBenchAltVbd`, the higher of
+`bestVbdByPos.RB`/`bestVbdByPos.WR` — roadmap 3.6h's own field, reused
+rather than re-derived) is to the candidate's own VBD:
+
+```
+ratio = min(1, bestBenchAltVbd / candidateVbd)
+mult  = base + boost * (1 - ratio)
+```
+
+Deliberately the SAME ratio-and-clamp shape `opportunityBenchMult` already
+uses for the identical kind of question, not a hard ceiling — a first
+attempt at a hard cap ("never let the discounted score exceed what
+the bench alternative would score at its own standard depth multiplier")
+was tried and caught as WRONG before it was ever gated: worked through by
+hand, that version floors the boost to the flat baseline for ANY present
+alternative below roughly 68% of the candidate's own VBD — including a
+totally negligible scrub bench body — which defeats the entire point (a
+real upgrade should still beat a worthless alternative). The ratio-based
+dampening instead lets a WEAK alternative through nearly untouched and
+only meaningfully protects against a bench alternative that's genuinely
+comparable in value, floored at (never below) the flat baseline once the
+alternative is at least as valuable as the candidate (`ratio = 1`).
+
+Threaded opt-in via `liveState.qualityOpportunityAware` (checked in
+`needMult` BEFORE the plain, already-rejected `qualityAware`, so the two
+are mutually exclusive per caller) and `draft-sim.mjs`'s
+`cfg.qualityOpportunityAware` — `bestVbdByPos` needed no new plumbing at
+all, since it's already computed unconditionally by every existing
+opt-in flag in this file. 13 new selftest assertions in
+`snake-engine.selftest.mjs`: opt-in-by-presence (flag absent, or
+`bestVbdByPos` absent/zero, matches the plain rejected version's full
+boost exactly); a weak alternative leaves the boost >95% intact; a
+moderate alternative (half the candidate's VBD) lands strictly between
+the flat floor and the full boost; an alternative fully as valuable (or
+better) cancels the boost exactly to the flat floor, never below;
+monotonicity across weak/moderate/full; WR alternative treated
+identically to RB; TE gets the same treatment; superflex QB and RB/WR
+(never `insuranceOnly`) stay untouched.
+
+**Hypothesis**: dampening the insurance boost by real bench opportunity
+cost — rather than either the flat 0.60 (today) or the ungated boost
+(3.11, rejected) — captures the genuine upside of a real QB/TE upgrade
+(3.11's own diagnosis: the boost DOES fire correctly and IS a real signal)
+without paying for it by displacing a comparably valuable bench RB/WR
+(3.11's own diagnosed harm).
+
+**Kill gate**: `keeper-quality-opportunity-test.mjs`, identical discipline
+to 3.11's own gate — paired comparison via `draft-sim.mjs`'s common-
+random-numbers design (`realizedWeeklyPoints`, `qualityOpportunityAware`-
+on vs -off, everything else identical), fit/held season split, `mean/SE >
+2` on the HELD-OUT split to ship, same kept-QB-rank scenarios 3.11 used
+(so the two gates are directly comparable). Comparison is against the
+FLAT baseline (off), not against the already-rejected plain
+`qualityAware` — the question is whether THIS mechanism beats what's
+actually shipped today, not whether it beats an idea already known to be
+worse.
+
+**Not shipped anywhere yet.** `qualityOpportunityAware` has no caller in
+`SnakeRoom.tsx` or any other room. See the gate run results below once
+available.
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.

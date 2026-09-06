@@ -262,6 +262,13 @@ export function simulateDraft({
         if (cfg.qualityAwareInsurance) {
           live.qualityAwareInsurance = true;
         }
+        // Roadmap 3.11 follow-up, same opt-in-per-agent isolation reason:
+        // needMult()'s qualityAwareOpportunityMult step only fires when
+        // this is set. bestVbdByPos (built above) already doubles as its
+        // "best bench alternative" input — no new data to compute here.
+        if (cfg.qualityOpportunityAware) {
+          live.qualityOpportunityAware = true;
+        }
         let best = -Infinity;
         for (const p of avail) {
           const { score, blocked } = pickScore(p, live, cfg.params || P);

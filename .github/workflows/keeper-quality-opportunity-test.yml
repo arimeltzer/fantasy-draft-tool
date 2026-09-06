@@ -1,0 +1,100 @@
+name: Keeper opportunity-cost-aware discount backtest (roadmap 3.11b)
+
+# Manual. Follow-up to the rejected roadmap 3.11 gate: does DAMPENING the
+# quality-aware QB/TE insurance discount by the best available bench RB/WR
+# alternative (instead of applying it ungated) actually beat the flat 0.60
+# baseline, where the ungated version made things measurably worse?
+#
+# Compared against the FLAT baseline (qualityOpportunityAware off), not
+# against the already-rejected plain qualityAware version.
+#
+# Fits on seasons <= fitUpto, validates on the rest — a scenario only counts
+# if it clears mean/SE > 2 on the HELD-OUT split, same bar every gate in
+# this repo uses.
+#
+# Needs FANTASYPROS_API_KEY — the opponent bots draft by that season's real
+# ADP. Without it they would draft by our own model, and the comparison
+# would be against a strawman sharing our own biases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      qbRanks:
+        description: "Kept-QB ranks to test (1 = best that season), comma-separated"
+        required: false
+        default: "3,8,14,20,28"
+        type: string
+      forfeitRound:
+        description: "Round the keeper occupies (fixed across scenarios)"
+        required: false
+        default: "1"
+        type: string
+      first:
+        description: "First season to export"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season to export"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated drafts per slot per season per scenario"
+        required: false
+        default: "12"
+        type: string
+      slots:
+        description: "Draft slots to test, comma-separated"
+        required: false
+        default: "1,4,7,10"
+        type: string
+      fitUpto:
+        description: "Seasons <= this are the fit split; the rest are held out"
+        required: false
+        default: "2021"
+        type: string
+
+jobs:
+  keeper-quality-opportunity-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      # The simulator (including the opportunity-cost-aware discount this
+      # gate depends on) decides whether it's worth shipping. It gets
+      # verified before it is allowed to produce a number.
+      - name: Simulator + engine selftest
+        run: |
+          node frontend/src/engine/draft-sim.selftest.mjs
+          node frontend/src/engine/snake-engine.selftest.mjs
+
+      - name: Export historical draft boards (with weekly + bye data)
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Keeper opportunity-cost-aware discount sweep
+        run: |
+          node frontend/src/engine/keeper-quality-opportunity-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --qbRanks ${{ inputs.qbRanks }} \
+            --forfeitRound ${{ inputs.forfeitRound }} \
+            --seeds ${{ inputs.seeds }} \
+            --slots ${{ inputs.slots }} \
+            --fitUpto ${{ inputs.fitUpto }} \
+            | tee data-pipeline/results/keeper_quality_opportunity_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keeper-quality-opportunity-test
+          path: data-pipeline/results/

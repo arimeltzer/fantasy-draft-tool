@@ -216,6 +216,13 @@ export function maxUseful(pos, roster = {}, superflex = false) {
  */
 export const QUALITY_GAP_K = 0.5;
 
+/** The standard "past starters, still useful" multiplier for positions that
+ *  genuinely bank depth (RB/WR) — pulled out to a name so the opportunity-
+ *  cost cap below can reference the SAME number `needMult`'s own `base`
+ *  assignment uses, rather than a second hardcoded 0.88 that could drift
+ *  from it. */
+const DEPTH_MULT = 0.88;
+
 function qualityAwareInsuranceMult(base, candidateValue, myBestValue) {
   if (!Number.isFinite(myBestValue) || myBestValue <= 0) return base;
   if (!Number.isFinite(candidateValue) || candidateValue <= myBestValue) return base;
@@ -223,23 +230,87 @@ function qualityAwareInsuranceMult(base, candidateValue, myBestValue) {
   return Math.min(1.0, base + QUALITY_GAP_K * gap);
 }
 
+/**
+ * Opportunity-cost-aware answer to `qualityAwareInsuranceMult`'s own
+ * failure (roadmap 3.11 follow-up, built after the plain version was
+ * gated and REJECTED — docs/ROADMAP.md 3.11: -1.1 to -2.2 realized pts on
+ * the held-out split, worsening as the discount fired more aggressively).
+ *
+ * DIAGNOSIS OF THE REJECTED VERSION: scaling the QB/TE insurance discount
+ * up for a real upgrade spends a bench slot on a backup who mostly never
+ * plays, displacing a bench RB/WR that would have contributed real
+ * expected weekly points far more often — the exact "insurance, not
+ * depth" reasoning that justified the flat 0.60 floor to begin with. The
+ * plain version had no awareness of what it was displacing.
+ *
+ * THIS MIRRORS 3.6h'S OWN FIX FOR 3.6f-snake'S IDENTICAL FAILURE MODE — a
+ * discount firing by one signal alone, blind to whether a real, more
+ * valuable alternative sits on the board right now. Same diagnosis, same
+ * shape of fix, a different position pair (there: RB/WR depth vs its
+ * FLEX sibling; here: QB/TE insurance vs bench RB/WR).
+ *
+ * MECHANISM: computes the SAME uncapped quality-aware BOOST (the amount
+ * above the flat `base`) as `qualityAwareInsuranceMult`, then DAMPENS that
+ * boost — not the floor itself — by how comparable the best available
+ * bench RB/WR alternative (`bestBenchAltVbd` — the higher of
+ * `bestVbdByPos.RB`/`bestVbdByPos.WR`, roadmap 3.6h's own field, reused
+ * rather than re-derived) is to the candidate's own VBD. Deliberately the
+ * SAME ratio-and-clamp shape `opportunityBenchMult` already uses for the
+ * identical kind of question ("is there a real alternative, and how good
+ * is it relative to what I'm looking at"), not a hard ceiling: a WEAK
+ * alternative (ratio near 0) barely dampens the boost at all — of course
+ * the upgrade beats a scrub bench body, and there is no reason to pretend
+ * otherwise — while a bench alternative fully as valuable as the
+ * candidate (`ratio = 1`, the max) cancels the boost entirely, landing
+ * back on the flat floor rather than dropping below it. Absent or
+ * non-positive `bestBenchAltVbd` (or a candidate with no positive VBD of
+ * his own to ratio against) is a no-op — the full, undamped boost applies,
+ * same as `opportunityBenchMult`'s own "no real alternative" no-op.
+ *
+ * NOT validated — gated SEPARATELY from (and NOT a modification of)
+ * `qualityAwareInsuranceMult`, which stays exactly as it was when it
+ * failed its own gate, so that result stays reproducible. See
+ * docs/ROADMAP.md 3.11 for the pre-registration and kill gate.
+ */
+function qualityAwareOpportunityMult(base, candidateValue, myBestValue, candidateVbd, bestBenchAltVbd) {
+  if (!Number.isFinite(myBestValue) || myBestValue <= 0) return base;
+  if (!Number.isFinite(candidateValue) || candidateValue <= myBestValue) return base;
+  const gap = (candidateValue - myBestValue) / myBestValue;
+  const boost = Math.min(1.0, base + QUALITY_GAP_K * gap) - base;   // amount ABOVE the flat floor
+  if (!Number.isFinite(bestBenchAltVbd) || bestBenchAltVbd <= 0 ||
+      !Number.isFinite(candidateVbd) || candidateVbd <= 0) {
+    return base + boost;   // nothing better on the board — full boost applies
+  }
+  const ratio = Math.min(1, bestBenchAltVbd / candidateVbd);
+  return base + boost * (1 - ratio);
+}
+
 function needMult(
   pos, have, roster, needs, flexEligible, superflex,
   depthAware, siblingHave, opportunityAware, candidateVbd, siblingBestVbd,
   qualityAware, myBestValue, candidateValue,
+  qualityOpportunityAware, bestBenchAltVbd,
 ) {
   if (have === 0) return 1.30;
   const belowStarter = (needs?.[pos] || 0) > 0 || (flexEligible && (needs?.FLEX || 0) > 0);
   if (belowStarter) return 1.15;
   if (have >= maxUseful(pos, roster, superflex)) return 0.65;   // full
-  // Past the starters but still useful. Kept at the tuned 0.88 for the
-  // positions that genuinely bank depth; a one-starter position's backup is
-  // insurance, not depth, so it should not outrank a startable RB or WR.
+  // Past the starters but still useful. Kept at the tuned DEPTH_MULT for
+  // the positions that genuinely bank depth; a one-starter position's
+  // backup is insurance, not depth, so it should not outrank a startable
+  // RB or WR.
   const insuranceOnly = (pos === "QB" && !superflex) || pos === "TE";
-  const base = insuranceOnly ? 0.60 : 0.88;
-  // Roadmap 3.11 — see qualityAwareInsuranceMult's header. Checked before
-  // depthAware/opportunityAware below since those two are RB/WR-only
-  // (FLEX_SIBLING has no QB/TE entry) and would be no-ops here regardless.
+  const base = insuranceOnly ? 0.60 : DEPTH_MULT;
+  // Roadmap 3.11 / 3.11 follow-up — see qualityAwareOpportunityMult's own
+  // header for why the opportunity-aware version is checked FIRST (it is
+  // the un-rejected attempt) with the plain, already-rejected version as
+  // a fallback only when opportunity-awareness isn't requested. Both
+  // checked before depthAware/opportunityAware below since those two are
+  // RB/WR-only (FLEX_SIBLING has no QB/TE entry) and would be no-ops here
+  // regardless.
+  if (insuranceOnly && qualityOpportunityAware) {
+    return qualityAwareOpportunityMult(base, candidateValue, myBestValue, candidateVbd, bestBenchAltVbd);
+  }
   if (insuranceOnly && qualityAware) {
     return qualityAwareInsuranceMult(base, candidateValue, myBestValue);
   }
@@ -291,6 +362,8 @@ function needMult(
  *                   // at 0 below replacement, which is exactly where a
  *                   // mediocre kept player often sits (see the function's
  *                   // own header for the diagnosed bug this fixed).
+ *                   // bestVbdByPos (above) doubles as the opportunity-cost
+ *                   // input for the 3.11 follow-up — no separate field.
  *   adpRankById,    // { id: adp rank } from rankByAdp(board)
  *   poolSize,       // # available players
  * }
@@ -369,9 +442,22 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
   // for any caller that doesn't supply it.
   const myBestValue = s.myBestValueByPos ? s.myBestValueByPos[pos] : undefined;
   const candidateValue = player.valuePoints ?? player.vbd;
+  // roadmap 3.11 follow-up — the best available bench alternative to
+  // spending this pick on QB/TE insurance: the higher of the best
+  // AVAILABLE RB/WR VBD (bestVbdByPos, roadmap 3.6h's own field, reused
+  // rather than re-derived — RB/WR specifically, since those are the
+  // "always value depth" positions this insurance pick would displace;
+  // TE is excluded since it's itself in the insuranceOnly bucket).
+  // Undefined when bestVbdByPos wasn't supplied or neither position has
+  // anything left; qualityAwareOpportunityMult treats that as "nothing to
+  // protect against" and applies the uncapped boost.
+  const bestBenchAltVbd = s.bestVbdByPos
+    ? Math.max(s.bestVbdByPos.RB || 0, s.bestVbdByPos.WR || 0) || undefined
+    : undefined;
   const nm = needMult(pos, have, s.roster || {}, s.needs, flexEligible, superflex,
     s.benchDepthAware, siblingHave, s.opportunityBenchAware, player.vbd, siblingBestVbd,
-    s.qualityAwareInsurance, myBestValue, candidateValue);
+    s.qualityAwareInsurance, myBestValue, candidateValue,
+    s.qualityOpportunityAware, bestBenchAltVbd);
   let base = player.vbd * nm;
   if (nm >= 1.30) reasons.push(`no ${pos} yet`);
   else if (nm >= 1.15) reasons.push(`fills ${pos}`);

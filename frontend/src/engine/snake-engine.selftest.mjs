@@ -641,6 +641,135 @@ check("a non-10-team league also uses it",
         pickScore(rbCandidate, rbOn).score === pickScore(rbCandidate, rbOff).score);
 }
 
+// ── roadmap 3.11 follow-up: opportunity-cost-aware quality discount ──────
+// Built after the plain qualityAwareInsurance was gated and REJECTED
+// (docs/ROADMAP.md 3.11: -1.1 to -2.2 realized pts, worsening as the
+// discount fired more aggressively) — diagnosed as spending a bench slot
+// on a backup QB who mostly never plays, displacing a bench RB/WR that
+// would have contributed real points more often. This dampens the SAME
+// boost by how comparable the best available bench RB/WR is, mirroring
+// opportunityBenchMult's own ratio-and-clamp shape (roadmap 3.6h) rather
+// than qualityAwareOpportunityMult's own rejected sibling.
+{
+  const qbCandidate = player("QB", 150);   // vbd=150, no valuePoints override
+  const haveOneQb = { counts: { QB: 1, RB: 0, WR: 0, TE: 0 } };
+  const flatBaseline = state(haveOneQb);
+  const realUpgrade = { myBestValueByPos: { QB: 60 } };   // gap=1.5 -> full boost to 1.0x
+
+  // Flag absent: unaffected, regardless of bestVbdByPos being supplied —
+  // same "opt-in by presence AND flag" contract every prior roadmap step
+  // in this file already follows.
+  const flagOffWithAlt = state({ ...haveOneQb, ...realUpgrade, bestVbdByPos: { RB: 150 } });
+  check("qualityOpportunityAware absent leaves the flat discount unchanged, even with alt data present",
+        pickScore(qbCandidate, flagOffWithAlt).score === pickScore(qbCandidate, flatBaseline).score);
+
+  // On, but no real "what's the bench alternative" data at all — the FULL
+  // boost applies, byte-identical to the plain (rejected) qualityAware
+  // version with the same upgrade data. Nothing to protect against yet.
+  const noAltData = state({ ...haveOneQb, ...realUpgrade, qualityOpportunityAware: true });
+  const plainBoosted = state({ ...haveOneQb, ...realUpgrade, qualityAwareInsurance: true });
+  check("on, but no bestVbdByPos at all — matches the plain qualityAware boost exactly",
+        pickScore(qbCandidate, noAltData).score === pickScore(qbCandidate, plainBoosted).score,
+        `opp=${pickScore(qbCandidate, noAltData).score} plain=${pickScore(qbCandidate, plainBoosted).score}`);
+  const zeroAltData = state({
+    ...haveOneQb, ...realUpgrade, qualityOpportunityAware: true, bestVbdByPos: { RB: 0, WR: 0 },
+  });
+  check("on, bestVbdByPos present but RB/WR both 0 — still the full boost (no real alternative)",
+        pickScore(qbCandidate, zeroAltData).score === pickScore(qbCandidate, plainBoosted).score);
+
+  // A WEAK bench alternative barely dampens the boost — of course a real
+  // upgrade beats a scrub bench body, and this should not pretend
+  // otherwise the way a hard ceiling would.
+  const weakAlt = state({
+    ...haveOneQb, ...realUpgrade, qualityOpportunityAware: true, bestVbdByPos: { RB: 10 },
+  });
+  check("a weak bench alternative leaves the boost almost entirely intact",
+        pickScore(qbCandidate, weakAlt).score > 0.95 * pickScore(qbCandidate, plainBoosted).score,
+        `weak=${pickScore(qbCandidate, weakAlt).score} full=${pickScore(qbCandidate, plainBoosted).score}`);
+
+  // A MODERATE alternative (half the candidate's own VBD) dampens the
+  // boost proportionally — strictly between the flat floor and the full
+  // boost, not an all-or-nothing snap.
+  const moderateAlt = state({
+    ...haveOneQb, ...realUpgrade, qualityOpportunityAware: true, bestVbdByPos: { RB: 75 },
+  });
+  check("a moderate bench alternative lands strictly between the flat floor and the full boost",
+        pickScore(qbCandidate, moderateAlt).score > pickScore(qbCandidate, flatBaseline).score
+          && pickScore(qbCandidate, moderateAlt).score < pickScore(qbCandidate, plainBoosted).score,
+        `moderate=${pickScore(qbCandidate, moderateAlt).score}`);
+
+  // A bench alternative FULLY as valuable as the candidate (ratio=1)
+  // cancels the boost entirely, landing back on the flat floor — not
+  // below it.
+  const fullAlt = state({
+    ...haveOneQb, ...realUpgrade, qualityOpportunityAware: true, bestVbdByPos: { RB: 150 },
+  });
+  check("a bench alternative as valuable as the candidate cancels the boost exactly to the flat floor",
+        pickScore(qbCandidate, fullAlt).score === pickScore(qbCandidate, flatBaseline).score,
+        `fullAlt=${pickScore(qbCandidate, fullAlt).score} flat=${pickScore(qbCandidate, flatBaseline).score}`);
+
+  // An alternative BETTER than the candidate's own VBD never drops the
+  // discount below the flat floor either — the ratio clamps at 1.
+  const betterAlt = state({
+    ...haveOneQb, ...realUpgrade, qualityOpportunityAware: true, bestVbdByPos: { RB: 300 },
+  });
+  check("an alternative better than the candidate still floors at the flat baseline, never below",
+        pickScore(qbCandidate, betterAlt).score === pickScore(qbCandidate, flatBaseline).score);
+
+  // Monotonic: weaker alternative -> less dampening -> higher score.
+  check("dampening is monotonic in the alternative's strength",
+        pickScore(qbCandidate, weakAlt).score > pickScore(qbCandidate, moderateAlt).score
+          && pickScore(qbCandidate, moderateAlt).score > pickScore(qbCandidate, fullAlt).score,
+        [weakAlt, moderateAlt, fullAlt].map((s) => pickScore(qbCandidate, s).score).join(" > "));
+
+  // WR alternative works identically to RB (either fills the FLEX-eligible
+  // bench role this feature protects) — bestBenchAltVbd takes the max of
+  // the two.
+  const wrAlt = state({
+    ...haveOneQb, ...realUpgrade, qualityOpportunityAware: true, bestVbdByPos: { WR: 150 },
+  });
+  check("a WR alternative dampens identically to an equally-valuable RB alternative",
+        pickScore(qbCandidate, wrAlt).score === pickScore(qbCandidate, fullAlt).score);
+
+  // Not an upgrade at all (candidate no better than what's kept/owned) —
+  // still the flat discount regardless of alternative data, same as the
+  // plain version's own guard.
+  const notAnUpgradeOpp = state({
+    ...haveOneQb, qualityOpportunityAware: true, myBestValueByPos: { QB: 200 }, bestVbdByPos: { RB: 10 },
+  });
+  check("candidate no better than the kept/owned QB — still the flat discount regardless of alt data",
+        pickScore(qbCandidate, notAnUpgradeOpp).score === pickScore(qbCandidate, flatBaseline).score);
+
+  // TE follows the identical insuranceOnly path as non-superflex QB.
+  const teCandidate = player("TE", 90);
+  const teFlat = state({ counts: { QB: 0, RB: 0, WR: 0, TE: 1 } });
+  const teFullAlt = state({
+    counts: { QB: 0, RB: 0, WR: 0, TE: 1 }, qualityOpportunityAware: true,
+    myBestValueByPos: { TE: 30 }, bestVbdByPos: { RB: 90 },
+  });
+  check("TE gets the same opportunity-aware treatment as QB (dampened to the flat floor here)",
+        pickScore(teCandidate, teFullAlt).score === pickScore(teCandidate, teFlat).score);
+
+  // Superflex QB and RB/WR are never insuranceOnly — the flag must have
+  // no effect on either, same exclusions as the plain version.
+  const sfCandidate = player("QB", 150);
+  const sfOff = state({ ...haveOneQb, superflex: true });
+  const sfOn = state({
+    ...haveOneQb, superflex: true, qualityOpportunityAware: true,
+    myBestValueByPos: { QB: 20 }, bestVbdByPos: { RB: 10 },
+  });
+  check("superflex QB is untouched by qualityOpportunityAware (not insuranceOnly)",
+        pickScore(sfCandidate, sfOn).score === pickScore(sfCandidate, sfOff).score);
+  const rbCandidate = player("RB", 150);
+  const rbOff = state({ counts: { QB: 0, RB: 1, WR: 0, TE: 0 } });
+  const rbOn = state({
+    counts: { QB: 0, RB: 1, WR: 0, TE: 0 }, qualityOpportunityAware: true,
+    myBestValueByPos: { RB: 20 }, bestVbdByPos: { WR: 10 },
+  });
+  check("RB is untouched by qualityOpportunityAware (not an insurance-only position)",
+        pickScore(rbCandidate, rbOn).score === pickScore(rbCandidate, rbOff).score);
+}
+
 console.log();
 if (fails.length) {
   console.error(`snake-engine.selftest: ${pass} passed, ${fails.length} FAILED — ${fails.join(", ")}`);

@@ -53,8 +53,16 @@ export interface SnakeLiveState {
    *  check is a no-op (qualityAwareInsurance is also gated separately).
    *  NOT validated, no shipped caller sets it. */
   myBestValueByPos?: Record<string, number>;
-  /** roadmap 3.11 — NOT validated, no shipped caller sets it. */
+  /** roadmap 3.11 — REJECTED (docs/ROADMAP.md: -1.1 to -2.2 realized pts
+   *  on the held-out split). Kept reachable for the harness only; no
+   *  shipped caller sets it. */
   qualityAwareInsurance?: boolean;
+  /** roadmap 3.11 follow-up — opportunity-cost-aware successor to
+   *  qualityAwareInsurance, built after that version was gated and
+   *  REJECTED. Caps the discount by the best available bench RB/WR
+   *  alternative (bestVbdByPos, above — no separate field needed). NOT
+   *  validated, no shipped caller sets it. */
+  qualityOpportunityAware?: boolean;
   adpRankById: Record<number, number>;
   cliffById?: Record<number, number>;
   poolSize: number;
