@@ -4053,7 +4053,7 @@ clean with the new default in place. This is the first constant in
 than ported from the pre-repo offline model — see the comment above
 `SLOT_DEFAULT` in `snake-engine.js` for the full reasoning inline.
 
-### 3.11 Snake: quality-aware keeper insurance discount — FIRST GATE RUN diagnosed a real bug (VBD floors at 0 below replacement) and fixed it; RE-RUN PENDING (discount-only; round-gate relaxation is an explicit follow-up)
+### 3.11 Snake: quality-aware keeper insurance discount (tried — NOT shipped; a real bug was found and fixed along the way, the underlying idea still failed the gate)
 
 **Asked directly, right after 3.10 shipped the QB round-gate backtest**: "If
 I keep a QB, will that prevent the app from recommending a higher rated QB
@@ -4197,12 +4197,57 @@ bug silently prevented. 3 new selftest assertions pin this (2 in
 `draft-sim.selftest.mjs` end-to-end, 1 in `snake-engine.selftest.mjs` for
 the candidate-side `valuePoints ?? vbd` fallback specifically).
 
-**Not shipped anywhere yet — awaiting the RE-RUN gate result.**
-`qualityAwareInsurance` has no caller in `SnakeRoom.tsx` or any other
-shipped room. This is discount MATH and TEST INFRASTRUCTURE only, gated
-the correct way (built and pinned before wiring), matching the process
-3.6f-snake's own retroactive-gate mistake corrected going forward for
-every step since. See the re-run results below once available.
+**RE-RUN, WITH THE FIX — GATE FAILED. The bug is confirmed fixed (the
+mechanism now genuinely fires at ranks 14/20/28, unlike the first run), and
+the honest answer underneath it is negative, not positive.** 1,944 paired
+drafts, GitHub Actions run
+[34003018423](https://github.com/arimeltzer/fantasy-draft-tool/actions/runs/34003018423):
+
+| kept QB rank | fit | held |
+|---|---|---|
+| 3 (elite) | +0.0 ± 0.0 (t=0.00, n=240) | +0.0 ± 0.0 (t=0.00, n=192) |
+| 8 (near replacement) | +0.0 ± 0.0 (t=0.00, n=240) | +0.0 ± 0.0 (t=0.00, n=192) |
+| 14 | -0.9 ± 1.5 (t=-0.58, n=240) | +0.0 ± 0.0 (t=0.00, n=192) |
+| 20 | -1.8 ± 2.0 (t=-0.90, n=240) | -1.1 ± 1.1 (t=-1.00, n=192) |
+| 28 (weak) | -1.3 ± 2.0 (t=-0.66, n=240) | **-2.2 ± 1.3 (t=-1.73)**, n=192 |
+
+Ranks 3/8 are still exactly zero (no real upgrade was ever available for an
+already-strong-or-borderline keeper, correctly inert). Ranks 14/20/28 now
+show REAL, non-zero movement — proof the fix genuinely restored the
+mechanism — but every one of them is NEGATIVE (worse, not better), and it
+gets monotonically worse as the kept QB gets weaker and the discount fires
+more aggressively (rank 28's held split, at t=-1.73, is the closest to
+significant and it's on the wrong side of zero). **No scenario clears
+mean/SE > 2 on the held-out split in the helpful direction — the gate
+FAILS.**
+
+**Likely mechanism, consistent with the shape of the result (not separately
+isolated, same standard every rejected finding in this file uses):**
+scaling the discount up for a "real upgrade" QB2 makes the model spend a
+bench slot on a backup quarterback who mostly never plays (a starter's
+backup is insurance, not depth — the exact reasoning that justified the
+flat 0.60 floor in the first place) instead of a bench RB/WR who
+contributes real expected weekly points far more often. The worse the kept
+QB, the more aggressively the fix (correctly) recognizes an "upgrade" and
+the more often it makes this trade — which is exactly the monotonic
+rank-14-to-28 degradation observed. This is the same category of finding
+as 3.6f-snake's rejection: a discount that responds to one signal (here,
+QB-vs-QB quality) without pricing what it displaces elsewhere on the
+roster can make a real, measurable thing worse even when its own internal
+logic (the bug fix) is completely correct.
+
+**NOT SHIPPED. `qualityAwareInsurance` is not wired into `SnakeRoom.tsx` or
+any other room, and per this result, should not be** with the current
+mechanism/constant. `QUALITY_GAP_K`, `qualityAwareInsuranceMult`, the
+`myBestValueByPos`/`qualityAwareInsurance` plumbing, and
+`keeper-quality-test.mjs`/`.yml` all stay in the repo — reachable for any
+future re-attempt (e.g. an opportunity-cost-aware version in the same
+spirit as 3.6h's answer to 3.6f-snake's identical failure mode) — but nothing
+calls them today. The user's original question is answered directly: yes,
+keeping a mediocre QB CAN cost you a stronger one later under today's flat
+discount, but this specific fix for it does not actually help once properly
+tested — a naive "trust the upgrade" discount trades away more real value
+on the bench than it recovers at QB.
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything

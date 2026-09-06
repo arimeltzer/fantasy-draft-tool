@@ -1685,6 +1685,77 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   selftest + vitest (103/103) passes clean with the new default. See
   `docs/ROADMAP.md` 3.10 for the full result tables from both runs.
 
+## Quality-aware keeper insurance discount (roadmap 3.11 — tried, NOT shipped)
+
+- **Asked directly, right after 3.10 shipped**: "If I keep a QB, will that
+  prevent the app from recommending a higher rated QB before I fill my
+  other positions?" — then, on being asked to test it: "it may be that I
+  can keep a good second string QB in a lower round, but my team would
+  still benefit from a stronger starting QB." `needMult`'s flat 0.60x QB/TE
+  "insurance" discount applies identically whether a second QB is a
+  marginal upgrade over what's kept or a league-winning one — asked
+  whether that flat number was ever right once keepers are in play.
+- **User's own framing, confirmed correct**: "It's really a keeper issue
+  because that's the only scenario where you would intentionally take a
+  lower rated player than someone on the board." A model-optimal simulated
+  agent never rosters a worse player when a better one is openly
+  available, so `draft-sim.mjs` needed real KEEPER PRE-SEEDING
+  (`cfg.keeper = { player, forfeitRound }` — the kept player is locked out
+  of the pool from before the draft starts, and the owning team's pick in
+  the forfeited round is spent on him directly, bypassing `pickScore`)
+  before this scenario could be tested at all — built as part of this step,
+  pinned in `draft-sim.selftest.mjs`.
+- **Scoped discount-only from the start, per explicit instruction**
+  ("Discount-only first, gate as a follow-up"): `qualityAwareInsuranceMult`
+  scales the 0.60 floor toward 1.0 as a candidate's edge over the best
+  QB/TE already owned widens, capped at full value — `QB_MIN`/`QB2_MIN`/
+  `teMinRound`/`te2MinRound` (the hard round gates) were never touched.
+- **First gate run came back at almost exactly zero — and it was a real
+  bug, not a null result.** 4 of 5 kept-QB-rank scenarios produced
+  byte-identical rosters in EVERY paired draft (literal zero, zero spread)
+  — the signature of a mechanism that never fires, not one that fires and
+  doesn't matter. Diagnosed directly: the "best QB/TE I already own" input
+  was computed from VBD, which floors at 0 below replacement — and a
+  mediocre kept QB (replacement in a 1-QB league sits around QB10-12, so
+  rank 14/20/28 all read `vbd: 0`) hits that floor despite having real,
+  distinguishable quality. The "no data" guard was silently ALSO catching
+  "this kept player is real but below replacement" — exactly the
+  population the feature exists to help — and disabling it outright. The
+  same failure mode this file's own 3.6h section documents for the
+  bench-tier pool ("a large share already sits at VBD≈0 by construction").
+  Fixed by comparing `valuePoints` (never floored) instead, on both sides,
+  falling back to `vbd` only when a caller supplies no `valuePoints` at
+  all; verified end-to-end with a hand-built one-team draft where the fix
+  flips a real pick (`draft-sim.selftest.mjs`), 3 new selftest assertions
+  total.
+- **RE-RUN, WITH THE FIX — GATE FAILED, but honestly this time.** The
+  mechanism now genuinely fires (real, non-zero movement at ranks
+  14/20/28, confirming the bug fix worked) — and every one of those is
+  NEGATIVE, getting monotonically worse as the kept QB gets weaker and the
+  discount fires more aggressively (rank 28's held split: -2.2 pts,
+  t=-1.73 — closest to significant, and on the wrong side of zero). No
+  scenario clears mean/SE > 2 on the held-out split in the helpful
+  direction. **Likely mechanism**: scaling the discount up for a "real
+  upgrade" QB2 spends a bench slot on a backup quarterback who mostly
+  never plays instead of a bench RB/WR contributing real expected weekly
+  points far more often — the exact "insurance, not depth" reasoning that
+  justified the flat 0.60 floor in the first place. Same category of
+  finding as 3.6f-snake's rejection: a discount that responds to one
+  signal without pricing what it displaces elsewhere on the roster can
+  make a real, measurable thing worse even when the mechanism's own logic
+  is completely correct.
+- **NOT SHIPPED.** `qualityAwareInsurance` has no caller in `SnakeRoom.tsx`
+  or any other room. `QUALITY_GAP_K`, `qualityAwareInsuranceMult`, the
+  keeper pre-seeding harness, and `keeper-quality-test.mjs`/`.yml` all stay
+  in the repo — real, reusable infrastructure for any future attempt (e.g.
+  an opportunity-cost-aware version, the same fix that rescued 3.6h from
+  3.6f-snake's identical failure mode) — but nothing calls them today. The
+  original question is answered directly: yes, a flat discount can
+  genuinely cost you a stronger QB later, but this specific fix for it
+  does not help once properly tested — trusting the upgrade trades away
+  more real bench value than it recovers at QB. See `docs/ROADMAP.md` 3.11
+  for the full result tables from both gate runs.
+
 ## Bye-aware lineup value replaces `byeClash` in the snake recommender (roadmap 2.4)
 
 - **The idea, proposed directly while revisiting the (rejected) roadmap 2.3**:
