@@ -1755,6 +1755,36 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   does not help once properly tested — trusting the upgrade trades away
   more real bench value than it recovers at QB. See `docs/ROADMAP.md` 3.11
   for the full result tables from both gate runs.
+- **Follow-up, tried the same day: "yes, let's try that" (the
+  opportunity-cost-aware version named above).** `qualityAwareOpportunityMult`
+  — a NEW function, not a modification of the already-rejected one —
+  dampens the SAME boost by how comparable the best available bench RB/WR
+  is to the candidate, mirroring `opportunityBenchMult`'s own ratio-and-
+  clamp shape (3.6h) rather than a hard ceiling. A first hard-cap design
+  was caught as wrong BY HAND before being coded: it would floor the
+  boost to flat for almost any present alternative, even a scrub bench
+  body, defeating the point.
+  - **GATE FAILED, but the diagnosis was right.** Compared against the
+    real flat baseline: ranks 3/8/14/20 came back BYTE-IDENTICAL to the
+    plain version's own numbers — the dampening term apparently never
+    found a real bench alternative to engage at those decision points.
+    Only rank 28 (the weakest keeper, where the plain version's boost
+    fired most aggressively) showed real movement: harm reduced from -2.2
+    to -1.7 pts held-out — a genuine, if partial, improvement in the
+    intended direction — but still negative, still short of the
+    mean/SE > 2 bar. The opportunity-cost fix measurably reduces harm
+    exactly where the plain version did the most damage, but never
+    reaches a net positive anywhere.
+  - **NOT SHIPPED.** `qualityOpportunityAware` has no caller anywhere.
+    Both the plain and opportunity-aware attempts at this discount shape
+    are now closed. Two candidate reasons for the shortfall, neither
+    chased further: `bestVbdByPos` only reports the single best available
+    RB/WR (not the realistic marginal value a few picks later once bots
+    have taken the best ones), or — more fundamentally — the flat 0.60
+    floor may simply already be about right for what a backup QB is
+    worth given how rarely he plays, and no amount of dampening a boost
+    that shouldn't exist can turn it into a net positive. See
+    `docs/ROADMAP.md` 3.11b for the full result table.
 
 ## Bye-aware lineup value replaces `byeClash` in the snake recommender (roadmap 2.4)
 

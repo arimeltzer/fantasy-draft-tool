@@ -4249,7 +4249,7 @@ discount, but this specific fix for it does not actually help once properly
 tested — a naive "trust the upgrade" discount trades away more real value
 on the bench than it recovers at QB.
 
-### 3.11b Snake: opportunity-cost-aware keeper insurance discount — PRE-REGISTERED, GATE PENDING
+### 3.11b Snake: opportunity-cost-aware keeper insurance discount (tried — NOT shipped; reduced the harm at the weakest kept-QB rank but never reached a net positive)
 
 **User's own follow-up, immediately after 3.11's rejection**: "yes, let's
 try that" — i.e. the opportunity-cost-aware version already named as the
@@ -4321,9 +4321,55 @@ FLAT baseline (off), not against the already-rejected plain
 actually shipped today, not whether it beats an idea already known to be
 worse.
 
-**Not shipped anywhere yet.** `qualityOpportunityAware` has no caller in
-`SnakeRoom.tsx` or any other room. See the gate run results below once
-available.
+**GATE RUN — FAILED, but a real (if insufficient) improvement over the
+plain version.** 1,944 paired drafts (compared against the FLAT baseline,
+not the plain rejected version), GitHub Actions run
+[34003911017](https://github.com/arimeltzer/fantasy-draft-tool/actions/runs/34003911017):
+
+| kept QB rank | fit | held | vs. plain 3.11 (held) |
+|---|---|---|---|
+| 3 (elite) | +0.0 ± 0.0 (t=0.00) | +0.0 ± 0.0 (t=0.00) | +0.0 (unchanged) |
+| 8 (near replacement) | +0.0 ± 0.0 (t=0.00) | +0.0 ± 0.0 (t=0.00) | +0.0 (unchanged) |
+| 14 | -1.5 ± 1.4 (t=-1.06) | +0.0 ± 0.0 (t=0.00) | +0.0 (unchanged) |
+| 20 | -1.8 ± 1.9 (t=-0.91) | -1.1 ± 1.1 (t=-1.00) | **identical to plain, -1.1 (t=-1.00)** |
+| 28 (weak) | -1.4 ± 2.0 (t=-0.73) | **-1.7 ± 1.2 (t=-1.38)** | improved from -2.2 (t=-1.73), but still negative |
+
+No scenario clears `mean/SE > 2` in the helpful direction — **the gate
+FAILS**, same verdict as the plain version. Ranks 3/8/14/20 are BYTE-
+IDENTICAL to 3.11's own plain-version numbers (rank 20's held split
+matches to the decimal digit), meaning the dampening term never actually
+engaged at those ranks in practice — the "real bench alternative" this
+mechanism looks for (`bestVbdByPos.RB`/`.WR`) apparently wasn't present
+often enough at those particular decision points to change anything. Only
+rank 28 (the weakest keeper, where the plain version's boost fired most
+aggressively) shows the dampening actually doing something: harm reduced
+from -2.2 to -1.7 pts — a real, if partial, improvement in the intended
+direction — but still negative, not positive, and still short of the bar.
+
+**Reading this honestly**: the opportunity-cost-aware fix is the right
+DIAGNOSIS (it measurably reduces the harm exactly where the plain version
+did the most damage) but not a sufficient FIX — the discount, even
+dampened, still isn't a net win anywhere. Two candidate reasons, neither
+chased further here (out of scope for this pass): (1) `bestVbdByPos` only
+reports the SINGLE best available RB/WR, not the realistic marginal
+value of the pick two picks later once bots have taken the best ones —
+so it may be under-crediting how much real bench value is actually on
+the table; (2) the fundamental "insurance, not depth" framing may simply
+be right as originally set (a backup QB truly is worth less than the
+flat 0.60 already implies, for the amount he actually plays), and no
+amount of dampening a boost that shouldn't exist in the first place will
+turn it into a net positive.
+
+**NOT SHIPPED.** `qualityOpportunityAware` has no caller in `SnakeRoom.tsx`
+or any other room, and per this result, should not be. `qualityAwareOpportunityMult`,
+the `bestVbdByPos`-reuse plumbing, and `keeper-quality-opportunity-test.mjs`/
+`.yml` stay in the repo as real, gated infrastructure — reachable for a
+future attempt at a better "real alternative" signal (e.g. accounting for
+bot-pace-adjusted marginal value rather than the single best available
+player) — but nothing calls them today. Both the plain and opportunity-
+aware attempts at this idea are now closed; further work here should
+target the diagnosis in point (2) above before trying a third variant of
+the same discount shape.
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
