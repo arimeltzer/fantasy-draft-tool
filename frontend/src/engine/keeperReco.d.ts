@@ -19,6 +19,15 @@ export interface RecoItem {
    *  same-position keeper past the starter count, non-superflex) and his
    *  value was discounted accordingly. Snake only. */
   insuranceDiscounted?: boolean;
+  /** Roadmap 3.13 — display-only, never feeds surplus/kv: at MY next real
+   *  pick after this keeper's forfeited pick, the best SAME-POSITION
+   *  player the market expects to still be there (null = no later pick
+   *  owned, or nothing left at the position). Answers "will I be able to
+   *  draft a comparable/better one myself anyway" — every position, not
+   *  just QB/TE; read it as a "you may not need to keep him" signal for
+   *  insurance-only positions (QB non-superflex, TE) and as depth context
+   *  everywhere else. Snake only; unset for auction items. */
+  positionalFallback?: { player: BoardPlayer; pick: number; round: number | null; gap: number } | null;
   cost: number;
   surplus: number;
   scarcity: number;
@@ -55,7 +64,12 @@ export interface RecoResult {
 export declare function marketOrder(board: BoardPlayer[]): (BoardPlayer & { marketIdx: number })[];
 export declare function expectedAtPick(
   marketBoard: (BoardPlayer & { marketIdx: number })[], P: number, keptIds: Set<number>,
+  pos?: string | null,
 ): BoardPlayer | null;
+export declare function positionalFallback(
+  player: BoardPlayer, marketBoard: (BoardPlayer & { marketIdx: number })[], keptIds: Set<number>,
+  myPicks: number[], forfeitPick: number, teams?: number,
+): { player: BoardPlayer; pick: number; round: number | null; gap: number } | null;
 export declare function wheelFactor(slot: number, teams: number): number;
 export declare function scarcityBonus(
   player: BoardPlayer, board: BoardPlayer[], keptIds: Set<number>, factor?: number,

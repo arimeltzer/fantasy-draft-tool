@@ -3,7 +3,7 @@ import { snakePicks } from "./valuation-engine.js";
 import {
   marketOrder, expectedAtPick, wheelFactor, scarcityBonus,
   snakeCandidateValue, auctionCandidateValue, recommendKeepers,
-  predictOpponentKeepers, pickForRound,
+  predictOpponentKeepers, pickForRound, positionalFallback,
 } from "./keeperReco.js";
 import { myPickNumbers, INSURANCE_MULT } from "./snake-engine.js";
 
@@ -341,6 +341,53 @@ eq(predUnknown.byTeam["Mystery"].length, 1, "unknown team still predicted via mi
   const soloRanked = twoQbRec.ranked.find((r) => r.cand.id === qbLow.id);
   eq(soloRanked.insuranceDiscounted, false,
     "evaluated alone (the 'ranked' solo view), the same QB is not discounted");
+}
+
+// ── roadmap 3.13: positional fallback ("will a comparable one still be
+// there when I get to pick again?") — asked directly after 3.12 shipped:
+// does keeping a QB foreclose drafting a stronger one live? Deliberately
+// NOT QB/TE-scoped — the mechanics apply to any position; interpretation
+// is left to the caller/UI.
+{
+  const qbKeeper = board[2];   // QB, rank3, vbd 114
+  const forfeitRound = 3;
+  const forfeitPick = pickForRound(picksSlot1, forfeitRound, teams);
+  const fb = positionalFallback(qbKeeper, mkt, new Set(), picksSlot1, forfeitPick, teams);
+  const expectedNextPick = picksSlot1.filter((p) => p > forfeitPick).sort((a, b) => a - b)[0];
+
+  ok(fb !== null, "a fallback exists when a later pick + same-position player remain");
+  eq(fb.pick, expectedNextPick,
+    "checks the pick where I next actually act, not just 'next in market order'");
+  eq(fb.round, Math.ceil(expectedNextPick / teams), "round derived from that real pick");
+  eq(fb.player.pos, "QB", "fallback is scoped to the SAME position as the kept player");
+  eq(fb.gap, +(qbKeeper.vbd - fb.player.vbd).toFixed(1), "gap = kept VBD - fallback VBD");
+
+  // No later pick owned (this keeper's pick is your last) -> null, not a guess.
+  eq(positionalFallback(qbKeeper, mkt, new Set(), [forfeitPick], forfeitPick, teams), null,
+    "no later pick owned -> no fallback to report");
+
+  // Nothing left at the position by the time you'd act again (every QB
+  // already kept, league-wide) -> null.
+  const allQbIds = new Set(board.filter((p) => p.pos === "QB").map((p) => p.id));
+  eq(positionalFallback(qbKeeper, mkt, allQbIds, picksSlot1, forfeitPick, teams), null,
+    "every same-position player already kept -> no fallback");
+
+  // Works identically for a non-insurance-only position (RB) — this
+  // function makes no QB/TE-specific judgment call at all.
+  const rbKeeper = board[0];
+  const fbRb = positionalFallback(rbKeeper, mkt, new Set(), picksSlot1, forfeitPick, teams);
+  ok(fbRb !== null && fbRb.player.pos === "RB", "works the same way for RB (or any position)");
+
+  // Wired into snakeCandidateValue's own return, display-only — never
+  // touches surplus/kv, still computed exactly as before against the best
+  // ANY-position player at the forfeited pick (not position-scoped).
+  const qbCand = { id: qbKeeper.id, player: qbKeeper, cost: { basis: "round", price: null, round: forfeitRound } };
+  const withFallback = snakeCandidateValue(qbCand, board, mkt, new Set(), picksSlot1, forfeitRound, 1, teams);
+  ok(withFallback.positionalFallback !== null && withFallback.positionalFallback.player.pos === "QB",
+    "snakeCandidateValue surfaces the fallback alongside surplus/kv");
+  const anyBest = expectedAtPick(mkt, forfeitPick, new Set());
+  eq(withFallback.surplus, +(qbKeeper.vbd - (anyBest ? anyBest.vbd : 0)).toFixed(1),
+    "surplus is unaffected by the new field — still vs the best ANY-position player at the forfeited pick");
 }
 
 console.log(`\nkeeperReco.selftest: ${pass} passed, ${fail} failed`);

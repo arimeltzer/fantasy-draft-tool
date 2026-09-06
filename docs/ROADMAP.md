@@ -4442,6 +4442,88 @@ first-processed round to make sure the wrong one isn't credited by
 accident. Full frontend build + selftest (756 assertions across all
 engine selftests) + vitest (110/110) pass clean.
 
+### 3.13 Snake: positional-fallback keeper diagnostic — SHIPPED, display-only, no gate needed
+
+**User's follow-up question, immediately after 3.12 shipped**: "I have a
+recommendation to take a QB as my only keeper in round 11. But that means
+I won't take a better keeper during the live draft. Is the recommender
+accounting for the opportunity of not picking a higher QB if available?"
+Answered honestly first: NO — `snakeCandidateValue`'s surplus only
+compares the kept player against the single best-ANY-position player at
+the ONE pick you forfeit; it has no notion of whether a comparable player
+at his OWN position might realistically still be on the board at YOUR
+NEXT actual turn, in a completely different, later round. Asked to build
+that as a real, visible answer rather than leaving it as an unmeasured
+worry.
+
+**Scope, asked directly and answered rather than assumed**: "Any reason
+to limit to QBs, or should we build for all positions? The only thing
+about QB (and TE) is you only need one (although technically you can flex
+TE)." Correct, and the mechanism is built generally — the underlying
+question ("what's realistically still there at this position by the time
+I act again") is meaningful for every position, not just the two
+one-starter ones. What genuinely differs by position is how to READ the
+answer, so that's where the position-awareness lives — in the
+INTERPRETATION, not the calculation:
+- QB (non-superflex) and TE (`isInsuranceOnly`): you only ever need ONE
+  (TE's FLEX eligibility softens this slightly but a second TE still
+  mostly sits), so a comparable-or-better fallback is a real "you may not
+  need to keep him" signal.
+- RB/WR/superflex-QB: you'll happily roster several — a strong fallback
+  here is depth CONTEXT, not a foreclosed opportunity, since both the
+  kept player and whoever you draft later make the roster better rather
+  than compete for the same one spot.
+
+**Mechanism**: `keeperReco.js positionalFallback(player, marketBoard,
+keptIds, myPicks, forfeitPick, teams)` — reuses `expectedAtPick` (now
+taking an optional `pos` filter, backward compatible) scoped to the kept
+player's OWN position, evaluated at YOUR actual next pick after the
+keeper's forfeited one (`nextPickAfter`, the smallest owned pick greater
+than `forfeitPick`) — deliberately NOT "the next player at this position
+in market order", which says nothing about whether your draft slot gets a
+turn before another team takes him. Returns `{ player, pick, round, gap }`
+(`gap = kept.vbd - fallback.vbd`) or `null` when there's no later pick
+owned or nothing is left at the position. Wired into
+`snakeCandidateValue`'s return as `positionalFallback` — computed
+alongside, but never feeding, `surplus`/`kv` (display-only, confirmed by
+a selftest asserting surplus is byte-identical with or without it).
+Snake-only, matching `snakeCandidateValue`'s own scope — auction has no
+fixed personal "next pick" sequence to check against (nominations are
+simultaneous, not a personal draft slot).
+
+**A real bug this feature's own selftest caught in 3.12, not a hypothetical
+one**: `snakeCandidateValue`'s insurance-discount check used `roster[pos]
+|| 0` for the starter-count threshold — when a caller doesn't pass a real
+`roster` (the default `{}`), that reads as "zero starters needed", which
+flags a SOLE QB/TE keeper (the exact case the user asked about) as
+"redundant" and discounts him despite being the only one of his position
+anywhere in the picture. Every existing production call path happened to
+always supply a real `roster` (masking this in practice), but 3.13's own
+selftest — the first to call `snakeCandidateValue` directly with a QB and
+no explicit roster — hit it immediately. Fixed to `roster[pos] ?? 1`: the
+correct default assumption for the only two positions this branch ever
+runs for (every real league fields at least one QB and one TE) is "assume
+one starter", not "assume none".
+
+**No kill gate** — this is pure DISPLAY, the same category as
+`byeCollisions`/`benchStackWarning` before it: it never touches
+`surplus`, `keptValue`, `insuranceDiscounted`, or `kv`, so there is no
+valuation claim to backtest, only a UI addition surfacing a number the
+engine already had the ingredients to compute.
+
+**Shipped**: `KeeperRecommendations.tsx`'s ranked-candidates table now
+shows a second line under each QB/TE(and beyond)'s name — "may not need —
+next {pos} ~R{round} ({name})" in amber for insurance-only positions,
+"depth: next {pos} ~R{round} ({name})" in neutral gray otherwise — with a
+tooltip naming the exact projected pick, round, and VBD comparison. 10 new
+selftest assertions in `keeperReco.selftest.mjs` (the next-real-pick
+lookup vs. naive market order, the position scoping, the gap arithmetic,
+both null cases, cross-position generality, and confirming the field
+rides alongside `snakeCandidateValue`'s surplus/kv without touching
+them) — plus the 1 fixing the 3.12 default-roster regression above (66
+total in this file, up from 56). Full frontend build + selftest + vitest
+pass clean.
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.

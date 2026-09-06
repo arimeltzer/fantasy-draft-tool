@@ -60,10 +60,15 @@ export function marketOrder(board) {
 }
 
 /** Best player (by our VBD) still on the board at overall pick P, given the
- *  set of removed (kept, all-teams) ids. Null if nothing is left. */
-export function expectedAtPick(marketBoard, P, keptIds) {
+ *  set of removed (kept, all-teams) ids. Null if nothing is left.
+ *  `pos`, optional (roadmap 3.13), scopes the search to one position —
+ *  "who's the best PLAYER left" vs "who's the best {POS} left" are the
+ *  same loop, just filtered differently; every existing caller omits it
+ *  and is unaffected. */
+export function expectedAtPick(marketBoard, P, keptIds, pos = null) {
   let best = null;
   for (const p of marketBoard) {
+    if (pos && p.pos !== pos) continue;
     if (keptIds.has(p.id)) continue;
     if (p.marketIdx < P) continue; // market took them before your pick
     if (!best || p.vbd > best.vbd) best = p;
@@ -139,6 +144,59 @@ export function pickForRound(myPicks, round, teams) {
   return myPicks[myPicks.length - 1];
 }
 
+/** Your NEXT pick strictly after `afterPick` — "if I spend THIS pick on the
+ *  keeper, when do I get to act again?" Null with no later pick owned. */
+function nextPickAfter(myPicks, afterPick) {
+  if (!myPicks?.length) return null;
+  const later = myPicks.filter((p) => p > afterPick);
+  return later.length ? Math.min(...later) : null;
+}
+
+/**
+ * Roadmap 3.13 — "if I keep this player, will I be able to draft a
+ * comparable or better one at his position myself anyway, with my OWN
+ * next pick?" Asked directly after shipping 3.12: does keeping a QB in an
+ * early-ish round foreclose drafting a stronger one live? Answered
+ * concretely rather than left as an unmeasured worry — this is the same
+ * `expectedAtPick` lookup the surplus math already trusts, scoped to ONE
+ * position and evaluated at the pick you'll ACTUALLY be on the clock for
+ * next (not just "the next player at this position in market order",
+ * which says nothing about whether YOUR draft slot gets a turn before
+ * someone else takes him).
+ *
+ * DELIBERATELY NOT QB/TE-ONLY — asked directly: "is there a reason to
+ * limit to QBs, or should we build for all positions?" The underlying
+ * question (what's realistically still there at this position by the
+ * time I act again) is meaningful everywhere; what differs is how to
+ * READ the answer, left to the caller/UI rather than baked in here:
+ *   - QB (non-superflex) and TE (`isInsuranceOnly`): you only ever
+ *     NEED one starter, so a comparable-or-better fallback is a real
+ *     "you may not need to keep him" signal.
+ *   - RB/WR/superflex-QB: you'll happily roster several — a strong
+ *     fallback here is depth CONTEXT, not a foreclosed opportunity, since
+ *     both the kept player and whoever you draft later make the team
+ *     better rather than compete for the same one roster spot.
+ * Snake-only (auction has no fixed personal "next pick" sequence to check
+ * against — nominations are simultaneous, not a personal draft slot).
+ *
+ * @returns null when there's no later pick owned, or nothing is left at
+ *          the position; otherwise { player, pick, round, gap } — `gap`
+ *          is `player.vbd - fallback.vbd` (small/negative = a near-equal
+ *          or better option is realistically still there anyway).
+ */
+export function positionalFallback(player, marketBoard, keptIds, myPicks, forfeitPick, teams) {
+  const nextPick = nextPickAfter(myPicks, forfeitPick);
+  if (nextPick == null) return null;
+  const fallback = expectedAtPick(marketBoard, nextPick, keptIds, player.pos);
+  if (!fallback) return null;
+  return {
+    player: fallback,
+    pick: nextPick,
+    round: teams ? Math.ceil(nextPick / teams) : null,
+    gap: +(player.vbd - fallback.vbd).toFixed(1),
+  };
+}
+
 /**
  * @param sameposKeptBefore how many OTHER keepers already chosen in this
  *        same subset play this candidate's position — mirrors
@@ -165,11 +223,28 @@ export function snakeCandidateValue(
   // roadmap 3.11/3.11b traced the harm to when they tried to fix it at
   // draft time instead — fixing it HERE, at the keeper decision, is what
   // was proposed as the better home for it.
-  const insuranceDiscounted = isInsuranceOnly(p.pos, superflex) && sameposKeptBefore >= (roster[p.pos] || 0);
+  //
+  // `roster[p.pos] ?? 1`, NOT `|| 0` — a real bug caught by 3.13's own
+  // selftest (a QB candidate scored with no `roster` argument, the
+  // default `{}`, came back insurance-discounted despite being the ONLY
+  // QB in the subset). `roster[pos] || 0` silently reads "no roster
+  // info supplied" as "zero starters needed", which flags a SOLE QB/TE
+  // keeper as redundant against a starter requirement of zero — wrong for
+  // every real league, which always fields at least one QB and one TE.
+  // Defaulting the unknown-starter-count case to 1 (not 0) is the safe
+  // assumption for the only two positions this branch ever runs for.
+  const starters = roster[p.pos] ?? 1;
+  const insuranceDiscounted = isInsuranceOnly(p.pos, superflex) && sameposKeptBefore >= starters;
   const keptValue = insuranceDiscounted ? +(p.vbd * INSURANCE_MULT).toFixed(1) : p.vbd;
   const surplus = +(keptValue - forfeitVbd).toFixed(1);
   const scarcity = scarcityBonus(p, board, keptIds, scarceFactor);
-  return { market: p.vbd, keptValue, insuranceDiscounted, cost: round, surplus, scarcity, forfeit: exp, forfeitPick };
+  // Roadmap 3.13 — display-only; never feeds surplus/kv. See the function's
+  // own header for what this answers and why it's not QB/TE-scoped.
+  const fallback = positionalFallback(p, marketBoard, keptIds, myPicks, forfeitPick, teams);
+  return {
+    market: p.vbd, keptValue, insuranceDiscounted, cost: round, surplus, scarcity,
+    forfeit: exp, forfeitPick, positionalFallback: fallback,
+  };
 }
 
 /* ------------------------------------------------------------------ *

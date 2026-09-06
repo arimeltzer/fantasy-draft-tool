@@ -2547,6 +2547,46 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   claim. Stated limitation: this is NOT independently backtested for
   keeper-SELECTION quality specifically, since no harness in this repo
   scores that the way `draft-sim.mjs` scores draft-time picks.
+- **Positional-fallback keeper diagnostic (roadmap 3.13, shipped, display-
+  only).** Follow-up question, right after 3.12: "I have a recommendation
+  to take a QB as my only keeper in round 11. But that means I won't take
+  a better keeper during the live draft. Is the recommender accounting
+  for the opportunity of not picking a higher QB if available?" Answered
+  honestly: no — `snakeCandidateValue`'s surplus only compares the kept
+  player against the single best-ANY-position player at the ONE pick you
+  forfeit; it has no notion of whether a comparable player at his OWN
+  position might realistically still be there at YOUR NEXT actual turn, a
+  different, later round entirely. Asked to build that as a real, visible
+  answer. **Scoped generally, not QB-only, per direct question**: "Any
+  reason to limit to QBs, or should we build for all positions? The only
+  thing about QB (and TE) is you only need one (although technically you
+  can flex TE)." Correct — the mechanism (`positionalFallback`, reusing
+  `expectedAtPick` with a new optional position filter, evaluated at
+  `nextPickAfter` your actual next owned pick — NOT just "next in market
+  order", which says nothing about whether your slot gets a turn first)
+  is built for every position; only the INTERPRETATION is position-aware:
+  a "you may not need to keep him" warning for `isInsuranceOnly` positions
+  (QB non-superflex, TE — you only ever need one starter), depth CONTEXT
+  for RB/WR/superflex-QB (you'll happily roster several, so a strong
+  fallback there isn't a foreclosed choice). Pure display — never touches
+  `surplus`/`kv` — so **no kill gate needed**, same category as
+  `byeCollisions`/`benchStackWarning`.
+  - **A real bug this feature's OWN selftest caught in 3.12, not a
+    hypothetical one**: `snakeCandidateValue`'s insurance check used
+    `roster[pos] || 0` for the starter threshold — with no `roster`
+    passed (the default `{}`), that reads "zero starters needed" and
+    flags a SOLE QB/TE keeper (exactly the case this user asked about) as
+    redundant. Every existing production caller happened to always pass a
+    real roster, masking it — 3.13's own test was the first to call
+    `snakeCandidateValue` directly with a QB and no roster, and hit it
+    immediately. Fixed to `roster[pos] ?? 1`: the correct default for the
+    only two positions this branch ever runs for is "assume one starter",
+    since every real league fields at least one QB and one TE.
+  - UI: `KeeperRecommendations.tsx`'s ranked table shows a second line
+    under each keeper's name — "may not need — next {pos} ~R{round}
+    ({name})" in amber for insurance-only positions, "depth: next {pos}
+    ~R{round} ({name})" in neutral gray otherwise, tooltip naming the
+    exact pick/round/VBD comparison. 10 new selftest assertions.
 - **Import persistence**: both keeper importers cache into
   `settings.keeperImport` (`KeeperImportCache.source` = `espn` | `yahoo-paste`),
   so the analysis is restored — and re-fed to the recommender — when the planner

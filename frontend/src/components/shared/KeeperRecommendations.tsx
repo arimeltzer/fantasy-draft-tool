@@ -3,6 +3,7 @@ import { Sparkles, ChevronDown, Check, Minus, Info, EyeOff } from "lucide-react"
 import { keeperCost, normalizeKeeperRule } from "@/engine/keeper.js";
 import { marketOrder, recommendKeepers, draftImpact, predictOpponentKeepers } from "@/engine/keeperReco.js";
 import { auctionValues } from "@/engine/auction-engine.js";
+import { isInsuranceOnly } from "@/engine/snake-engine.js";
 import type { BoardPlayer } from "@/engine/valuation-engine.js";
 import { LeagueSettings, KeeperCandidate } from "@/lib/api";
 import { DraftEntry } from "@/store/draftStore";
@@ -319,21 +320,44 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
                       key={it.cand.id}
                       className={`grid ${priceBasis ? "grid-cols-[1fr_46px_46px_46px_52px_56px]" : "grid-cols-[1fr_64px_46px_46px_52px_56px]"} items-center gap-1 border-b border-l-[3px] border-b-hair px-2.5 py-1.5 text-xs ${st.accent} ${it.recommended ? "bg-emerald-50/60" : "bg-surface"}`}
                     >
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <span className={`font-mono text-2xs font-semibold ${st.text}`}>{it.cand.player.pos}</span>
-                        <span className="truncate text-ink">{it.cand.player.name}</span>
-                        {committedIds.has(it.cand.id) && (
-                          <span className="chip border-line bg-raised text-2xs text-faint" title="Committed as a keeper (out of the pool)">kept</span>
-                        )}
-                        {!committedIds.has(it.cand.id) && (
-                          <button
-                            onClick={() => setEligible(it.cand.id, false)}
-                            className="shrink-0 text-2xs text-faint hover:text-rose-600"
-                            title="The import missed this — he was actually kept last year and is ineligible under your league's rule"
-                          >
-                            kept last year?
-                          </button>
-                        )}
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className={`font-mono text-2xs font-semibold ${st.text}`}>{it.cand.player.pos}</span>
+                          <span className="truncate text-ink">{it.cand.player.name}</span>
+                          {committedIds.has(it.cand.id) && (
+                            <span className="chip border-line bg-raised text-2xs text-faint" title="Committed as a keeper (out of the pool)">kept</span>
+                          )}
+                          {!committedIds.has(it.cand.id) && (
+                            <button
+                              onClick={() => setEligible(it.cand.id, false)}
+                              className="shrink-0 text-2xs text-faint hover:text-rose-600"
+                              title="The import missed this — he was actually kept last year and is ineligible under your league's rule"
+                            >
+                              kept last year?
+                            </button>
+                          )}
+                        </span>
+                        {/* Roadmap 3.13 — "will I be able to draft a comparable/better
+                            one myself anyway, with my own next pick?" Snake only
+                            (auction items never carry positionalFallback at all).
+                            Framing differs by position: a one-starter position
+                            (QB non-superflex, TE) reads this as "you may not need
+                            to keep him"; RB/WR/superflex-QB read it as depth
+                            context, since owning both is real added value there,
+                            not a foreclosed choice. */}
+                        {it.positionalFallback && (() => {
+                          const insurance = isInsuranceOnly(it.cand.player.pos, !!settings.superflex);
+                          const fb = it.positionalFallback;
+                          return (
+                            <span
+                              className={`truncate font-mono text-2xs ${insurance ? "text-amber-600" : "text-faint"}`}
+                              title={`At your own next pick (#${fb.pick}${fb.round ? `, round ${fb.round}` : ""}) after this keeper, the market's best available ${it.cand.player.pos} is projected to be ${fb.player.name} (VBD ${fb.player.vbd}, vs this keeper's ${it.cand.player.vbd}).`}
+                            >
+                              {insurance ? "may not need — " : "depth: "}
+                              next {it.cand.player.pos} ~R{fb.round ?? "?"} ({fb.player.name.split(" ").slice(-1)[0]})
+                            </span>
+                          );
+                        })()}
                       </span>
                       <span className="text-right font-mono text-2xs text-muted">
                         {priceBasis ? `$${it.cost}` : `R${it.round ?? it.cost}→${it.forfeitPick}`}

@@ -103,6 +103,15 @@ export declare function pickScore(
 export declare function maxUseful(
   pos: string, roster?: Record<string, number>, superflex?: boolean,
 ): number;
+/** Is a SECOND+ body at this position insurance rather than depth? True
+ *  for QB (non-superflex) and TE — reused by `keeperReco.js` (roadmap 3.12)
+ *  and its UI (roadmap 3.13) to ask the identical question outside a live
+ *  draft. */
+export declare function isInsuranceOnly(pos: string, superflex?: boolean): boolean;
+/** The flat "past a starter, insurance not depth" multiplier for QB
+ *  (non-superflex) and TE — the always-shipped default, distinct from the
+ *  rejected boost/damping attempts on top of it (roadmap 3.11/3.11b). */
+export declare const INSURANCE_MULT: number;
 export declare function snakePicks(slot: number, teams: number, rounds?: number): number[];
 /** Overall pick numbers you own: `settings.myPicks` when set (traded picks),
  *  otherwise serpentine from `draftSlot`. */
