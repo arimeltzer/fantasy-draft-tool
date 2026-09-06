@@ -3,7 +3,13 @@ import { api, LiveSyncResult } from "@/lib/api";
 import { yahooAccessToken, loadYahooSession } from "@/lib/yahooAuth";
 
 export interface LiveDraftConfig {
-  provider: "espn" | "yahoo";
+  /** "viewer" is a THIRD, no-credential mode (roadmap: "sync from another
+   *  device") — it never calls ESPN/Yahoo at all, just re-fetches this
+   *  league's own already-synced picks on the same interval, for a second
+   *  device that isn't the one actually running the real sync (which
+   *  writes to the shared backend regardless of which device polls it —
+   *  see CLAUDE.md's live-draft cross-device notes). */
+  provider: "espn" | "yahoo" | "viewer";
   extId: string;
   season?: number;
   matchSeason?: number;
@@ -59,6 +65,15 @@ export function useLiveDraft(
     if (!cfg || inFlight.current) return;
     inFlight.current = true;
     setStatus((s) => ({ ...s, busy: true }));
+    // Viewer mode: no ESPN/Yahoo call at all — the picks already exist in
+    // the backend (another device's real sync wrote them there), this tick
+    // just asks the room to re-fetch them. No apply/backfill concept here.
+    if (cfg.provider === "viewer") {
+      onPicksRef.current?.();
+      setStatus((s) => ({ ...s, lastSyncAt: new Date().toISOString(), error: null, busy: false }));
+      inFlight.current = false;
+      return;
+    }
     try {
       let accessToken: string | undefined;
       let myGuid: string | undefined;

@@ -44,7 +44,7 @@ const INTERVALS = [
  */
 export default function LiveDraftPanel({ leagueId, settings, onClose, live, config, onConfigChange, intervalMs, onIntervalChange }: Props) {
   const source = settings.source;
-  const [provider, setProvider] = useState<"espn" | "yahoo">(
+  const [provider, setProvider] = useState<"espn" | "yahoo" | "viewer">(
     config?.provider ?? (source?.provider === "yahoo" ? "yahoo" : "espn"));
   const [extId, setExtId] = useState(config?.extId ?? source?.extId ?? "");
   const [myTeam, setMyTeam] = useState(config?.myTeam ?? "");
@@ -67,13 +67,16 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
   // What the FORM currently describes — not yet committed to the parent
   // (and therefore not yet what `live` is actually polling with) until
   // "Start watching" or "Sync now" is pressed.
-  const formConfig: LiveDraftConfig | null = useMemo(
-    () => (extId.trim()
+  const formConfig: LiveDraftConfig | null = useMemo(() => {
+    // Viewer mode needs no league id / credentials at all — it never calls
+    // ESPN/Yahoo, it just re-fetches this league's own already-synced picks
+    // (see useLiveDraft.ts's "viewer" branch), so it's always a valid config.
+    if (provider === "viewer") return { provider: "viewer", extId: "" };
+    return extId.trim()
       ? { provider, extId: extId.trim(), espnS2: s2, swid, myTeam,
           myTeamExtId: provider === "yahoo" ? (yahooTeamOverride || undefined) : undefined }
-      : null),
-    [provider, extId, s2, swid, myTeam, yahooTeamOverride],
-  );
+      : null;
+  }, [provider, extId, s2, swid, myTeam, yahooTeamOverride]);
 
   const res = live.lastResult;
   const yahooReady = provider !== "yahoo" || yahooConnected();
@@ -216,61 +219,75 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
         </div>
 
         <div className="space-y-3 px-4 py-3">
-          <p className="text-2xs leading-snug text-muted">
-            Picks are <span className="text-ink">polled</span>, not pushed — neither platform
-            offers a live feed to outside apps, so new picks show up within one interval of being
-            made. Everything you log by hand still works; syncing only adds picks that aren't
-            already on the board. {live.running && "Closing this window does NOT stop it — "}
-            {live.running && <span className="text-emerald-700 font-medium">it keeps polling in the background</span>}
-            {live.running && "; the \"Live\" button up top shows it's still active."}
-          </p>
+          {provider === "viewer" ? (
+            <p className="text-2xs leading-snug text-muted">
+              No login needed here — this device doesn't sync from ESPN/Yahoo itself, it just{" "}
+              <span className="text-ink">re-fetches this league's picks</span> on the interval
+              below, so it stays current with whatever your OTHER device (the one actually
+              running the real sync) has already logged to the shared board.
+            </p>
+          ) : (
+            <p className="text-2xs leading-snug text-muted">
+              Picks are <span className="text-ink">polled</span>, not pushed — neither platform
+              offers a live feed to outside apps, so new picks show up within one interval of being
+              made. Everything you log by hand still works; syncing only adds picks that aren't
+              already on the board. {live.running && "Closing this window does NOT stop it — "}
+              {live.running && <span className="text-emerald-700 font-medium">it keeps polling in the background</span>}
+              {live.running && "; the \"Live\" button up top shows it's still active."}
+            </p>
+          )}
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className={provider === "viewer" ? "" : "grid grid-cols-2 gap-2"}>
             <label className="block text-xs">
               <span className="mb-1 block text-muted">Platform</span>
               <select
                 value={provider}
-                onChange={(e) => setProvider(e.target.value as "espn" | "yahoo")}
+                onChange={(e) => setProvider(e.target.value as "espn" | "yahoo" | "viewer")}
                 className="w-full rounded-lg border border-line bg-surface px-2 py-1 text-ink focus:border-faint focus:outline-none"
               >
                 <option value="espn">ESPN</option>
                 <option value="yahoo">Yahoo</option>
+                <option value="viewer">Sync from another device</option>
               </select>
             </label>
-            <label className="block text-xs">
-              <span className="mb-1 block text-muted">
-                {provider === "yahoo" ? "League key" : "League ID"}
-              </span>
-              <input
-                value={extId}
-                onChange={(e) => setExtId(e.target.value)}
-                placeholder={provider === "yahoo" ? "461.l.82486" : "123456"}
-                className="w-full rounded-lg border border-line bg-surface px-2 py-1 font-mono text-ink focus:border-faint focus:outline-none"
-              />
-            </label>
+            {provider !== "viewer" && (
+              <label className="block text-xs">
+                <span className="mb-1 block text-muted">
+                  {provider === "yahoo" ? "League key" : "League ID"}
+                </span>
+                <input
+                  value={extId}
+                  onChange={(e) => setExtId(e.target.value)}
+                  placeholder={provider === "yahoo" ? "461.l.82486" : "123456"}
+                  className="w-full rounded-lg border border-line bg-surface px-2 py-1 font-mono text-ink focus:border-faint focus:outline-none"
+                />
+              </label>
+            )}
           </div>
 
-          <label className="block text-xs">
-            <span className="mb-1 block text-muted">
-              Your team <span className="text-faint">
-                {provider === "yahoo" ? "(detected from your Yahoo login)" : "(name or team id — marks your picks)"}
+          {provider !== "viewer" && (
+            <label className="block text-xs">
+              <span className="mb-1 block text-muted">
+                Your team <span className="text-faint">
+                  {provider === "yahoo" ? "(detected from your Yahoo login)" : "(name or team id — marks your picks)"}
+                </span>
               </span>
-            </span>
-            {provider === "espn" && (
-              <input
-                value={myTeam}
-                onChange={(e) => setMyTeam(e.target.value)}
-                placeholder="Team Ari"
-                className="w-full rounded-lg border border-line bg-surface px-2 py-1 text-ink focus:border-faint focus:outline-none"
-              />
-            )}
-            {provider === "yahoo" && !yahooConnected() && (
-              <span className="block rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-2xs text-amber-800">
-                Not connected to Yahoo — open Keepers → "Yahoo — pull last season from the API"
-                and connect once. The same session is used here.
-              </span>
-            )}
-          </label>
+              {provider === "espn" && (
+                <input
+                  value={myTeam}
+                  onChange={(e) => setMyTeam(e.target.value)}
+                  placeholder="Team Ari"
+                  className="w-full rounded-lg border border-line bg-surface px-2 py-1 text-ink focus:border-faint focus:outline-none"
+                />
+              )}
+              {provider === "yahoo" && !yahooConnected() && (
+                <span className="block rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-2xs text-amber-800">
+                  Not connected to Yahoo — open Keepers → "Yahoo — pull last season from the API"
+                  and connect once. The same session is used here.
+                </span>
+              )}
+            </label>
+          )}
 
           {provider === "yahoo" && yahooConnected() && (
             <div className="flex items-center gap-2">
@@ -515,6 +532,13 @@ export default function LiveDraftPanel({ leagueId, settings, onClose, live, conf
               {live.running ? <><Pause className="h-3.5 w-3.5" /> Stop</> : <><Play className="h-3.5 w-3.5" /> Start watching</>}
             </button>
           </div>
+
+          {provider === "viewer" && live.lastSyncAt && (
+            <p className="text-2xs text-muted">
+              Last refreshed <span className="font-mono text-faint">{new Date(live.lastSyncAt).toLocaleTimeString()}</span>
+              {live.running && " — refreshing automatically while this stays on."}
+            </p>
+          )}
 
           {live.error && (
             <p className="flex items-start gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-2xs text-rose-700">

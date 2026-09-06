@@ -4524,6 +4524,55 @@ them) — plus the 1 fixing the 3.12 default-roster regression above (66
 total in this file, up from 56). Full frontend build + selftest + vitest
 pass clean.
 
+### 3.14 Live draft sync: "sync from another device" viewer mode — SHIPPED, no gate needed (pure UX, no valuation change)
+
+**User's question, asked directly while confirming live-draft mechanics
+ahead of a real draft**: "Does it make sense to create on the live draft
+sync page a 'sync from another device' option that automatically polls
+every 5 seconds while active?" Motivated by a gap surfaced answering an
+earlier question in the same thread: the shared backend is already the
+source of truth for picks regardless of which device runs the real
+ESPN/Yahoo sync (`sync_draft` is idempotent by player id, safe to run from
+multiple devices at once), so a SECOND device just watching the draft
+(no ESPN/Yahoo login of its own) sees already-synced picks fine on first
+load — but has no mechanism to notice NEW ones without its own poll loop,
+since the only trigger for a room to refetch (`onPicks`) fires from
+inside whichever device's `useLiveDraft` is actually running.
+
+**Mechanism**: `LiveDraftConfig.provider` gains a third value, `"viewer"`
+— alongside `"espn"`/`"yahoo"`, not replacing either. `useLiveDraft.ts
+syncOnce` short-circuits for it before any network call: no ESPN/Yahoo
+request, no `apply`/`backfill` concept, just `onPicksRef.current?.()`
+(the existing callback the room already wires up to refetch its own
+`DraftPick` rows) followed by a `lastSyncAt` update. The EXISTING
+interval selector (5s/10s/30s) and start/stop loop in the same hook are
+reused unchanged — viewer mode is a new leaf in `syncOnce`, not a new
+polling mechanism. `LiveDraftPanel.tsx`'s provider `<select>` gets a
+third option ("Sync from another device"); `formConfig` treats it as
+always-valid (`{ provider: "viewer", extId: "" }`, no league id or
+credentials needed at all — the whole point), and every ESPN/Yahoo-only
+UI section (League ID, Your team, cookies, Tampermonkey/bookmarklet
+download, stop-backend-watcher) is hidden for it via the same
+`provider === "espn"`/`"yahoo"` gates already in place, plus a short
+explanatory line replacing the polling-latency blurb that doesn't apply
+here.
+
+**No kill gate** — this changes no valuation, scoring, or pick logic at
+all; it's a convenience wrapper around a callback and an interval the
+hook already had. Same category as the pure-display features in this
+phase (`byeCollisions`, `benchStackWarning`, 3.13's own diagnostic) in
+that there's no number to backtest — but even more so, since nothing
+here touches the board or engine at all, only how a second browser tab
+learns picks already exist.
+
+**Shipped**: `useLiveDraft.ts` (widened `LiveDraftConfig.provider`,
+viewer short-circuit in `syncOnce`), `LiveDraftPanel.tsx` (provider
+option, `formConfig` viewer branch, hidden fields, "Last refreshed"
+status line). `LiveDraftPanel.test.tsx` gained 2 new assertions (viewer
+mode hides League ID/Your team and needs nothing typed to enable "Start
+watching"; a last-sync timestamp renders once one exists). Full frontend
+build + selftest + vitest pass clean.
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.

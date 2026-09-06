@@ -665,6 +665,27 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   None` and still resolves correctly once overridden) and
   `LiveDraftPanel.test.tsx` (warning + picker shown/hidden correctly,
   selection updates).
+- **"Sync from another device" viewer mode (roadmap 3.14), asked directly:
+  "Does it make sense to create on the live draft sync page a 'sync from
+  other device' option that automatically polls every 5 seconds while
+  active?"** Motivated by a gap surfaced answering the question right
+  before it: the shared backend is already the source of truth for picks
+  no matter which device runs the real ESPN/Yahoo sync (`sync_draft` is
+  idempotent by player, safe from multiple devices at once), so a second,
+  passive device sees already-synced picks fine on load but has no way to
+  notice NEW ones — the only trigger to refetch (`onPicks`) fires from
+  inside whichever device's own poll loop is actually running.
+  `LiveDraftConfig.provider` gains a third value, `"viewer"`: `useLiveDraft
+  .ts syncOnce` short-circuits it before any network call — no ESPN/Yahoo
+  request at all, just `onPicksRef.current?.()` (the same refetch
+  callback) on the SAME interval selector (5s/10s/30s) and start/stop loop
+  every other mode already uses. `LiveDraftPanel.tsx` gets a third
+  provider option needing no league id or credentials, with every
+  ESPN/Yahoo-only section (cookies, Tampermonkey, bookmarklet, League
+  ID/Your team fields) hidden the same way the existing provider gates
+  already hide them for each other. No kill gate — no valuation, scoring,
+  or pick logic changes at all, purely how a second browser tab learns
+  picks already exist. `LiveDraftPanel.test.tsx` pins both directions.
 - **SOS reload** (`/api/admin/reload-sos`, admin-only): fetches the prior season
   from nflverse over HTTPS, recomputes multipliers with the tuned params, upserts
   `fantasy_sos`. Self-contained; no local run. See `data-pipeline/SOS_TUNING_RESULTS.md`.

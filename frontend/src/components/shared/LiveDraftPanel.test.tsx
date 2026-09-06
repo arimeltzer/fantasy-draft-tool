@@ -86,3 +86,53 @@ describe("LiveDraftPanel — Yahoo team-match safety net", () => {
     expect(select.value).toBe("449.l.1.t.2");
   });
 });
+
+/**
+ * "Sync from another device" (viewer mode) — no ESPN/Yahoo credentials at
+ * all, just a periodic re-fetch of this league's already-synced picks for a
+ * passive second device. See useLiveDraft.ts's "viewer" provider branch.
+ */
+describe("LiveDraftPanel — viewer mode", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("hides League ID / Your team fields and needs nothing typed to start", () => {
+    renderInApp(
+      <LiveDraftPanel
+        leagueId={1}
+        settings={SETTINGS}
+        onClose={() => {}}
+        live={fakeLive(null)}
+        config={null}
+        onConfigChange={() => {}}
+        intervalMs={10_000}
+        onIntervalChange={() => {}}
+      />,
+    );
+    const platform = screen.getByRole("combobox", { name: /platform/i }) as HTMLSelectElement;
+    fireEvent.change(platform, { target: { value: "viewer" } });
+
+    expect(screen.queryByPlaceholderText("123456")).toBeNull();
+    expect(screen.queryByText(/^Your team/)).toBeNull();
+    const startBtn = screen.getByRole("button", { name: /start watching/i }) as HTMLButtonElement;
+    expect(startBtn.disabled).toBe(false);
+  });
+
+  it("shows a last-refreshed line once a sync has run", () => {
+    const live = { ...fakeLive(null), lastSyncAt: "2026-09-06T12:00:00.000Z" };
+    renderInApp(
+      <LiveDraftPanel
+        leagueId={1}
+        settings={SETTINGS}
+        onClose={() => {}}
+        live={live}
+        config={{ provider: "viewer", extId: "" }}
+        onConfigChange={() => {}}
+        intervalMs={5_000}
+        onIntervalChange={() => {}}
+      />,
+    );
+    const platform = screen.getByRole("combobox", { name: /platform/i }) as HTMLSelectElement;
+    fireEvent.change(platform, { target: { value: "viewer" } });
+    expect(screen.getByText(/Last refreshed/i)).toBeTruthy();
+  });
+});
