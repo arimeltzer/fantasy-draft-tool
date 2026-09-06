@@ -552,39 +552,39 @@ check("a non-10-team league also uses it",
         pickScore(qbCandidate, flatBaseline).score === 150 * 0.60,
         String(pickScore(qbCandidate, flatBaseline).score));
 
-  // Flag absent: unaffected, regardless of myBestVbdByPos being supplied —
+  // Flag absent: unaffected, regardless of myBestValueByPos being supplied —
   // same "opt-in by presence AND flag" contract every prior roadmap step
   // (3.6f-snake, 3.6h) in this file already follows.
-  const flagOffWithData = state({ ...haveOneQb, myBestVbdByPos: { QB: 60 } });
+  const flagOffWithData = state({ ...haveOneQb, myBestValueByPos: { QB: 60 } });
   check("qualityAwareInsurance absent leaves the flat discount unchanged, even with real data present",
         pickScore(qbCandidate, flagOffWithData).score === pickScore(qbCandidate, flatBaseline).score);
 
   // On, but no real "what do I already own" data at all (missing or
   // non-positive) — must fall back to the flat discount, not guess.
   const onNoData = state({ ...haveOneQb, qualityAwareInsurance: true });
-  const onZeroData = state({ ...haveOneQb, qualityAwareInsurance: true, myBestVbdByPos: { QB: 0 } });
-  check("on, but myBestVbdByPos missing — falls back to the flat discount",
+  const onZeroData = state({ ...haveOneQb, qualityAwareInsurance: true, myBestValueByPos: { QB: 0 } });
+  check("on, but myBestValueByPos missing — falls back to the flat discount",
         pickScore(qbCandidate, onNoData).score === pickScore(qbCandidate, flatBaseline).score);
-  check("on, but myBestVbdByPos.QB = 0 — falls back to the flat discount",
+  check("on, but myBestValueByPos.QB = 0 — falls back to the flat discount",
         pickScore(qbCandidate, onZeroData).score === pickScore(qbCandidate, flatBaseline).score);
 
   // On, real data present, but the candidate is NOT an upgrade (his VBD is
   // at or below what's already owned) — still the flat discount. This is
   // the "keeping a strong QB, more QB depth isn't worth more" case.
-  const notAnUpgrade = state({ ...haveOneQb, qualityAwareInsurance: true, myBestVbdByPos: { QB: 200 } });
+  const notAnUpgrade = state({ ...haveOneQb, qualityAwareInsurance: true, myBestValueByPos: { QB: 200 } });
   check("candidate no better than the kept/owned QB — still the flat discount",
         pickScore(qbCandidate, notAnUpgrade).score === pickScore(qbCandidate, flatBaseline).score);
-  const exactTie = state({ ...haveOneQb, qualityAwareInsurance: true, myBestVbdByPos: { QB: 150 } });
+  const exactTie = state({ ...haveOneQb, qualityAwareInsurance: true, myBestValueByPos: { QB: 150 } });
   check("an exact tie in VBD is not treated as an upgrade either",
         pickScore(qbCandidate, exactTie).score === pickScore(qbCandidate, flatBaseline).score);
 
   // The actual case this exists for: a real upgrade over a mediocre kept QB
   // scores ABOVE the flat 0.60 baseline, and a bigger gap scores higher
   // still — monotonic in the size of the upgrade, capped at full value.
-  const smallGap = state({ ...haveOneQb, qualityAwareInsurance: true, myBestVbdByPos: { QB: 140 } });
-  const midGap = state({ ...haveOneQb, qualityAwareInsurance: true, myBestVbdByPos: { QB: 100 } });
-  const bigGap = state({ ...haveOneQb, qualityAwareInsurance: true, myBestVbdByPos: { QB: 60 } });
-  const hugeGap = state({ ...haveOneQb, qualityAwareInsurance: true, myBestVbdByPos: { QB: 20 } });
+  const smallGap = state({ ...haveOneQb, qualityAwareInsurance: true, myBestValueByPos: { QB: 140 } });
+  const midGap = state({ ...haveOneQb, qualityAwareInsurance: true, myBestValueByPos: { QB: 100 } });
+  const bigGap = state({ ...haveOneQb, qualityAwareInsurance: true, myBestValueByPos: { QB: 60 } });
+  const hugeGap = state({ ...haveOneQb, qualityAwareInsurance: true, myBestValueByPos: { QB: 20 } });
   check("a real upgrade scores above the flat baseline",
         pickScore(qbCandidate, smallGap).score > pickScore(qbCandidate, flatBaseline).score,
         `${pickScore(qbCandidate, smallGap).score} vs ${pickScore(qbCandidate, flatBaseline).score}`);
@@ -596,11 +596,27 @@ check("a non-10-team league also uses it",
         pickScore(qbCandidate, hugeGap).score === 150,
         String(pickScore(qbCandidate, hugeGap).score));
 
+  // The candidate side uses valuePoints for the SAME reason and via the
+  // SAME fallback (player.valuePoints ?? player.vbd, in pickScore) — a
+  // candidate whose own vbd is small (so his FINAL score, vbd * nm, stays
+  // small regardless) can still register as a real upgrade by valuePoints,
+  // changing nm itself. Pinned directly: the candidate's small vbd(10) is
+  // multiplied by a much bigger nm once his real valuePoints(250) — not
+  // his thin vbd — clears the gap against myBestValueByPos.
+  const thinVbdCandidate = player("QB", 10, { valuePoints: 250 });
+  const thinVbdFlat = state(haveOneQb);
+  const thinVbdUpgrade = state({
+    ...haveOneQb, qualityAwareInsurance: true, myBestValueByPos: { QB: 90 },
+  });
+  check("a candidate with thin vbd but strong valuePoints is still recognized as a real upgrade",
+        pickScore(thinVbdCandidate, thinVbdUpgrade).score > pickScore(thinVbdCandidate, thinVbdFlat).score,
+        `on=${pickScore(thinVbdCandidate, thinVbdUpgrade).score} off=${pickScore(thinVbdCandidate, thinVbdFlat).score}`);
+
   // TE follows the identical insuranceOnly path as non-superflex QB.
   const teCandidate = player("TE", 90);
   const teFlat = state({ counts: { QB: 0, RB: 0, WR: 0, TE: 1 } });
   const teUpgrade = state({
-    counts: { QB: 0, RB: 0, WR: 0, TE: 1 }, qualityAwareInsurance: true, myBestVbdByPos: { TE: 30 },
+    counts: { QB: 0, RB: 0, WR: 0, TE: 1 }, qualityAwareInsurance: true, myBestValueByPos: { TE: 30 },
   });
   check("TE gets the same quality-aware treatment as QB",
         pickScore(teCandidate, teUpgrade).score > pickScore(teCandidate, teFlat).score);
@@ -610,7 +626,7 @@ check("a non-10-team league also uses it",
   const sfCandidate = player("QB", 150);
   const sfOff = state({ ...haveOneQb, superflex: true });
   const sfOn = state({
-    ...haveOneQb, superflex: true, qualityAwareInsurance: true, myBestVbdByPos: { QB: 20 },
+    ...haveOneQb, superflex: true, qualityAwareInsurance: true, myBestValueByPos: { QB: 20 },
   });
   check("superflex QB is untouched by qualityAwareInsurance (not insuranceOnly)",
         pickScore(sfCandidate, sfOn).score === pickScore(sfCandidate, sfOff).score);
@@ -619,7 +635,7 @@ check("a non-10-team league also uses it",
   const rbCandidate = player("RB", 150);
   const rbOff = state({ counts: { QB: 0, RB: 1, WR: 0, TE: 0 } });
   const rbOn = state({
-    counts: { QB: 0, RB: 1, WR: 0, TE: 0 }, qualityAwareInsurance: true, myBestVbdByPos: { RB: 20 },
+    counts: { QB: 0, RB: 1, WR: 0, TE: 0 }, qualityAwareInsurance: true, myBestValueByPos: { RB: 20 },
   });
   check("RB is untouched by qualityAwareInsurance (not an insurance-only position)",
         pickScore(rbCandidate, rbOn).score === pickScore(rbCandidate, rbOff).score);

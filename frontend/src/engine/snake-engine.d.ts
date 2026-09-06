@@ -46,11 +46,13 @@ export interface SnakeLiveState {
   benchDepthAware?: boolean;
   /** roadmap 3.6h — NOT validated, no shipped caller sets it. */
   opportunityBenchAware?: boolean;
-  /** roadmap 3.11 — best VBD already on MY roster per position, the "is this
-   *  candidate a real upgrade" input for the quality-aware keeper insurance
-   *  discount. Absent = that check is a no-op (qualityAwareInsurance is also
-   *  gated separately). NOT validated, no shipped caller sets it. */
-  myBestVbdByPos?: Record<string, number>;
+  /** roadmap 3.11 — best valuePoints (NOT vbd — VBD floors at 0 below
+   *  replacement, exactly where a mediocre kept player often sits) already
+   *  on MY roster per position, the "is this candidate a real upgrade"
+   *  input for the quality-aware keeper insurance discount. Absent = that
+   *  check is a no-op (qualityAwareInsurance is also gated separately).
+   *  NOT validated, no shipped caller sets it. */
+  myBestValueByPos?: Record<string, number>;
   /** roadmap 3.11 — NOT validated, no shipped caller sets it. */
   qualityAwareInsurance?: boolean;
   adpRankById: Record<number, number>;

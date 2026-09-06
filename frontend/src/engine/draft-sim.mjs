@@ -160,15 +160,22 @@ export function simulateDraft({
         for (const p of avail) {
           if (!(p.pos in bestVbdByPos) || p.vbd > bestVbdByPos[p.pos]) bestVbdByPos[p.pos] = p.vbd;
         }
-        // roadmap 3.11 — best VBD already on MY roster per position (a kept
-        // player included, since he's already in rosters[team] by the time
-        // his forfeited round has passed), the "is this candidate a real
-        // upgrade" input qualityAwareInsuranceMult needs. Computed
-        // unconditionally, same as bestVbdByPos above — cheap, and inert
-        // unless qualityAwareInsurance is also set below.
-        const myBestVbdByPos = {};
+        // roadmap 3.11 — best valuePoints already on MY roster per position
+        // (a kept player included, since he's already in rosters[team] by
+        // the time his forfeited round has passed), the "is this candidate
+        // a real upgrade" input qualityAwareInsuranceMult needs.
+        // valuePoints, NOT vbd — see qualityAwareInsuranceMult's own header
+        // for why: VBD floors at 0 below replacement, exactly where a
+        // mediocre kept player often sits, which silently disabled the
+        // mechanism for the population it exists to help (found via the
+        // first gate run coming back at almost exactly zero everywhere).
+        // Falls back to vbd only if a player carries no valuePoints at all.
+        // Computed unconditionally, same as bestVbdByPos above — cheap, and
+        // inert unless qualityAwareInsurance is also set below.
+        const myBestValueByPos = {};
         for (const p of rosters[team]) {
-          if (!(p.pos in myBestVbdByPos) || p.vbd > myBestVbdByPos[p.pos]) myBestVbdByPos[p.pos] = p.vbd;
+          const v = p.valuePoints ?? p.vbd;
+          if (!(p.pos in myBestValueByPos) || v > myBestValueByPos[p.pos]) myBestValueByPos[p.pos] = v;
         }
         const live = {
           round: myRound,
@@ -181,7 +188,7 @@ export function simulateDraft({
           bestVbd: Math.max(...avail.map((p) => p.vbd)),
           posRemaining,
           bestVbdByPos,
-          myBestVbdByPos,
+          myBestValueByPos,
           adpRankById: ranks,
           cliffById: cfg.cliffById || {},
           poolSize: avail.length,
@@ -248,7 +255,7 @@ export function simulateDraft({
         }
         // Roadmap 3.11, same opt-in-per-agent isolation reason: needMult()'s
         // qualityAwareInsuranceMult step only fires when this is set.
-        // myBestVbdByPos (built above) is already on `live` unconditionally
+        // myBestValueByPos (built above) is already on `live` unconditionally
         // — cheap to compute, and harmless when this flag is off since
         // qualityAwareInsuranceMult is never called without
         // qualityAwareInsurance also being true.

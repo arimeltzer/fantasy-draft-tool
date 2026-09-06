@@ -182,10 +182,31 @@ export function maxUseful(pos, roster = {}, superflex = false) {
  * cannot produce the scenario at all.
  *
  * MECHANISM: scales the discount up from the flat 0.60 floor toward 1.0 as
- * the candidate's VBD edge over the best QB/TE already owned (`myBestVbd`)
- * widens, capped at full value. A candidate who is NOT a real upgrade
- * (`myBestVbd` missing, non-positive, or >= candidateVbd) is untouched —
- * identical to today's flat 0.60.
+ * the candidate's edge over the best QB/TE already owned widens, capped at
+ * full value. A candidate who is NOT a real upgrade (no usable "what I
+ * already own" data, or he doesn't beat it) is untouched — identical to
+ * today's flat 0.60.
+ *
+ * COMPARED BY valuePoints, NOT VBD — a real, diagnosed bug fix, not the
+ * original design. The first gate run (docs/ROADMAP.md 3.11) came back
+ * showing almost EXACTLY zero effect at every kept-QB rank except one —
+ * not merely underpowered, byte-identical rosters in both arms across
+ * dozens of paired drafts. Traced to `myBestVbd`: VBD is points ABOVE
+ * REPLACEMENT, floored at 0 — and a mediocre kept QB (rank 14+ in a
+ * 1-QB league, say) sits AT that floor despite having real, meaningfully
+ * different quality from an even weaker one. The `myBestVbd <= 0` guard,
+ * meant to mean "no data", was silently also catching "this kept player
+ * is real but below replacement" — exactly the population this feature
+ * exists to help — and disabling the mechanism for it outright. The
+ * SAME failure mode 3.6h's own header already documents for the bench-tier
+ * pool ("a large share... already sits at VBD≈0 by construction").
+ * `valuePoints` (the board's raw projected value, never replacement-
+ * floored) is compared instead, on BOTH sides, so the ratio stays on one
+ * consistent scale — falling back to `vbd` only when a caller doesn't
+ * supply `valuePoints` at all (every pre-3.11 test fixture), which
+ * reproduces the original math exactly for those. The candidate's actual
+ * SCORE is still `player.vbd * nm` below (unchanged) — only the discount
+ * ITSELF, `nm`, is now decided by the un-floored quantity.
  *
  * OPT-IN, default OFF (`qualityAware` / `liveState.qualityAwareInsurance`)
  * — every existing caller is byte-identical unless wired. `QUALITY_GAP_K` is
@@ -195,17 +216,17 @@ export function maxUseful(pos, roster = {}, superflex = false) {
  */
 export const QUALITY_GAP_K = 0.5;
 
-function qualityAwareInsuranceMult(base, candidateVbd, myBestVbd) {
-  if (!Number.isFinite(myBestVbd) || myBestVbd <= 0) return base;
-  if (!Number.isFinite(candidateVbd) || candidateVbd <= myBestVbd) return base;
-  const gap = (candidateVbd - myBestVbd) / myBestVbd;
+function qualityAwareInsuranceMult(base, candidateValue, myBestValue) {
+  if (!Number.isFinite(myBestValue) || myBestValue <= 0) return base;
+  if (!Number.isFinite(candidateValue) || candidateValue <= myBestValue) return base;
+  const gap = (candidateValue - myBestValue) / myBestValue;
   return Math.min(1.0, base + QUALITY_GAP_K * gap);
 }
 
 function needMult(
   pos, have, roster, needs, flexEligible, superflex,
   depthAware, siblingHave, opportunityAware, candidateVbd, siblingBestVbd,
-  qualityAware, myBestVbd,
+  qualityAware, myBestValue, candidateValue,
 ) {
   if (have === 0) return 1.30;
   const belowStarter = (needs?.[pos] || 0) > 0 || (flexEligible && (needs?.FLEX || 0) > 0);
@@ -220,7 +241,7 @@ function needMult(
   // depthAware/opportunityAware below since those two are RB/WR-only
   // (FLEX_SIBLING has no QB/TE entry) and would be no-ops here regardless.
   if (insuranceOnly && qualityAware) {
-    return qualityAwareInsuranceMult(base, candidateVbd, myBestVbd);
+    return qualityAwareInsuranceMult(base, candidateValue, myBestValue);
   }
   // Diminishing RB/WR bench depth — roadmap 3.6f-snake's port of 3.6f's
   // auction benchDepthMult (full 0.88 through a startable 4th body, then
@@ -262,10 +283,14 @@ function needMult(
  *   bestVbdByPos,   // { pos: best available VBD at that pos } — roadmap 3.6h,
  *                   // optional, opportunityBenchMult's "is there a real
  *                   // alternative" check; absent = that check is a no-op
- *   myBestVbdByPos, // { pos: best VBD already on MY roster at that pos } —
- *                   // roadmap 3.11, optional, qualityAwareInsuranceMult's
- *                   // "is this candidate a real upgrade" check; absent =
- *                   // that check is a no-op (flat insurance discount)
+ *   myBestValueByPos, // { pos: best valuePoints already on MY roster at
+ *                   // that pos } — roadmap 3.11, optional,
+ *                   // qualityAwareInsuranceMult's "is this candidate a real
+ *                   // upgrade" check; absent = that check is a no-op (flat
+ *                   // insurance discount). valuePoints, NOT vbd — VBD floors
+ *                   // at 0 below replacement, which is exactly where a
+ *                   // mediocre kept player often sits (see the function's
+ *                   // own header for the diagnosed bug this fixed).
  *   adpRankById,    // { id: adp rank } from rankByAdp(board)
  *   poolSize,       // # available players
  * }
@@ -332,14 +357,21 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
   // (every existing caller before 3.6h) or none is left; opportunityBenchMult
   // treats either as "no real alternative" and is a no-op.
   const siblingBestVbd = siblingPos ? (s.bestVbdByPos && s.bestVbdByPos[siblingPos]) : undefined;
-  // roadmap 3.11 — the best VBD already on MY roster at this position, or
-  // undefined if the caller hasn't supplied myBestVbdByPos (every existing
-  // caller before 3.11); qualityAwareInsuranceMult treats that as "no real
-  // upgrade check possible" and falls back to the flat discount.
-  const myBestVbd = s.myBestVbdByPos ? s.myBestVbdByPos[pos] : undefined;
+  // roadmap 3.11 — the best valuePoints already on MY roster at this
+  // position, or undefined if the caller hasn't supplied
+  // myBestValueByPos (every existing caller before 3.11);
+  // qualityAwareInsuranceMult treats that as "no real upgrade check
+  // possible" and falls back to the flat discount. valuePoints, not vbd —
+  // see qualityAwareInsuranceMult's header for the diagnosed reason
+  // (VBD floors at 0 below replacement, exactly where a mediocre kept
+  // player often sits). candidateValue falls back to vbd when a candidate
+  // carries no valuePoints at all, reproducing the pre-fix math exactly
+  // for any caller that doesn't supply it.
+  const myBestValue = s.myBestValueByPos ? s.myBestValueByPos[pos] : undefined;
+  const candidateValue = player.valuePoints ?? player.vbd;
   const nm = needMult(pos, have, s.roster || {}, s.needs, flexEligible, superflex,
     s.benchDepthAware, siblingHave, s.opportunityBenchAware, player.vbd, siblingBestVbd,
-    s.qualityAwareInsurance, myBestVbd);
+    s.qualityAwareInsurance, myBestValue, candidateValue);
   let base = player.vbd * nm;
   if (nm >= 1.30) reasons.push(`no ${pos} yet`);
   else if (nm >= 1.15) reasons.push(`fills ${pos}`);

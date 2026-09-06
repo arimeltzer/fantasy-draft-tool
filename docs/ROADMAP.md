@@ -4053,7 +4053,7 @@ clean with the new default in place. This is the first constant in
 than ported from the pre-repo offline model — see the comment above
 `SLOT_DEFAULT` in `snake-engine.js` for the full reasoning inline.
 
-### 3.11 Snake: quality-aware keeper insurance discount — PRE-REGISTERED, GATE PENDING (discount-only; round-gate relaxation is an explicit follow-up)
+### 3.11 Snake: quality-aware keeper insurance discount — FIRST GATE RUN diagnosed a real bug (VBD floors at 0 below replacement) and fixed it; RE-RUN PENDING (discount-only; round-gate relaxation is an explicit follow-up)
 
 **Asked directly, right after 3.10 shipped the QB round-gate backtest**: "If
 I keep a QB, will that prevent the app from recommending a higher rated QB
@@ -4102,24 +4102,24 @@ keeper, it makes no valuation claim.
   isn't a scored decision. Pinned in `draft-sim.selftest.mjs`: never
   drafted twice, lands on the right team in exactly the forfeited round,
   never leaks to an unrelated team, deterministic for a seed.
-- `snake-engine.js` `needMult` gains two trailing, opt-in parameters
-  (`qualityAware`, `myBestVbd`) and a new `qualityAwareInsuranceMult(base,
-  candidateVbd, myBestVbd)` function: scales the discount from the flat
-  0.60 floor toward 1.0 as the candidate's VBD edge over the best QB/TE
-  already owned widens (`gap = (candidateVbd - myBestVbd) / myBestVbd`;
+- `snake-engine.js` `needMult` gains opt-in parameters (`qualityAware`,
+  `myBestValue`, `candidateValue`) and a new `qualityAwareInsuranceMult(base,
+  candidateValue, myBestValue)` function: scales the discount from the flat
+  0.60 floor toward 1.0 as the candidate's edge over the best QB/TE already
+  owned widens (`gap = (candidateValue - myBestValue) / myBestValue`;
   `mult = min(1.0, 0.60 + QUALITY_GAP_K * gap)`), capped at full value. A
-  candidate who is NOT a real upgrade (`myBestVbd` missing, non-positive,
-  or >= `candidateVbd`) is untouched — byte-identical to today's flat 0.60.
+  candidate who is NOT a real upgrade (`myBestValue` missing, non-positive,
+  or >= `candidateValue`) is untouched — byte-identical to today's flat 0.60.
   `QUALITY_GAP_K = 0.5` is an UNTUNED placeholder (same discipline
   `OPPORTUNITY_BENCH_K` shipped under before its own gate) — a value for
   the gate below to validate or reject, not a fitted number.
-- `pickScore` threads `liveState.myBestVbdByPos` (best VBD already on MY
-  roster per position — mirrors the existing `bestVbdByPos`, "best
-  available on the board") and `liveState.qualityAwareInsurance` through to
-  `needMult`, following the exact opt-in-by-presence pattern every prior
-  roadmap addition here (3.6f, 3.6h) already uses: every existing caller is
-  byte-identical unless both are explicitly set. Pinned in
-  `snake-engine.selftest.mjs`: flag-off is a no-op even with real data
+- `pickScore` threads `liveState.myBestValueByPos` (best `valuePoints`
+  already on MY roster per position — mirrors the existing `bestVbdByPos`,
+  "best available on the board") and `liveState.qualityAwareInsurance`
+  through to `needMult`, following the exact opt-in-by-presence pattern
+  every prior roadmap addition here (3.6f, 3.6h) already uses: every
+  existing caller is byte-identical unless both are explicitly set. Pinned
+  in `snake-engine.selftest.mjs`: flag-off is a no-op even with real data
   present; flag-on with missing/zero/non-upgrade data falls back to the
   flat discount; a real upgrade scores above the flat baseline, scaling
   monotonically with the gap and capping at full value; TE gets the
@@ -4132,26 +4132,77 @@ candidate's real upgrade size — rather than applying the same flat 0.60
 regardless — produces a better final roster (more realized weekly points)
 than the flat discount does, without materially hurting teams whose kept
 player is already strong (where the mechanism should be a near no-op, since
-`candidateVbd <= myBestVbd` most of the time there).
+`candidateValue <= myBestValue` most of the time there).
 
-**Kill gate (not yet run)**: `keeper-quality-test.mjs`, following the exact
-discipline every prior roadmap gate here uses — paired comparison via
-`draft-sim.mjs`'s common-random-numbers design (`realizedWeeklyPoints`,
-identical league/pool/seed/opponent behavior between arms, differing only
-in whether the agent's own scoring is `qualityAwareInsurance`-on or -off),
-fit-season / held-out-season split (fit on older seasons, validate on more
-recent ones, same direction 3.10 used), `mean/SE > 2` on the HELD-OUT split
-to ship. Scenarios sweep the kept player's quality relative to the board
-(a strong keeper who should see little to no change; a weak keeper with a
-clear, available upgrade; a borderline case) so the gate can distinguish
-"helps when it should matter" from "changes nothing when it shouldn't."
+**Kill gate**: `keeper-quality-test.mjs`, following the exact discipline
+every prior roadmap gate here uses — paired comparison via `draft-sim.mjs`'s
+common-random-numbers design (`realizedWeeklyPoints`, identical league/pool/
+seed/opponent behavior between arms, differing only in whether the agent's
+own scoring is `qualityAwareInsurance`-on or -off), fit-season / held-out-
+season split (fit on older seasons, validate on more recent ones, same
+direction 3.10 used), `mean/SE > 2` on the HELD-OUT split to ship. Scenarios
+sweep the kept player's quality relative to the board (a strong keeper who
+should see little to no change; a weak keeper with a clear, available
+upgrade; a borderline case) so the gate can distinguish "helps when it
+should matter" from "changes nothing when it shouldn't."
 
-**Not shipped anywhere yet.** `qualityAwareInsurance` has no caller in
-`SnakeRoom.tsx` or any other shipped room — this is discount MATH and
-TEST INFRASTRUCTURE only, gated the correct way (built and pinned before
-wiring), matching the process 3.6f-snake's own retroactive-gate mistake
-corrected going forward for every step since. See the gate run results
-below once available.
+**FIRST GATE RUN — near-total zero, diagnosed as a real bug and fixed, not
+a null result.** 1,944 paired drafts (9 seasons × 4 slots × 12 seeds × 5 kept-
+QB-rank scenarios, GitHub Actions run
+[34001986800](https://github.com/arimeltzer/fantasy-draft-tool/actions/runs/34001986800)):
+
+| kept QB rank | fit | held |
+|---|---|---|
+| 3 (elite) | +0.0 ± 0.0 (t=0.00, n=240) | +0.0 ± 0.0 (t=0.00, n=192) |
+| 8 (near replacement) | +0.6 ± 0.9 (t=0.71, n=240) | -0.0 ± 0.5 (t=-0.11, n=192) |
+| 14 | +0.0 ± 0.0 (t=0.00, n=240) | +0.0 ± 0.0 (t=0.00, n=192) |
+| 20 | +0.0 ± 0.0 (t=0.00, n=240) | +0.0 ± 0.0 (t=0.00, n=192) |
+| 28 (weak) | +0.0 ± 0.0 (t=0.00, n=240) | +0.0 ± 0.0 (t=0.00, n=192) |
+
+Not merely small — LITERALLY zero, zero spread, at 4 of 5 ranks: the two
+arms produced byte-identical rosters in every single one of those paired
+drafts. That pattern (an exact, invariant zero, not noise clustered near
+zero) is the signature of a mechanism that never fires at all, not one that
+fires and doesn't matter — worth chasing down rather than reporting as a
+plain null, the same instinct that caught 3.6f-snake's harness gap and the
+live-draft team-ID bugs earlier in this project.
+
+**Diagnosis, via a direct reproduction (not guessed at):** `myBestVbdByPos`
+computed off `p.vbd` — VBD is points ABOVE REPLACEMENT, floored at 0 — and
+a mediocre kept QB (replacement in a 1-QB league sits around QB10-12, so
+rank 14/20/28 all read `vbd: 0`) hits that floor despite having real,
+distinguishable underlying quality. `qualityAwareInsuranceMult`'s own
+`myBestVbd <= 0` guard, meant to mean "no data available", was silently
+ALSO catching "this kept player is real but below replacement" — exactly
+the population this feature exists to help — and disabling the mechanism
+outright for it. Only rank 3 (genuinely elite, real positive VBD, so the
+guard behaves as intended and no real upgrade is likely — the mechanism
+being INERT there is correct) and rank 8 (borderline, small positive VBD)
+ever let the branch fire at all, matching the observed table exactly. The
+same failure mode this file already documents for 3.6h's bench-tier pool
+("a large share already sits at VBD≈0 by construction").
+
+**Fix**: compare `valuePoints` (the board's raw projected value, never
+replacement-floored) on BOTH sides instead of `vbd`, falling back to `vbd`
+only when a caller supplies no `valuePoints` at all — reproducing the
+original math exactly for every pre-fix test fixture. The candidate's
+actual SCORE is still `player.vbd * nm` (unchanged) — only the discount
+multiplier `nm` itself is now decided by the un-floored quantity.
+Reproduced directly before shipping the fix: a hand-built one-team,
+8-round draft (`draft-sim.selftest.mjs`) with a kept QB at `vbd: 0,
+valuePoints: 100`, a real upgrade at `vbd: 50, valuePoints: 250`, and a
+comparable bench RB at `vbd: 35` — `qualityAwareInsurance: true` takes the
+QB upgrade, `false` takes the RB instead, the exact behavioral flip the
+bug silently prevented. 3 new selftest assertions pin this (2 in
+`draft-sim.selftest.mjs` end-to-end, 1 in `snake-engine.selftest.mjs` for
+the candidate-side `valuePoints ?? vbd` fallback specifically).
+
+**Not shipped anywhere yet — awaiting the RE-RUN gate result.**
+`qualityAwareInsurance` has no caller in `SnakeRoom.tsx` or any other
+shipped room. This is discount MATH and TEST INFRASTRUCTURE only, gated
+the correct way (built and pinned before wiring), matching the process
+3.6f-snake's own retroactive-gate mistake corrected going forward for
+every step since. See the re-run results below once available.
 
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything

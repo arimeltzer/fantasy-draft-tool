@@ -421,6 +421,43 @@ for (const teams of [8, 10, 12]) {
         withOther.rosters[4].length === 15);
 }
 
+// ── the diagnosed 3.11 bug, pinned end-to-end ──────────────────────────────
+// The first gate run (docs/ROADMAP.md 3.11) came back at almost exactly
+// zero everywhere — traced to `myBestVbdByPos` computing off `p.vbd`, which
+// floors at 0 below replacement, exactly where a mediocre kept QB commonly
+// sits. Fixed to compute off `p.valuePoints ?? p.vbd` instead. This proves
+// the fix through the WHOLE simulateDraft pipeline (not just needMult's own
+// isolated math, already pinned in snake-engine.selftest.mjs): a kept QB at
+// vbd=0 (valuePoints=100) should let a real upgrade (vbd=50,
+// valuePoints=250) outscore a comparable bench RB (vbd=35) once
+// qualityAwareInsurance is on, and lose to it when off — the exact
+// behavioral flip the flat-vs-VBD-floored bug silently prevented.
+{
+  const roster = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1, K: 0, DST: 0, BENCH: 1 };
+  const p = (id, pos, vbd, valuePoints, adp) =>
+    ({ id, name: id, pos, team: "XX", age: 26, risk: 0.1, trend: 0, vbd, valuePoints, adp });
+  const keptQb = p("kept", "QB", 0, 100, 50);        // below replacement, but real value
+  const fillers = [
+    p("rb1", "RB", 300, 320, 1), p("rb2", "RB", 290, 310, 2),
+    p("te1", "TE", 280, 300, 3), p("wr1", "WR", 270, 290, 4),
+    p("wr2", "WR", 260, 280, 5), p("rb3", "RB", 250, 270, 6),
+  ];
+  const qbUpgrade = p("qbUp", "QB", 50, 250, 8);     // real upgrade over the kept QB
+  const rbAlt = p("rbAlt", "RB", 35, 150, 9);        // the bench alternative
+
+  const board = [keptQb, ...fillers, qbUpgrade, rbAlt];
+  const keeper = { player: keptQb, forfeitRound: 1 };
+  const run = (qualityAwareInsurance) => simulateDraft({
+    board, teams: 1, rounds: 8, roster, seed: 1,
+    agents: { 0: { slot: 1, keeper, qualityAwareInsurance } },
+  }).rosters[0][7];   // the 8th and final pick — the QB-vs-RB decision point
+
+  check("qualityAwareInsurance ON takes the real QB upgrade over the bench RB",
+        run(true)?.id === "qbUp", `took ${run(true)?.id}`);
+  check("qualityAwareInsurance OFF (flat discount) takes the bench RB instead",
+        run(false)?.id === "rbAlt", `took ${run(false)?.id}`);
+}
+
 console.log();
 if (fails.length) {
   console.error(`draft-sim.selftest: ${pass} passed, ${fails.length} FAILED — ${fails.join(", ")}`);
