@@ -371,6 +371,56 @@ for (const teams of [8, 10, 12]) {
         JSON.stringify(pattern(oracleA)) !== JSON.stringify(pattern(oracleDiffSeed)));
 }
 
+// ── keeper pre-seeding (roadmap 3.11) ──────────────────────────────────────
+// Built because the quality-aware insurance discount (snake-engine.js
+// qualityAwareInsuranceMult) can ONLY be exercised by a scenario where a
+// team holds a genuinely worse player than one openly available on the
+// board — a model-optimal simulated agent never does that organically, so
+// without keeper pre-seeding this branch is untestable at all.
+{
+  const board = makeBoard(300);
+  const mediocreQb = board.find((p) => p.pos === "QB" && p.id === 51); // a middling QB, not the best
+  const keeperAgent = {
+    slot: 1, keeper: { player: mediocreQb, forfeitRound: 3 },
+  };
+
+  const { rosters, counts } = simulateDraft({
+    board, teams: 10, rounds: 15, roster: ROSTER, seed: 5,
+    agents: { 0: keeperAgent },
+  });
+
+  check("the kept player is never drafted by anyone else",
+        rosters.flat().filter((p) => p.id === mediocreQb.id).length === 1);
+  check("the kept player lands on the keeping team specifically",
+        rosters[0].some((p) => p.id === mediocreQb.id));
+  check("the kept player fills exactly the forfeited round, not some other pick",
+        rosters[0][2]?.id === mediocreQb.id, `round-3 pick was id ${rosters[0][2]?.id}`);
+  check("the keeping team's roster is still full size (the forfeited round wasn't skipped)",
+        rosters[0].length === 15);
+  check("no player is drafted twice anywhere in the league (keeper included)",
+        new Set(rosters.flat().map((p) => p.id)).size === rosters.flat().length);
+  check("keeper pre-seeding is deterministic for a seed",
+        JSON.stringify(simulateDraft({
+          board, teams: 10, rounds: 15, roster: ROSTER, seed: 5, agents: { 0: keeperAgent },
+        }).rosters[0].map((p) => p.id))
+          === JSON.stringify(rosters[0].map((p) => p.id)));
+  check("counts reflect the kept player like any other pick",
+        counts[0].QB >= 1);
+
+  // A DIFFERENT team's keeper (not this test's own) never lands on a team
+  // that has no keeper config of its own — the pool exclusion is per-player
+  // via `taken`, not something that could leak onto an unrelated roster.
+  const otherAgent = { slot: 5 };
+  const withOther = simulateDraft({
+    board, teams: 10, rounds: 15, roster: ROSTER, seed: 5,
+    agents: { 0: keeperAgent, 4: otherAgent },
+  });
+  check("a keeper on one team never lands on an unrelated team",
+        !withOther.rosters[4].some((p) => p.id === mediocreQb.id));
+  check("the unrelated team still drafts a full, otherwise-normal roster",
+        withOther.rosters[4].length === 15);
+}
+
 console.log();
 if (fails.length) {
   console.error(`draft-sim.selftest: ${pass} passed, ${fails.length} FAILED — ${fails.join(", ")}`);

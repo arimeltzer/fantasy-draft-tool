@@ -126,6 +126,18 @@ export function simulateDraft({
   // one team's — every pick, agent or bot, is logged.
   const pickLog = [];
 
+  // Keeper pre-seeding (roadmap 3.11) — a kept player is locked to their
+  // team from before the draft starts: nobody else, bot or agent, can ever
+  // draft them, so they must leave the shared pool up front rather than at
+  // the moment their forfeited round arrives. See qualityAwareInsuranceMult's
+  // header in snake-engine.js for why a keeper is the ONLY mechanism that
+  // can hand a simulated agent a genuinely worse player than one openly
+  // available on the board.
+  for (const team of Object.keys(agents)) {
+    const k = agents[team]?.keeper;
+    if (k?.player) taken.add(k.player.id);
+  }
+
   for (let overall = 0; overall < order.length; overall++) {
     const team = order[overall];
     const avail = board.filter((p) => !taken.has(p.id));
@@ -135,96 +147,125 @@ export function simulateDraft({
     const cfg = agents[team];
     if (cfg) {
       const myRound = rosters[team].length + 1;
-      const posRemaining = {};
-      for (const p of avail) posRemaining[p.pos] = (posRemaining[p.pos] || 0) + 1;
-      // roadmap 3.6h — best available VBD per position, the "is there a
-      // real alternative on the board" input opportunityBenchMult needs.
-      const bestVbdByPos = {};
-      for (const p of avail) {
-        if (!(p.pos in bestVbdByPos) || p.vbd > bestVbdByPos[p.pos]) bestVbdByPos[p.pos] = p.vbd;
-      }
-      const live = {
-        round: myRound,
-        teams,
-        slot: cfg.slot,
-        counts: counts[team],
-        superflex: false,
-        roster,
-        needs: needsFrom(counts[team], roster),
-        bestVbd: Math.max(...avail.map((p) => p.vbd)),
-        posRemaining,
-        bestVbdByPos,
-        adpRankById: ranks,
-        cliffById: cfg.cliffById || {},
-        poolSize: avail.length,
-      };
-
-      // Byes, as the shipped room supplies them (SnakeRoom builds exactly
-      // these two). Only when a schedule was given — otherwise byeClash stays
-      // inert, which is the pre-2.4 behaviour every existing caller expects.
-      if (byeByTeam) {
-        live.byeByTeam = byeByTeam;
-        const rb = {};
-        for (const q of rosters[team]) {
-          if (!q.pos) continue;
-          (rb[q.pos] ||= []).push(q.team ? byeByTeam[q.team] ?? null : null);
+      if (cfg.keeper && myRound === cfg.keeper.forfeitRound) {
+        // Forfeited round: the pick is spent on the kept player directly —
+        // a keeper isn't a scored decision, so pickScore never runs for it.
+        choice = cfg.keeper.player;
+      } else {
+        const posRemaining = {};
+        for (const p of avail) posRemaining[p.pos] = (posRemaining[p.pos] || 0) + 1;
+        // roadmap 3.6h — best available VBD per position, the "is there a
+        // real alternative on the board" input opportunityBenchMult needs.
+        const bestVbdByPos = {};
+        for (const p of avail) {
+          if (!(p.pos in bestVbdByPos) || p.vbd > bestVbdByPos[p.pos]) bestVbdByPos[p.pos] = p.vbd;
         }
-        live.rosterByesByPos = rb;
-      }
+        // roadmap 3.11 — best VBD already on MY roster per position (a kept
+        // player included, since he's already in rosters[team] by the time
+        // his forfeited round has passed), the "is this candidate a real
+        // upgrade" input qualityAwareInsuranceMult needs. Computed
+        // unconditionally, same as bestVbdByPos above — cheap, and inert
+        // unless qualityAwareInsurance is also set below.
+        const myBestVbdByPos = {};
+        for (const p of rosters[team]) {
+          if (!(p.pos in myBestVbdByPos) || p.vbd > myBestVbdByPos[p.pos]) myBestVbdByPos[p.pos] = p.vbd;
+        }
+        const live = {
+          round: myRound,
+          teams,
+          slot: cfg.slot,
+          counts: counts[team],
+          superflex: false,
+          roster,
+          needs: needsFrom(counts[team], roster),
+          bestVbd: Math.max(...avail.map((p) => p.vbd)),
+          posRemaining,
+          bestVbdByPos,
+          myBestVbdByPos,
+          adpRankById: ranks,
+          cliffById: cfg.cliffById || {},
+          poolSize: avail.length,
+        };
 
-      // Survival margin (roadmap 3.1 — SIMPLIFIED), opt-in per agent so the
-      // paired comparison can run identical leagues with this as the ONLY
-      // difference. Just the next pick number; pickScore does the rest with
-      // adpRankById it already has.
-      if (cfg.survival) {
-        live.nextPick = nextPickNumber(myRound, teams, cfg.slot, rounds);
-      }
-      // Positional run (roadmap 3.2), opt-in independently of survival for
-      // isolation in paired comparisons — though it is inert unless survival
-      // is ALSO on, since it only ever modifies that margin. Only the recent
-      // window matters; runHotness itself slices to `teams`.
-      if (cfg.positionalRun) {
-        live.runHotByPos = runHotness(pickLog, teams);
-      }
-      // Roadmap 2.4, opt-in per agent so the paired comparison can run
-      // identical leagues with the bye valuation as the ONLY difference.
-      // Closes over the roster AS IT STANDS AT THIS PICK — the marginal value
-      // of a bye-covering body depends entirely on who is already on it.
-      if (cfg.byeLineup) {
-        const mine = rosters[team];
-        live.byeLineupMultFor = (p) => byeLineupMult(p, mine, {
-          pointsOf: (q) => q.valuePoints ?? q.vbd ?? 0,
-          byeOf: (q) => (q.team ? cfg.byeLineup.byeByTeam[q.team] ?? null : null),
-          rosterCfg: roster,
-          weeks: cfg.byeLineup.weeks || 17,
-        }, cfg.byeLineup.clamp || {});
-      }
-      // Roadmap 3.6f-snake, opt-in per agent for the same isolated-comparison
-      // reason every other flag here is opt-in: needMult()'s benchDepthMult
-      // step (diminishing RB/WR bench depth) only fires when this is set,
-      // so the paired comparison can run identical leagues with this as the
-      // ONLY difference.
-      if (cfg.benchDepth) {
-        live.benchDepthAware = true;
-      }
-      // Roadmap 3.6h, same opt-in-per-agent isolation reason: needMult()'s
-      // opportunityBenchMult step only fires when this is set. bestVbdByPos
-      // (built above) is already on `live` unconditionally — cheap to
-      // compute, and harmless when this flag is off since opportunityBenchMult
-      // is never called without opportunityBenchAware also being true.
-      if (cfg.opportunityBench) {
-        live.opportunityBenchAware = true;
-      }
-      let best = -Infinity;
-      for (const p of avail) {
-        const { score, blocked } = pickScore(p, live, cfg.params || P);
-        if (blocked || !Number.isFinite(score)) continue;
-        if (score > best) { best = score; choice = p; }
-      }
-      // Every candidate gated (deep roster, everything blocked): fall back to
-      // best available by value rather than forfeiting the pick.
-      if (!choice) {
-        choice = avail.slice().sort((a, b) => b.vbd - a.vbd)[0];
+        // Byes, as the shipped room supplies them (SnakeRoom builds exactly
+        // these two). Only when a schedule was given — otherwise byeClash
+        // stays inert, which is the pre-2.4 behaviour every existing caller
+        // expects.
+        if (byeByTeam) {
+          live.byeByTeam = byeByTeam;
+          const rb = {};
+          for (const q of rosters[team]) {
+            if (!q.pos) continue;
+            (rb[q.pos] ||= []).push(q.team ? byeByTeam[q.team] ?? null : null);
+          }
+          live.rosterByesByPos = rb;
+        }
+
+        // Survival margin (roadmap 3.1 — SIMPLIFIED), opt-in per agent so
+        // the paired comparison can run identical leagues with this as the
+        // ONLY difference. Just the next pick number; pickScore does the
+        // rest with adpRankById it already has.
+        if (cfg.survival) {
+          live.nextPick = nextPickNumber(myRound, teams, cfg.slot, rounds);
+        }
+        // Positional run (roadmap 3.2), opt-in independently of survival for
+        // isolation in paired comparisons — though it is inert unless
+        // survival is ALSO on, since it only ever modifies that margin. Only
+        // the recent window matters; runHotness itself slices to `teams`.
+        if (cfg.positionalRun) {
+          live.runHotByPos = runHotness(pickLog, teams);
+        }
+        // Roadmap 2.4, opt-in per agent so the paired comparison can run
+        // identical leagues with the bye valuation as the ONLY difference.
+        // Closes over the roster AS IT STANDS AT THIS PICK — the marginal
+        // value of a bye-covering body depends entirely on who is already
+        // on it.
+        if (cfg.byeLineup) {
+          const mine = rosters[team];
+          live.byeLineupMultFor = (p) => byeLineupMult(p, mine, {
+            pointsOf: (q) => q.valuePoints ?? q.vbd ?? 0,
+            byeOf: (q) => (q.team ? cfg.byeLineup.byeByTeam[q.team] ?? null : null),
+            rosterCfg: roster,
+            weeks: cfg.byeLineup.weeks || 17,
+          }, cfg.byeLineup.clamp || {});
+        }
+        // Roadmap 3.6f-snake, opt-in per agent for the same isolated-
+        // comparison reason every other flag here is opt-in: needMult()'s
+        // benchDepthMult step (diminishing RB/WR bench depth) only fires
+        // when this is set, so the paired comparison can run identical
+        // leagues with this as the ONLY difference.
+        if (cfg.benchDepth) {
+          live.benchDepthAware = true;
+        }
+        // Roadmap 3.6h, same opt-in-per-agent isolation reason: needMult()'s
+        // opportunityBenchMult step only fires when this is set. bestVbdByPos
+        // (built above) is already on `live` unconditionally — cheap to
+        // compute, and harmless when this flag is off since
+        // opportunityBenchMult is never called without opportunityBenchAware
+        // also being true.
+        if (cfg.opportunityBench) {
+          live.opportunityBenchAware = true;
+        }
+        // Roadmap 3.11, same opt-in-per-agent isolation reason: needMult()'s
+        // qualityAwareInsuranceMult step only fires when this is set.
+        // myBestVbdByPos (built above) is already on `live` unconditionally
+        // — cheap to compute, and harmless when this flag is off since
+        // qualityAwareInsuranceMult is never called without
+        // qualityAwareInsurance also being true.
+        if (cfg.qualityAwareInsurance) {
+          live.qualityAwareInsurance = true;
+        }
+        let best = -Infinity;
+        for (const p of avail) {
+          const { score, blocked } = pickScore(p, live, cfg.params || P);
+          if (blocked || !Number.isFinite(score)) continue;
+          if (score > best) { best = score; choice = p; }
+        }
+        // Every candidate gated (deep roster, everything blocked): fall back
+        // to best available by value rather than forfeiting the pick.
+        if (!choice) {
+          choice = avail.slice().sort((a, b) => b.vbd - a.vbd)[0];
+        }
       }
     } else {
       choice = botPick(avail, ranks, counts[team], roster, rng, temperature);

@@ -160,9 +160,52 @@ export function maxUseful(pos, roster = {}, superflex = false) {
   return starters + (roster.FLEX || 0) + Math.max(2, roster.BENCH || 6);
 }
 
+/**
+ * Quality-aware keeper insurance discount — roadmap 3.11. Proposed directly:
+ * "If I keep a good second-string QB in a lower round, would my team still
+ * benefit from a stronger starting QB?" — i.e. is the flat 0.60 insurance
+ * discount below the right number for EVERY quality gap alike, or should a
+ * candidate who is a real upgrade over what's already owned be discounted
+ * less?
+ *
+ * SCOPED DISCOUNT-ONLY, per explicit instruction: "Discount-only first, gate
+ * as a follow-up." This does NOT touch QB_MIN/QB2_MIN/teMinRound/te2MinRound
+ * — the hard round gates deciding WHEN a second QB/TE can be drafted at all
+ * — only what happens once that gate has already opened.
+ *
+ * WHY THIS IS A KEEPER QUESTION, NOT A GENERAL ONE (the user's own framing,
+ * confirmed correct): a model-optimal agent never intentionally rosters a
+ * worse player when a better one is openly available — that only happens
+ * when a player is LOCKED IN before the draft, independent of the live
+ * board, i.e. a keeper. `draft-sim.mjs`'s keeper pre-seeding is what lets
+ * the gate test actually exercise this branch; an unkeepered simulation
+ * cannot produce the scenario at all.
+ *
+ * MECHANISM: scales the discount up from the flat 0.60 floor toward 1.0 as
+ * the candidate's VBD edge over the best QB/TE already owned (`myBestVbd`)
+ * widens, capped at full value. A candidate who is NOT a real upgrade
+ * (`myBestVbd` missing, non-positive, or >= candidateVbd) is untouched —
+ * identical to today's flat 0.60.
+ *
+ * OPT-IN, default OFF (`qualityAware` / `liveState.qualityAwareInsurance`)
+ * — every existing caller is byte-identical unless wired. `QUALITY_GAP_K` is
+ * an UNTUNED placeholder, same discipline `OPPORTUNITY_BENCH_K` was shipped
+ * under before its own gate — NOT validated, NOT wired into any shipped
+ * room. See docs/ROADMAP.md 3.11 for the pre-registration and kill gate.
+ */
+export const QUALITY_GAP_K = 0.5;
+
+function qualityAwareInsuranceMult(base, candidateVbd, myBestVbd) {
+  if (!Number.isFinite(myBestVbd) || myBestVbd <= 0) return base;
+  if (!Number.isFinite(candidateVbd) || candidateVbd <= myBestVbd) return base;
+  const gap = (candidateVbd - myBestVbd) / myBestVbd;
+  return Math.min(1.0, base + QUALITY_GAP_K * gap);
+}
+
 function needMult(
   pos, have, roster, needs, flexEligible, superflex,
   depthAware, siblingHave, opportunityAware, candidateVbd, siblingBestVbd,
+  qualityAware, myBestVbd,
 ) {
   if (have === 0) return 1.30;
   const belowStarter = (needs?.[pos] || 0) > 0 || (flexEligible && (needs?.FLEX || 0) > 0);
@@ -173,6 +216,12 @@ function needMult(
   // insurance, not depth, so it should not outrank a startable RB or WR.
   const insuranceOnly = (pos === "QB" && !superflex) || pos === "TE";
   const base = insuranceOnly ? 0.60 : 0.88;
+  // Roadmap 3.11 — see qualityAwareInsuranceMult's header. Checked before
+  // depthAware/opportunityAware below since those two are RB/WR-only
+  // (FLEX_SIBLING has no QB/TE entry) and would be no-ops here regardless.
+  if (insuranceOnly && qualityAware) {
+    return qualityAwareInsuranceMult(base, candidateVbd, myBestVbd);
+  }
   // Diminishing RB/WR bench depth — roadmap 3.6f-snake's port of 3.6f's
   // auction benchDepthMult (full 0.88 through a startable 4th body, then
   // geometric decay, plus an extra discount while the FLEX sibling hasn't
@@ -213,6 +262,10 @@ function needMult(
  *   bestVbdByPos,   // { pos: best available VBD at that pos } — roadmap 3.6h,
  *                   // optional, opportunityBenchMult's "is there a real
  *                   // alternative" check; absent = that check is a no-op
+ *   myBestVbdByPos, // { pos: best VBD already on MY roster at that pos } —
+ *                   // roadmap 3.11, optional, qualityAwareInsuranceMult's
+ *                   // "is this candidate a real upgrade" check; absent =
+ *                   // that check is a no-op (flat insurance discount)
  *   adpRankById,    // { id: adp rank } from rankByAdp(board)
  *   poolSize,       // # available players
  * }
@@ -279,8 +332,14 @@ export function pickScore(player, liveState, P = DEFAULT_SNAKE_PARAMS) {
   // (every existing caller before 3.6h) or none is left; opportunityBenchMult
   // treats either as "no real alternative" and is a no-op.
   const siblingBestVbd = siblingPos ? (s.bestVbdByPos && s.bestVbdByPos[siblingPos]) : undefined;
+  // roadmap 3.11 — the best VBD already on MY roster at this position, or
+  // undefined if the caller hasn't supplied myBestVbdByPos (every existing
+  // caller before 3.11); qualityAwareInsuranceMult treats that as "no real
+  // upgrade check possible" and falls back to the flat discount.
+  const myBestVbd = s.myBestVbdByPos ? s.myBestVbdByPos[pos] : undefined;
   const nm = needMult(pos, have, s.roster || {}, s.needs, flexEligible, superflex,
-    s.benchDepthAware, siblingHave, s.opportunityBenchAware, player.vbd, siblingBestVbd);
+    s.benchDepthAware, siblingHave, s.opportunityBenchAware, player.vbd, siblingBestVbd,
+    s.qualityAwareInsurance, myBestVbd);
   let base = player.vbd * nm;
   if (nm >= 1.30) reasons.push(`no ${pos} yet`);
   else if (nm >= 1.15) reasons.push(`fills ${pos}`);

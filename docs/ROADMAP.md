@@ -4053,6 +4053,106 @@ clean with the new default in place. This is the first constant in
 than ported from the pre-repo offline model — see the comment above
 `SLOT_DEFAULT` in `snake-engine.js` for the full reasoning inline.
 
+### 3.11 Snake: quality-aware keeper insurance discount — PRE-REGISTERED, GATE PENDING (discount-only; round-gate relaxation is an explicit follow-up)
+
+**Asked directly, right after 3.10 shipped the QB round-gate backtest**: "If
+I keep a QB, will that prevent the app from recommending a higher rated QB
+before I fill my other positions?" — followed by "Can we test whether this
+is the best approach? ... it may be that I can keep a good second string QB
+in a lower round, but my team would still benefit from a stronger starting
+QB." Confirmed by tracing `needMult`: once a team owns one QB (or TE), a
+second one — however much better — is discounted by the SAME flat 0.60x
+"insurance" multiplier, whether he's a marginal upgrade or a league-winning
+one. Keepers were never considered when that flat number was set; a kept
+player is locked in before the draft, independent of what's actually on the
+board when the second QB/TE decision comes up.
+
+**Scope, per explicit instruction: "Discount-only first, gate as a
+follow-up."** This step touches ONLY the flat 0.60x multiplier inside
+`needMult`'s `insuranceOnly` branch. It does NOT touch `QB_MIN`/`QB2_MIN`/
+`teMinRound`/`te2MinRound` — the hard round gates 3.10 just backtested,
+deciding WHEN a second QB/TE can be drafted AT ALL. Relaxing those gates
+when a large quality gap exists is a real, separate idea, explicitly
+deferred rather than bundled in here.
+
+**Why this is intrinsically a KEEPER question, not a general one — the
+user's own framing, confirmed correct rather than assumed**: "It's really a
+keeper issue because that's the only scenario where you would intentionally
+take a lower rated player than someone on the board." A model-optimal
+simulated agent never rosters a worse player when a better one is openly
+available — `pickScore` always prefers the higher scorer among legal
+candidates. The ONLY way a team's best-owned QB/TE can be worse than what's
+sitting on the board, independent of the live draft, is a keeper picked
+before the draft started. Which means the existing `draft-sim.mjs` harness
+— zero keeper-modeling capability before this step (every simulated team
+started with an empty roster) — could not exercise this scenario at all,
+organically or otherwise. **Keeper pre-seeding was therefore a genuine
+precondition for testing this, not an optional enhancement**, and is built
+and shipped as part of this same step (see below) — the harness change
+needed no gate of its own, since it only ever REPRODUCES an already-drafted
+keeper, it makes no valuation claim.
+
+**Mechanism.**
+
+- `draft-sim.mjs` `simulateDraft` gains an opt-in `cfg.keeper = { player,
+  forfeitRound }` per agent: the kept player is removed from the shared
+  pool from BEFORE the draft starts (nobody, bot or agent, can ever draft
+  him), and the owning team's pick in their forfeited round is spent on him
+  directly, bypassing `pickScore` entirely for that one turn — a keeper
+  isn't a scored decision. Pinned in `draft-sim.selftest.mjs`: never
+  drafted twice, lands on the right team in exactly the forfeited round,
+  never leaks to an unrelated team, deterministic for a seed.
+- `snake-engine.js` `needMult` gains two trailing, opt-in parameters
+  (`qualityAware`, `myBestVbd`) and a new `qualityAwareInsuranceMult(base,
+  candidateVbd, myBestVbd)` function: scales the discount from the flat
+  0.60 floor toward 1.0 as the candidate's VBD edge over the best QB/TE
+  already owned widens (`gap = (candidateVbd - myBestVbd) / myBestVbd`;
+  `mult = min(1.0, 0.60 + QUALITY_GAP_K * gap)`), capped at full value. A
+  candidate who is NOT a real upgrade (`myBestVbd` missing, non-positive,
+  or >= `candidateVbd`) is untouched — byte-identical to today's flat 0.60.
+  `QUALITY_GAP_K = 0.5` is an UNTUNED placeholder (same discipline
+  `OPPORTUNITY_BENCH_K` shipped under before its own gate) — a value for
+  the gate below to validate or reject, not a fitted number.
+- `pickScore` threads `liveState.myBestVbdByPos` (best VBD already on MY
+  roster per position — mirrors the existing `bestVbdByPos`, "best
+  available on the board") and `liveState.qualityAwareInsurance` through to
+  `needMult`, following the exact opt-in-by-presence pattern every prior
+  roadmap addition here (3.6f, 3.6h) already uses: every existing caller is
+  byte-identical unless both are explicitly set. Pinned in
+  `snake-engine.selftest.mjs`: flag-off is a no-op even with real data
+  present; flag-on with missing/zero/non-upgrade data falls back to the
+  flat discount; a real upgrade scores above the flat baseline, scaling
+  monotonically with the gap and capping at full value; TE gets the
+  identical treatment; superflex QB and RB/WR (never `insuranceOnly`) are
+  untouched regardless of the flag.
+
+**Hypothesis**: for a team that kept a QB/TE meaningfully worse than what's
+later available on the board, scaling the insurance discount by the
+candidate's real upgrade size — rather than applying the same flat 0.60
+regardless — produces a better final roster (more realized weekly points)
+than the flat discount does, without materially hurting teams whose kept
+player is already strong (where the mechanism should be a near no-op, since
+`candidateVbd <= myBestVbd` most of the time there).
+
+**Kill gate (not yet run)**: `keeper-quality-test.mjs`, following the exact
+discipline every prior roadmap gate here uses — paired comparison via
+`draft-sim.mjs`'s common-random-numbers design (`realizedWeeklyPoints`,
+identical league/pool/seed/opponent behavior between arms, differing only
+in whether the agent's own scoring is `qualityAwareInsurance`-on or -off),
+fit-season / held-out-season split (fit on older seasons, validate on more
+recent ones, same direction 3.10 used), `mean/SE > 2` on the HELD-OUT split
+to ship. Scenarios sweep the kept player's quality relative to the board
+(a strong keeper who should see little to no change; a weak keeper with a
+clear, available upgrade; a borderline case) so the gate can distinguish
+"helps when it should matter" from "changes nothing when it shouldn't."
+
+**Not shipped anywhere yet.** `qualityAwareInsurance` has no caller in
+`SnakeRoom.tsx` or any other shipped room — this is discount MATH and
+TEST INFRASTRUCTURE only, gated the correct way (built and pinned before
+wiring), matching the process 3.6f-snake's own retroactive-gate mistake
+corrected going forward for every step since. See the gate run results
+below once available.
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.

@@ -1,0 +1,103 @@
+name: Keeper quality-aware insurance discount backtest (roadmap 3.11)
+
+# Manual. Should the flat 0.60 QB/TE "insurance" discount scale with how
+# much better the candidate is than the QB/TE already kept/owned, instead
+# of applying identically regardless of the quality gap?
+#
+# DISCOUNT-ONLY, per explicit scope: this never touches QB_MIN/QB2_MIN/
+# teMinRound/te2MinRound. Pre-seeds a kept QB (draft-sim.mjs's cfg.keeper)
+# at a fixed early forfeited round and varies only how good he is, by rank
+# among that season's real QBs — a model-optimal agent never intentionally
+# rosters a worse player than one openly available, so this scenario can
+# only be exercised via a keeper.
+#
+# Fits on seasons <= fitUpto, validates on the rest — a scenario only counts
+# if it clears mean/SE > 2 on the HELD-OUT split, same bar every gate in
+# this repo uses.
+#
+# Needs FANTASYPROS_API_KEY — the opponent bots draft by that season's real
+# ADP. Without it they would draft by our own model, and the comparison
+# would be against a strawman sharing our own biases.
+
+on:
+  workflow_dispatch:
+    inputs:
+      qbRanks:
+        description: "Kept-QB ranks to test (1 = best that season), comma-separated"
+        required: false
+        default: "3,8,14,20,28"
+        type: string
+      forfeitRound:
+        description: "Round the keeper occupies (fixed across scenarios)"
+        required: false
+        default: "1"
+        type: string
+      first:
+        description: "First season to export"
+        required: false
+        default: "2017"
+        type: string
+      last:
+        description: "Last season to export"
+        required: false
+        default: "2025"
+        type: string
+      seeds:
+        description: "Simulated drafts per slot per season per scenario"
+        required: false
+        default: "12"
+        type: string
+      slots:
+        description: "Draft slots to test, comma-separated"
+        required: false
+        default: "1,4,7,10"
+        type: string
+      fitUpto:
+        description: "Seasons <= this are the fit split; the rest are held out"
+        required: false
+        default: "2021"
+        type: string
+
+jobs:
+  keeper-quality-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install nflreadpy pandas scipy numpy pyarrow
+
+      # The simulator (including the new keeper pre-seeding this gate
+      # depends on) decides whether the discount is worth shipping. It gets
+      # verified before it is allowed to produce a number.
+      - name: Simulator + engine selftest
+        run: |
+          node frontend/src/engine/draft-sim.selftest.mjs
+          node frontend/src/engine/snake-engine.selftest.mjs
+
+      - name: Export historical draft boards (with weekly + bye data)
+        working-directory: data-pipeline
+        env:
+          FANTASYPROS_API_KEY: ${{ secrets.FANTASYPROS_API_KEY }}
+        run: python export_draft_seasons.py --first ${{ inputs.first }} --last ${{ inputs.last }} --out ./results
+
+      - name: Keeper quality-aware discount sweep
+        run: |
+          node frontend/src/engine/keeper-quality-test.mjs \
+            --data data-pipeline/results/draft_seasons.json \
+            --qbRanks ${{ inputs.qbRanks }} \
+            --forfeitRound ${{ inputs.forfeitRound }} \
+            --seeds ${{ inputs.seeds }} \
+            --slots ${{ inputs.slots }} \
+            --fitUpto ${{ inputs.fitUpto }} \
+            | tee data-pipeline/results/keeper_quality_test.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keeper-quality-test
+          path: data-pipeline/results/
