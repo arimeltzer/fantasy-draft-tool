@@ -5,7 +5,7 @@ import {
   snakeCandidateValue, auctionCandidateValue, recommendKeepers,
   predictOpponentKeepers, pickForRound,
 } from "./keeperReco.js";
-import { myPickNumbers } from "./snake-engine.js";
+import { myPickNumbers, INSURANCE_MULT } from "./snake-engine.js";
 
 let pass = 0, fail = 0;
 const eq = (g, w, m) => (JSON.stringify(g) === JSON.stringify(w)
@@ -264,6 +264,83 @@ eq(predUnknown.byTeam["Mystery"].length, 1, "unknown team still predicted via mi
   });
   const ms = performance.now() - t0;
   ok(ms < 2000, `recommendKeepers stays fast (${ms.toFixed(0)}ms) at a realistic 30-candidate roster`);
+}
+
+// ── roadmap 3.12: opportunity-cost-aware QB/TE keeper valuation ─────────
+// Proposed directly, after roadmap 3.11/3.11b both tried and failed to fix
+// this at DRAFT TIME (scaling the live pick-scoring discount): "maybe the
+// solution is to update the keeper recommendation process to consider the
+// opportunity costs in light of the gates we've established." A redundant
+// QB/TE keeper (insurance, not depth, once you already have a starter's
+// worth among your OTHER chosen keepers) has his VBD discounted by the
+// SAME shipped `INSURANCE_MULT` pickScore's own needMult already applies
+// to a live QB2/TE2 pick — reused, not a new number.
+{
+  const roster1QB = { QB: 1, RB: 2, WR: 2, TE: 1, FLEX: 1 };
+  const qbA = board[2];   // QB, rank3, vbd 114
+  const qbCandA = { id: qbA.id, player: qbA, cost: { basis: "round", price: null, round: 5 } };
+
+  // A LONE QB keeper (rank 0 among this subset's same-position keepers,
+  // i.e. the presumptive starter) keeps his full VBD — no discount.
+  const vSolo = snakeCandidateValue(qbCandA, board, mkt, new Set(), picksSlot1, 5, 1, teams, 0, roster1QB, false);
+  eq(vSolo.insuranceDiscounted, false, "a lone QB keeper is not insurance-discounted");
+  eq(vSolo.keptValue, qbA.vbd, "a lone QB keeper's kept value equals his full VBD");
+
+  // A SECOND QB keeper (rank 1 — one other, presumably-better QB keeper
+  // already accounted for) is redundant with an existing starter and gets
+  // discounted.
+  const vSecond = snakeCandidateValue(qbCandA, board, mkt, new Set(), picksSlot1, 5, 1, teams, 1, roster1QB, false);
+  eq(vSecond.insuranceDiscounted, true, "a 2nd QB keeper is insurance-discounted");
+  eq(vSecond.keptValue, +(qbA.vbd * INSURANCE_MULT).toFixed(1), "discounted by the shipped INSURANCE_MULT, reused not reinvented");
+  ok(vSecond.surplus < vSolo.surplus,
+    "the same player values lower as a redundant 2nd QB keeper than as the lone starter");
+
+  // Superflex: a 2nd QB is real depth, not insurance — never discounted,
+  // mirroring pickScore's own needMult exactly.
+  const vSuperflex = snakeCandidateValue(qbCandA, board, mkt, new Set(), picksSlot1, 5, 1, teams, 1, roster1QB, true);
+  eq(vSuperflex.insuranceDiscounted, false, "superflex leagues never discount a 2nd QB keeper");
+
+  // TE follows the identical rule as non-superflex QB.
+  const teA = board[3];   // TE, rank4
+  const teCandA = { id: teA.id, player: teA, cost: { basis: "round", price: null, round: 5 } };
+  const vTeSecond = snakeCandidateValue(teCandA, board, mkt, new Set(), picksSlot1, 5, 1, teams, 1, roster1QB, false);
+  eq(vTeSecond.insuranceDiscounted, true, "a 2nd TE keeper is insurance-discounted the same as QB");
+
+  // RB/WR are never insurance-discounted, however many are already kept —
+  // depth is real value there, not insurance (needMult's own distinction).
+  const rbA = board[0];
+  const rbCandA = { id: rbA.id, player: rbA, cost: { basis: "round", price: null, round: 5 } };
+  const vRbStacked = snakeCandidateValue(rbCandA, board, mkt, new Set(), picksSlot1, 5, 1, teams, 3, roster1QB, false);
+  eq(vRbStacked.insuranceDiscounted, false, "RB/WR are never insurance-discounted, however deep the stack");
+
+  // Integration, via recommendKeepers: when keeping TWO QBs together, the
+  // discount follows VBD rank (the higher-VBD one is treated as the real
+  // starter), NOT round-processing order. qbLow is given the EARLIER
+  // (round-processed-first) round specifically to prove this.
+  const qbHigh = board[2];   // vbd 114
+  const qbLow = board[6];    // vbd 106
+  const twoQbCands = [
+    { id: qbHigh.id, player: qbHigh, cost: { basis: "round", price: null, round: 9 } },
+    { id: qbLow.id, player: qbLow, cost: { basis: "round", price: null, round: 4 } },
+  ];
+  const twoQbRec = recommendKeepers(twoQbCands, {
+    format: "snake", board, marketBoard: mkt,
+    settings: { teams, draftSlot: 1, roster: roster1QB },
+    allKeptIds: new Set(), maxKeepers: 2, flexFloor: -1000,
+  });
+  const keptIds = new Set(twoQbRec.best.items.map((it) => it.cand.id));
+  ok(keptIds.has(qbHigh.id) && keptIds.has(qbLow.id),
+    "setup check: both QBs are worth keeping together in this fixture");
+  const itemHigh = twoQbRec.best.items.find((it) => it.cand.id === qbHigh.id);
+  const itemLow = twoQbRec.best.items.find((it) => it.cand.id === qbLow.id);
+  eq(itemHigh.insuranceDiscounted, false, "the higher-VBD QB is treated as the starter (full value)");
+  eq(itemLow.insuranceDiscounted, true, "the lower-VBD QB is the redundant one and gets discounted");
+
+  // A SOLE keeper is never discounted regardless of processing mechanics —
+  // recommendKeepers' own `ranked` view (each candidate scored alone).
+  const soloRanked = twoQbRec.ranked.find((r) => r.cand.id === qbLow.id);
+  eq(soloRanked.insuranceDiscounted, false,
+    "evaluated alone (the 'ranked' solo view), the same QB is not discounted");
 }
 
 console.log(`\nkeeperReco.selftest: ${pass} passed, ${fail} failed`);

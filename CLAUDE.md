@@ -2521,6 +2521,32 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   slot) / `settings.teamPicks` (team → owned picks, traded), falling back to
   mid-round only for teams with neither — auto-filled by the Yahoo paste import
   and editable on the draft-order board (below).
+- **Opportunity-cost-aware QB/TE keeper valuation (roadmap 3.12, shipped).**
+  Snake surplus used to credit a kept player his FULL VBD with no notion of
+  whether he'd actually start — the exact overstatement roadmap 3.11/3.11b
+  tried and FAILED to fix at DRAFT TIME (scaling `pickScore`'s live QB2/TE2
+  discount up for a real upgrade — both gated and rejected). Reframed
+  directly after 3.11b's rejection: "maybe the solution is to update the
+  keeper recommendation process to consider the opportunity costs in light
+  of the gates we've established." `snakeCandidateValue` now discounts a
+  redundant QB/TE keeper (a second body at a one-starter position — the
+  SAME "insurance, not depth" concept `needMult` already encodes) by
+  `INSURANCE_MULT`, the identical flat 0.60 `pickScore` already applies to
+  a live QB2/TE2 pick — `isInsuranceOnly()`/`INSURANCE_MULT` pulled out of
+  `snake-engine.js` and reused rather than reinvented. The set optimizer
+  ranks same-position keepers by VBD DESCENDING to decide which one is
+  "the starter" (full value) vs "the redundant one" (discounted) — NOT by
+  which round each is nominally kept in, so the better QB always gets full
+  credit regardless of processing order. Superflex leagues are exempted
+  (a 2nd QB there is real depth, matching `needMult`'s own carve-out).
+  **No new kill gate** — `INSURANCE_MULT` is an already-shipped constant
+  reused in a second consumer, the same no-new-gate precedent 3.6c
+  (reusing `maxUseful`'s cap in the auction ceiling) and 3.6e (reusing the
+  1.15 "below a starter" boost as `BACKUP_BOOST_MULT`) already established
+  for exactly this class of change — a policy port, not a new statistical
+  claim. Stated limitation: this is NOT independently backtested for
+  keeper-SELECTION quality specifically, since no harness in this repo
+  scores that the way `draft-sim.mjs` scores draft-time picks.
 - **Import persistence**: both keeper importers cache into
   `settings.keeperImport` (`KeeperImportCache.source` = `espn` | `yahoo-paste`),
   so the analysis is restored — and re-fed to the recommender — when the planner

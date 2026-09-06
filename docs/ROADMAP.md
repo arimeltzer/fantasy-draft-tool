@@ -4371,6 +4371,77 @@ aware attempts at this idea are now closed; further work here should
 target the diagnosis in point (2) above before trying a third variant of
 the same discount shape.
 
+### 3.12 Snake: opportunity-cost-aware KEEPER valuation — SHIPPED (a policy port, no new gate — see reasoning below)
+
+**User's own reframing, right after 3.11b's rejection**: "maybe the
+solution is to update the keeper recommendation process to consider the
+opportunity costs in light of the gates we've established." Both 3.11 and
+3.11b tried to fix the same overstatement at DRAFT TIME — scaling
+`pickScore`'s live pick-scoring discount up for a real QB/TE upgrade — and
+both failed the gate. This reframes the fix as belonging somewhere else
+entirely: not "how should a live pick be scored" but "how much is THIS
+KEEPER actually worth to keep."
+
+**The real gap, once named**: `keeperReco.js`'s `snakeCandidateValue`
+credited a kept player his FULL VBD when computing keeper surplus —
+`surplus = VBD(kept) − VBD(forfeited pick)` — with no notion of whether
+that player would actually START. A redundant QB/TE keeper (a second body
+at a one-starter position, "insurance not depth" in `needMult`'s own
+long-standing framing) was valued identically to a legitimate starter-
+tier keeper of the same raw VBD — the SAME overstatement 3.11/3.11b tried
+and failed to correct on the OTHER side of the same decision.
+
+**Mechanism — a policy PORT, not a new model**: `snake-engine.js` exports
+`isInsuranceOnly(pos, superflex)` (pulled out of `needMult`'s own inline
+check) and `INSURANCE_MULT` (0.60 — the SAME flat, ALWAYS-SHIPPED discount
+`pickScore` already applies to a live QB2/TE2 pick; not the boost/damping
+attempts on top of it, both of which were gated and rejected).
+`keeperReco.js snakeCandidateValue` now takes the candidate's rank among
+this subset's OTHER same-position keepers (`sameposKeptBefore`, roster
+starter counts, and the league's superflex flag) and discounts his VBD by
+`INSURANCE_MULT` before computing surplus, exactly when he'd be a
+redundant QB/TE keeper — mirroring `needMult`'s own `have >= 1` trigger,
+just counted over CHOSEN KEEPERS instead of a live roster.
+`recommendKeepers`'s set optimizer ranks same-position keepers by VBD
+DESCENDING (not by round-processing order) to decide which one is "the
+starter" (full value) and which is "the redundant one" (discounted) — the
+higher-VBD keeper always gets full credit, regardless of which round he's
+nominally kept in.
+
+**Why this needed no new kill gate — the SAME precedent 3.6c/3.6e already
+established, checked explicitly rather than assumed.** `INSURANCE_MULT` is
+not a new, unvalidated number — it is the EXISTING shipped default
+(distinct from `QUALITY_GAP_K`'s rejected boost/damping attempts on top of
+it), reused in a second consumer exactly the way 3.6c reused `maxUseful`'s
+cap in the auction ceiling and 3.6e reused `needMult`'s 1.15 "below a
+starter" boost as `BACKUP_BOOST_MULT` — both shipped directly, without a
+fresh backtest, on the reasoning that REUSING an already-validated policy
+in a new but analogous place is not the same claim as introducing a new
+number. **Stated limitation, not swept under the rug**: this is NOT itself
+independently backtested for KEEPER-SELECTION quality specifically — no
+harness in this repo scores "was this keeper worth keeping" the way
+`draft-sim.mjs` scores draft-time picks, so there is no equivalent of
+`realizedWeeklyPoints` to validate against here. If that gap is worth
+closing later, it would need its own harness built first, the same
+precondition-first discipline every other gate in this document follows.
+
+**SHIPPED.** `snakeCandidateValue` discounts a redundant QB/TE keeper's
+surplus contribution by `INSURANCE_MULT`; `RecoItem.keptValue`/
+`insuranceDiscounted` expose the discount for a future UI treatment (not
+built in this pass — no display change shipped, only the underlying
+number). `KeeperRecommendations.tsx` now threads `settings.superflex`
+into `recommendKeepers`'s context so a superflex league's legitimate 2nd
+QB is never wrongly discounted. 12 new selftest assertions in
+`keeperReco.selftest.mjs`: solo vs. redundant valuation, the exact
+`INSURANCE_MULT` arithmetic, the superflex exemption, TE parity with QB,
+RB/WR never discounted regardless of stack depth, and — the case that
+actually matters — an integration test proving the discount follows VBD
+RANK (the better QB keeps full value) rather than round-processing order,
+using a fixture where the WORSE QB is deliberately given the earlier,
+first-processed round to make sure the wrong one isn't credited by
+accident. Full frontend build + selftest (756 assertions across all
+engine selftests) + vitest (110/110) pass clean.
+
 **Kill gate for the phase**: head-to-head simulation. Run the new agent against
 the current one across many simulated leagues and measure title share. Anything
 that does not win more titles does not ship, however elegant.

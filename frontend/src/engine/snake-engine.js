@@ -161,6 +161,18 @@ export function maxUseful(pos, roster = {}, superflex = false) {
 }
 
 /**
+ * Is a SECOND+ body at this position insurance rather than depth? True for
+ * QB in a non-superflex league and for TE — a backup there only plays when
+ * the starter is hurt, unlike RB/WR where a bye or a bad matchup routinely
+ * starts the bench body. Pulled out of `needMult` so a SECOND consumer
+ * (`keeperReco.js`'s keeper valuation, roadmap 3.12) can ask the identical
+ * question without a second, driftable copy of the rule.
+ */
+export function isInsuranceOnly(pos, superflex = false) {
+  return (pos === "QB" && !superflex) || pos === "TE";
+}
+
+/**
  * Quality-aware keeper insurance discount — roadmap 3.11. Proposed directly:
  * "If I keep a good second-string QB in a lower round, would my team still
  * benefit from a stronger starting QB?" — i.e. is the flat 0.60 insurance
@@ -222,6 +234,15 @@ export const QUALITY_GAP_K = 0.5;
  *  assignment uses, rather than a second hardcoded 0.88 that could drift
  *  from it. */
 const DEPTH_MULT = 0.88;
+
+/** The flat "past a starter, insurance not depth" multiplier for QB
+ *  (non-superflex) and TE — exported so a second consumer
+ *  (`keeperReco.js`'s keeper valuation, roadmap 3.12) can reuse the SAME
+ *  shipped number rather than a second hardcoded 0.60 that could drift
+ *  from it. This is the ORIGINAL, always-shipped default — distinct from
+ *  `QUALITY_GAP_K`'s boost/dampening attempts on top of it, both of which
+ *  were gated and REJECTED (docs/ROADMAP.md 3.11/3.11b). */
+export const INSURANCE_MULT = 0.60;
 
 function qualityAwareInsuranceMult(base, candidateValue, myBestValue) {
   if (!Number.isFinite(myBestValue) || myBestValue <= 0) return base;
@@ -299,8 +320,8 @@ function needMult(
   // the positions that genuinely bank depth; a one-starter position's
   // backup is insurance, not depth, so it should not outrank a startable
   // RB or WR.
-  const insuranceOnly = (pos === "QB" && !superflex) || pos === "TE";
-  const base = insuranceOnly ? 0.60 : DEPTH_MULT;
+  const insuranceOnly = isInsuranceOnly(pos, superflex);
+  const base = insuranceOnly ? INSURANCE_MULT : DEPTH_MULT;
   // Roadmap 3.11 / 3.11 follow-up — see qualityAwareOpportunityMult's own
   // header for why the opportunity-aware version is checked FIRST (it is
   // the un-rejected attempt) with the plain, already-rejected version as

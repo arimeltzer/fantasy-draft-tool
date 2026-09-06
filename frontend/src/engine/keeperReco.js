@@ -20,10 +20,32 @@
  * when its marginal KV clears a flexibility threshold — so it can, and
  * often will, recommend fewer than the max (or none).
  *
+ * OPPORTUNITY-COST-AWARE QB/TE VALUATION (roadmap 3.12). Snake surplus used
+ * to credit a kept player his FULL VBD regardless of whether he'd actually
+ * start — overstating a redundant QB/TE keeper (a backup at a one-starter
+ * position, "insurance not depth") the same way a live-draft pick would be
+ * overstated crediting him full VBD. Proposed directly after roadmap 3.11/
+ * 3.11b both tried to fix that overstatement at DRAFT TIME (scaling the
+ * live pick-scoring discount up for a real upgrade) and were gated and
+ * REJECTED — the fix belongs at the KEEPER DECISION instead: "maybe the
+ * solution is to update the keeper recommendation process to consider the
+ * opportunity costs in light of the gates we've established." A second+
+ * QB/TE keeper (`isInsuranceOnly`, evaluated against OTHER keepers already
+ * chosen in the same subset — mirrors `needMult`'s own `have >= 1` trigger)
+ * has his VBD discounted by `INSURANCE_MULT` before computing surplus —
+ * the SAME shipped, always-on flat discount `pickScore` already applies to
+ * a live QB2/TE2 pick, reused in a NEW consumer rather than a new,
+ * unvalidated number (the same no-new-gate precedent 3.6c/3.6e already
+ * established for reusing an already-shipped constant this way). NOT
+ * itself independently backtested for KEEPER decisions specifically — no
+ * harness in this repo scores keeper-SELECTION quality the way
+ * `draft-sim.mjs` scores draft-time picks — a real, stated limitation.
+ *
  * Pure + node-tested (keeperReco.selftest.mjs).
  * ================================================================== */
 import { myPickNumbers, snakePicks } from "./valuation-engine.js";
 import { keeperCost } from "./keeper.js";
+import { isInsuranceOnly, INSURANCE_MULT } from "./snake-engine.js";
 
 /** Market draft order: who leaves the board when. ADP → ECR → our VBD rank.
  *  Returns the board annotated with a 1-based `marketIdx`. */
@@ -117,15 +139,37 @@ export function pickForRound(myPicks, round, teams) {
   return myPicks[myPicks.length - 1];
 }
 
-export function snakeCandidateValue(cand, board, marketBoard, keptIds, myPicks, assignedRound, scarceFactor, teams) {
+/**
+ * @param sameposKeptBefore how many OTHER keepers already chosen in this
+ *        same subset play this candidate's position — mirrors
+ *        `needMult`'s own `have` count, just counted over keepers instead
+ *        of a live roster (see roadmap 3.12, this file's header).
+ * @param roster league starter counts, for the same-position starter
+ *        threshold `isInsuranceOnly` needs.
+ * @param superflex league superflex flag — a superflex league's SECOND QB
+ *        is real depth, not insurance, exactly as `needMult` already treats it.
+ */
+export function snakeCandidateValue(
+  cand, board, marketBoard, keptIds, myPicks, assignedRound, scarceFactor, teams,
+  sameposKeptBefore = 0, roster = {}, superflex = false,
+) {
   const p = cand.player;
   const round = assignedRound ?? cand.cost.round ?? 1;
   const forfeitPick = pickForRound(myPicks, round, teams);
   const exp = expectedAtPick(marketBoard, forfeitPick, keptIds);
   const forfeitVbd = exp ? exp.vbd : 0;
-  const surplus = +(p.vbd - forfeitVbd).toFixed(1);
+  // Roadmap 3.12 — a QB/TE keeper past this position's starter count is
+  // insurance, not depth, the SAME reasoning (and the SAME shipped
+  // constant) `pickScore`'s own needMult already applies to a live QB2/TE2
+  // pick. Crediting him full VBD here would repeat the exact overstatement
+  // roadmap 3.11/3.11b traced the harm to when they tried to fix it at
+  // draft time instead — fixing it HERE, at the keeper decision, is what
+  // was proposed as the better home for it.
+  const insuranceDiscounted = isInsuranceOnly(p.pos, superflex) && sameposKeptBefore >= (roster[p.pos] || 0);
+  const keptValue = insuranceDiscounted ? +(p.vbd * INSURANCE_MULT).toFixed(1) : p.vbd;
+  const surplus = +(keptValue - forfeitVbd).toFixed(1);
   const scarcity = scarcityBonus(p, board, keptIds, scarceFactor);
-  return { market: p.vbd, cost: round, surplus, scarcity, forfeit: exp, forfeitPick };
+  return { market: p.vbd, keptValue, insuranceDiscounted, cost: round, surplus, scarcity, forfeit: exp, forfeitPick };
 }
 
 /* ------------------------------------------------------------------ *
@@ -149,6 +193,7 @@ export function recommendKeepers(candidates, ctx) {
   const roster = settings.roster ?? {};
   const teams = settings.teams ?? 12;
   const slot = settings.draftSlot ?? 1;
+  const superflex = !!settings.superflex;
   // Honors settings.myPicks when the league has traded picks; otherwise this is
   // the serpentine schedule, unchanged.
   const myPicks = format === "snake" ? myPickNumbers({ ...settings, teams }, 30) : [];
@@ -169,10 +214,24 @@ export function recommendKeepers(candidates, ctx) {
         used.add(r);
         assign[c.id] = r;
       }
+      // Roadmap 3.12 — which of this subset's same-position keepers is
+      // treated as the starter (full value) vs insurance (discounted): the
+      // HIGHEST-VBD one, not whichever happens to be processed first by
+      // round order below (that order exists for round ASSIGNMENT, an
+      // unrelated concern). A separate VBD-descending rank per position.
+      const byPosVbdDesc = {};
+      for (const c of subset) (byPosVbdDesc[c.player.pos] ||= []).push(c);
+      for (const list of Object.values(byPosVbdDesc)) list.sort((a, b) => b.player.vbd - a.player.vbd);
+      const posRank = {};
+      for (const list of Object.values(byPosVbdDesc)) list.forEach((c, i) => { posRank[c.id] = i; });
+
       const posSeen = {};
       for (const c of order) {
-        const v = snakeCandidateValue(c, board, marketBoard, allKeptIds, myPicks, assign[c.id], scarceFactor, teams);
         const before = posSeen[c.player.pos] ?? 0;
+        const v = snakeCandidateValue(
+          c, board, marketBoard, allKeptIds, myPicks, assign[c.id], scarceFactor, teams,
+          posRank[c.id], roster, superflex,
+        );
         const fit = fitAdjust(c.player, before, roster);
         posSeen[c.player.pos] = before + 1;
         const kv = +(v.surplus + v.scarcity + fit).toFixed(1);

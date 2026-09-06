@@ -11,6 +11,14 @@ export interface RecoCandidate {
 export interface RecoItem {
   cand: RecoCandidate;
   market: number;
+  /** Roadmap 3.12 — the value actually credited toward surplus: equals
+   *  `market` unless `insuranceDiscounted`, in which case it's `market *
+   *  INSURANCE_MULT`. Snake only; unset for auction items. */
+  keptValue?: number;
+  /** Roadmap 3.12 — true when this keeper is a redundant QB/TE (a second
+   *  same-position keeper past the starter count, non-superflex) and his
+   *  value was discounted accordingly. Snake only. */
+  insuranceDiscounted?: boolean;
   cost: number;
   surplus: number;
   scarcity: number;
@@ -26,7 +34,12 @@ export interface RecoContext {
   format: "auction" | "snake";
   board: BoardPlayer[];
   marketBoard: (BoardPlayer & { marketIdx: number })[];
-  settings: { teams: number; draftSlot?: number; budget?: number; roster: Record<string, number> };
+  settings: {
+    teams: number; draftSlot?: number; budget?: number; roster: Record<string, number>;
+    /** Roadmap 3.12 — a superflex league's 2nd QB is real depth, not
+     *  insurance; without this the discount would wrongly apply to it. */
+    superflex?: boolean;
+  };
   allKeptIds?: Set<number>;
   maxKeepers?: number;
   flexFloor?: number;
@@ -53,6 +66,7 @@ export declare function auctionCandidateValue(
 export declare function snakeCandidateValue(
   cand: RecoCandidate, board: BoardPlayer[], marketBoard: (BoardPlayer & { marketIdx: number })[],
   keptIds: Set<number>, myPicks: number[], assignedRound: number | undefined, scarceFactor: number,
+  teams?: number, sameposKeptBefore?: number, roster?: Record<string, number>, superflex?: boolean,
 ): Omit<RecoItem, "cand" | "fit" | "kv" | "recommended">;
 export declare function recommendKeepers(candidates: RecoCandidate[], ctx: RecoContext): RecoResult;
 export declare function draftImpact(

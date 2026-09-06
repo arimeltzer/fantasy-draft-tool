@@ -184,7 +184,14 @@ export default function KeeperRecommendations({ format, settings, board, picks, 
     const candidates = eligibleCandidates.map((k) => ({ id: k.id, player: k.player, cost: k.cost }));
     return recommendKeepers(candidates, {
       format, board: pricedBoard, marketBoard,
-      settings: { teams: settings.teams, draftSlot: settings.draftSlot ?? 1, budget: settings.budget, roster: settings.roster as unknown as Record<string, number> },
+      settings: {
+        teams: settings.teams, draftSlot: settings.draftSlot ?? 1, budget: settings.budget,
+        roster: settings.roster as unknown as Record<string, number>,
+        // Roadmap 3.12 — a superflex league's 2nd QB is real depth, not
+        // insurance, and recommendKeepers needs to know that to avoid
+        // discounting a legitimate 2nd-QB keeper's value.
+        superflex: settings.superflex,
+      },
       allKeptIds, maxKeepers: rule.maxKeepers, flexFloor,
     });
   }, [eligibleCandidates, format, pricedBoard, marketBoard, settings, allKeptIds, rule.maxKeepers, flexFloor]);
