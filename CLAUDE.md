@@ -1696,6 +1696,39 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   resort (`recs.length === 0`, explicitly labeled "shown on value") is
   untouched — a different, already-transparent fallback for when every
   candidate is gated, not what was reported here.
+- **A THIRD instance of the same panel bug, reported live much later in a
+  draft: "once my starting lineup was filled the app recommended six
+  defenses with my next pick which would have been way too early and
+  wasting picks that I could have used to build my bench."** Same root
+  cause category as the two above, a THIRD trigger for it: the `MAX_PER_POS`
+  cap (2) was only ever enforced in the PRIMARY fill loop — a separate
+  backfill step existed specifically to top up a genuinely thin pool rather
+  than leave a short panel, and it refilled any remaining slots straight
+  from `open` with **no cap at all**. Once starters fill and every other
+  position hits its own roster/bench cap (an ordinary mid-to-late-draft
+  state, not the true endgame hard-gate above) DST can be the only position
+  left unblocked — so the capped primary loop took its 2, and the uncapped
+  backfill piled 4 MORE defenses on top to reach 6, exactly as reported.
+  **Fixed by deleting the backfill step outright, not patching it**: once
+  the cap is enforced consistently, `perPos` already reflects every
+  candidate across `open` that fit under it (the primary filter runs over
+  the WHOLE list, not just the first `SLOTS`), so there is nothing left to
+  add without breaking the cap — the backfill's own gap-filling condition
+  (`recs.length < SLOTS`) can only ever be true when nothing else CAN be
+  added without violating it. A thin pool concentrated in one position now
+  legitimately renders a short panel (as few as 2 cards) instead of padding
+  out with repeats of the same position — the third and most direct
+  application yet of the identical "short panel beats bad advice" trade
+  this section's prior two fixes already established, this time removing
+  dead-weight code entirely rather than adding a new gate.
+  `Recommendations.test.tsx` (new) pins both directions: a
+  starters-filled/DST-only board renders exactly the cap's 2 best
+  defenses, never 6, and never lets a genuinely blocked higher-VBD RB/WR/QB
+  leak in regardless of score; a control case with multiple open positions
+  still fills all 6 slots normally, proving the fix narrows only the
+  reported failure mode. Verified as a real regression test, not just a
+  passing one, by re-running it against the pre-fix code and confirming it
+  fails with the exact reported shape (2 defenses expected, 6 received).
 
 ## Snake QB round gate backtested and shipped (roadmap 3.10)
 

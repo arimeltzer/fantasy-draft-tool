@@ -47,12 +47,22 @@ export default function Recommendations({ board, draftedIds, live, onDraft }: Pr
     return true;
   }).slice(0, SLOTS);
 
-  // Backfill rather than show a short panel: with the cap in place a thin pool
-  // can leave gaps, and dropping to the next-best repeat beats empty slots.
-  if (recs.length < SLOTS) {
-    const shown = new Set(recs.map((p) => p.id));
-    recs.push(...open.filter((p) => !shown.has(p.id)).slice(0, SLOTS - recs.length));
-  }
+  // NO backfill past the cap above — reported live: once starters filled
+  // and every other position hit its own roster/bench cap (a normal
+  // mid-late-draft state, not the endgame gate below), DST was the ONLY
+  // position left unblocked, and a since-removed backfill step here
+  // refilled all 6 slots with different defenses, ignoring MAX_PER_POS
+  // entirely: "recommended six defenses ... wasting picks I could have
+  // used to build my bench." That step existed to avoid a short panel
+  // from a genuinely thin pool, but a thin pool concentrated in ONE
+  // position is exactly the scenario the cap exists to stop — filling the
+  // gap from `open` without the cap just readmits the 3rd/4th/5th/6th-best
+  // repeat the cap's own comment above already argues isn't a real choice.
+  // `perPos` already reflects every candidate that fit under the cap
+  // (the filter above runs over all of `open`, not just the first SLOTS),
+  // so there is nothing left to add here without breaking it — a short
+  // panel is the honest outcome, same "short panel beats bad advice"
+  // trade already made for the vbd > 0 gate just above.
   // Last resort: every candidate is gated (roster full, or all too early).
   // Falling back to raw value keeps the panel useful instead of blank.
   if (recs.length === 0) {
