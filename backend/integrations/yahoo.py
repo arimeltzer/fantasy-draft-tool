@@ -526,15 +526,31 @@ async def fetch_league(league_key: str, access_token: str, my_guid: str | None =
 
 
 def parse_live_draft(draft_json, teams_json, my_guid: str | None = None,
-                     my_team_key: str | None = None) -> LiveDraftState:
+                     my_team_key: str | None = None,
+                     extra_players: dict[str, NormPlayer] | None = None) -> LiveDraftState:
     """Join Yahoo's draft results (order/owner/price) to the rosters (names).
 
     `draftresults` identifies players only by `player_key`, so on its own it
     can't say WHO was taken. Rosters carry the names, and a drafted player
-    lands on a roster, so the two together give a complete pick list. A pick
-    whose player isn't on any roster yet (the platform lagging between the two
-    endpoints) is skipped rather than logged as an unknown player — the next
-    poll picks it up.
+    lands on a roster, so the two together give a complete pick list.
+
+    **`extra_players` is a TOP-UP for a player drafted but not yet on any
+    roster — reported live, a real Yahoo draft where the roster join
+    resolved NOTHING all night (`resolved: 0` while `drafted` climbed), the
+    exact "roster view lags the live draft" failure this codebase already
+    diagnosed and fixed for ESPN at length (`kona_player_info`, see
+    CLAUDE.md "Live draft sync") but had never hit — or built a fix for —
+    on Yahoo before now.** OWNER attribution does NOT need this: each
+    `draftresults` entry already carries `team_key` directly
+    (`parse_draft_results`), independent of any roster join — only the
+    player's NAME/POS/TEAM has nowhere else to come from without it.
+    `fetch_live_draft` fills this from a separate `players;player_keys=`
+    lookup, scoped to exactly whatever THIS function's own first pass
+    reports as unresolved (`state.meta["unresolved_ids"]`) — untested
+    against a real live Yahoo draft as of writing, so best-effort: a
+    player still missing from BOTH the roster join and `extra_players`
+    is skipped rather than logged as an unknown, same as before this
+    existed, and the next poll picks it up once either source catches up.
 
     "Mine" identification here is a SINGLE POINT OF FAILURE with no visibility
     if it misses: unlike ESPN (whose raw payloads have been checked against
@@ -594,11 +610,17 @@ def parse_live_draft(draft_json, teams_json, my_guid: str | None = None,
         } if len(teams) == len(names_by_key) else set()
 
     picks: list[LivePick] = []
+    unresolved: list[str] = []
     for pid, d in draft.items():
         entry = by_id.get(pid)
-        if not entry:
+        np, roster_team_key = (None, None)
+        if entry:
+            np, roster_team_key = entry
+        elif extra_players and pid in extra_players:
+            np = extra_players[pid]
+        if not np:
+            unresolved.append(pid)
             continue
-        np, roster_team_key = entry
         owner_key = d.get("team_key") or roster_team_key
         picks.append(LivePick(
             overall=d.get("pick") or 0,
@@ -614,6 +636,9 @@ def parse_live_draft(draft_json, teams_json, my_guid: str | None = None,
                            fmt="auction" if any(p.bid is not None for p in picks) else "snake")
     state.meta = {
         "drafted": len(draft), "resolved": len(picks),
+        # Player ids drafted but not resolvable from either the roster join
+        # or `extra_players` — what `fetch_live_draft` feeds its top-up call.
+        "unresolved_ids": unresolved,
         # Diagnostics for the "which team is mine" match — always present
         # (not just on failure) so the frontend can offer a correction
         # up front rather than only after something's already gone wrong.
@@ -623,10 +648,78 @@ def parse_live_draft(draft_json, teams_json, my_guid: str | None = None,
     return state
 
 
+def parse_players_by_key(data) -> dict[str, NormPlayer]:
+    """`/league/{key}/players;player_keys=...` -> {player_id: NormPlayer}.
+
+    Reaches the exact same player-node shape `_player_from_node` already
+    parses off a roster, just from the PLAYERS collection resource instead —
+    a player universe lookup that exists independent of any team's roster,
+    the Yahoo analogue of ESPN's `kona_player_info` top-up.
+    """
+    league = (data.get("fantasy_content") or {}).get("league")
+    node = {}
+    if isinstance(league, list) and len(league) > 1:
+        node = flatten(league[1]).get("players") or {}
+    node = flatten(node)
+
+    out: dict[str, NormPlayer] = {}
+    for k, v in node.items():
+        if k == "count" or not isinstance(v, dict):
+            continue
+        pnode = v.get("player")
+        if not pnode:
+            continue
+        fields = flatten(pnode[0]) if isinstance(pnode, list) else flatten(pnode)
+        pid = player_num(fields.get("player_key") or fields.get("player_id"))
+        if not pid:
+            continue
+        out[pid] = _player_from_node(pnode)
+    return out
+
+
+async def fetch_player_names(league_key: str, player_ids: list[str], access_token: str,
+                             ca_bundle: str | None = None) -> dict[str, NormPlayer]:
+    """`/league/{key}/players;player_keys=...`, chunked, -> {player_id: NormPlayer}.
+
+    The top-up `fetch_live_draft` needs for a player drafted but not yet
+    rostered — see `parse_live_draft`'s own docstring for why. Chunked at 25
+    keys per request: a conservative batch size, kept cautious rather than
+    guessed larger since this file has no real captured traffic against this
+    specific resource to calibrate a bigger one against (unlike ESPN's
+    kona_player_info, which WAS tuned against a real payload). player_key is
+    `<game_key>.p.<id>` — the game_key is the same leading segment
+    `league_key` itself starts with (`449.l.82486` -> game_key `449`).
+    """
+    if not player_ids:
+        return {}
+    game_key = league_key.split(".l.")[0]
+    verify = ca_bundle if ca_bundle else True
+    headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+    out: dict[str, NormPlayer] = {}
+    async with httpx.AsyncClient(timeout=20, trust_env=True, verify=verify, headers=headers) as client:
+        for i in range(0, len(player_ids), 25):
+            chunk = player_ids[i:i + 25]
+            keys = ",".join(f"{game_key}.p.{pid}" for pid in chunk)
+            r = await client.get(f"{API}/league/{league_key}/players;player_keys={keys}?format=json")
+            if r.status_code >= 400:
+                continue  # best-effort — a failed chunk just leaves those ids unresolved
+            out.update(parse_players_by_key(r.json()))
+    return out
+
+
 async def fetch_live_draft(league_key: str, access_token: str, my_guid: str | None = None,
                            my_team_key: str | None = None,
                            ca_bundle: str | None = None) -> LiveDraftState:
-    """Poll a Yahoo draft in progress. Two calls: results (order) + rosters (names)."""
+    """Poll a Yahoo draft in progress.
+
+    Two calls always: results (order/owner/price) + rosters (names). A THIRD,
+    conditional call tops up any player drafted but not yet on a roster —
+    see `parse_live_draft`'s docstring for why this exists (a real live
+    draft where the plain roster join resolved nothing at all). Best-effort:
+    the top-up failing outright (network error, scope issue) just leaves
+    `fetch_live_draft` returning exactly what it always did before this
+    existed, not a harder failure.
+    """
     verify = ca_bundle if ca_bundle else True
     headers = {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
     async with httpx.AsyncClient(timeout=20, trust_env=True, verify=verify, headers=headers) as client:
@@ -636,7 +729,21 @@ async def fetch_live_draft(league_key: str, access_token: str, my_guid: str | No
         rd.raise_for_status()
         rt = await client.get(f"{API}/league/{league_key}/teams/roster?format=json")
         rt.raise_for_status()
-    return parse_live_draft(rd.json(), rt.json(), my_guid, my_team_key)
+    draft_json, teams_json = rd.json(), rt.json()
+    state = parse_live_draft(draft_json, teams_json, my_guid, my_team_key)
+
+    unresolved = state.meta.get("unresolved_ids") or []
+    if unresolved:
+        try:
+            extra = await fetch_player_names(league_key, unresolved, access_token, ca_bundle)
+        except Exception:  # noqa: BLE001 — top-up is best-effort, never blocks the poll
+            extra = {}
+        state.meta["lookup"] = {"lookup_attempted": len(unresolved), "lookup_found": len(extra)}
+        if extra:
+            state = parse_live_draft(draft_json, teams_json, my_guid, my_team_key,
+                                     extra_players=extra)
+            state.meta["lookup"] = {"lookup_attempted": len(unresolved), "lookup_found": len(extra)}
+    return state
 
 
 async def fetch_keeper_league(league_key: str, access_token: str, my_guid: str | None = None,

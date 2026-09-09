@@ -665,6 +665,63 @@ cd data-pipeline && python ingest_nflverse.py && python projections.py \
   None` and still resolves correctly once overridden) and
   `LiveDraftPanel.test.tsx` (warning + picker shown/hidden correctly,
   selection updates).
+- **Yahoo live sync resolved ZERO picks all draft, reported live — "Yahoo
+  was connected and saw how many picks there were but did not actively
+  import any picks so I had to manually keep the board updated."** Yahoo's
+  live-sync path had NEVER been verified against a real live draft before
+  this — every fix in this section for the identical failure category is
+  ESPN-only. Root cause, found by inspection rather than a live capture
+  (none was taken that night): `yahoo.parse_live_draft` joins
+  `draftresults` (order/owner/price, live) to `teams/roster` (names) by
+  `player_key` — a drafted player only becomes a loggable pick once he
+  shows up on SOME team's roster. `state.meta` already separately reports
+  `drafted` (raw `draftresults` count — what climbed, matching "saw how
+  many picks there were") and `resolved` (how many actually joined —
+  almost certainly reading near-zero all night, matching "did not
+  actively import"). This is the EXACT signature CLAUDE.md documents at
+  length for ESPN (`draftDetail.picks` / roster-view lag), but Yahoo had
+  **no top-up mechanism at all** — `sync_draft` in `main.py` calls
+  `yahoo_provider.fetch_live_draft` with nothing else, and `backfill` is
+  hard-gated `data.provider == "espn"` (main.py's `sync_draft`), so even
+  the one-shot recovery button did nothing for Yahoo.
+  - **Fix, by direct request ("build a best-effort fix now"), the same
+    category of fix ESPN's `kona_player_info` top-up already is —
+    explicitly flagged as UNTESTED against a real live Yahoo draft, since
+    none was running to verify against.** Checked first that owner
+    attribution never actually needed the roster join at all:
+    `parse_draft_results` already carries `team_key` directly on every
+    `draftresults` entry, independent of any roster — only the player's
+    NAME/POS/TEAM had nowhere else to come from. `yahoo.parse_live_draft`
+    gained an `extra_players: {player_id: NormPlayer}` parameter — when
+    the roster join misses a drafted id, it falls back to this map instead
+    of skipping the pick outright; its `meta` now also reports
+    `unresolved_ids`, the drafted-but-still-unnamed ids. `yahoo
+    .parse_players_by_key()` parses Yahoo's `players;player_keys=...`
+    collection resource — the SAME player-node shape `_player_from_node`
+    already parses off a roster, just reached from the player UNIVERSE
+    instead, which exists independent of any team's roster (the direct
+    Yahoo analogue of `kona_player_info`). `yahoo.fetch_player_names()`
+    calls it in chunks of 25 keys (a conservative, uncalibrated batch size
+    — no real traffic against this specific resource to tune it against,
+    unlike ESPN's tuned lookup). `fetch_live_draft` now does the join once,
+    checks `unresolved_ids`, and — only if non-empty — does ONE extra
+    lookup call and re-joins with the result as `extra_players`; a failed
+    lookup (network error, scope issue) is caught and just leaves
+    `fetch_live_draft` returning exactly what it always returned before
+    this existed, never a harder failure. The existing generic "roster
+    view behind: looked up N, found M" line in `LiveDraftPanel.tsx`
+    (already provider-agnostic, built for ESPN's own `meta.lookup`) picks
+    this up with NO frontend changes at all, since `sync_draft` passes
+    `state.meta` straight through untouched. `integrations/selftest.py`
+    pins the top-up (a drafted-but-unrostered player resolves via
+    `extra_players`, with owner correctly coming from the draft result's
+    own `team_key` rather than a roster), the still-missing case (a
+    player absent from BOTH sources stays unresolved, not fabricated),
+    and `parse_players_by_key`'s own parsing.
+  - **Next Yahoo live draft is the real test.** If `resolved` still lags
+    `drafted` after this, the next step is capturing the actual
+    `players;player_keys=` response shape live (the discipline every
+    ESPN fix in this section followed) rather than guessing again blind.
 - **"Sync from another device" viewer mode (roadmap 3.14), asked directly:
   "Does it make sense to create on the live draft sync page a 'sync from
   other device' option that automatically polls every 5 seconds while

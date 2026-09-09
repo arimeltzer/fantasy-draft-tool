@@ -809,11 +809,44 @@ def test_live_draft():
     assert ys.picks[1].owner == "Team Ari" and ys.picks[1].is_mine is True
     assert ys.meta == {
         "drafted": 3, "resolved": 2,
+        "unresolved_ids": ["99"],
         "yahoo_teams": [{"key": "449.l.1.t.1", "name": "Team Ari"},
                         {"key": "449.l.1.t.2", "name": "Rivals"}],
         "yahoo_my_team_key": "449.l.1.t.1",
     }, ys.meta
     assert ys.complete_through == 2
+
+    # Real live-draft finding (roadmap follow-up): a Yahoo user reported the
+    # roster join resolving NOTHING all draft. `extra_players` is the top-up
+    # `fetch_live_draft` feeds from a separate players;player_keys= lookup —
+    # here simulated directly, since it's the pure-function half. Owner
+    # attribution must come from `team_key` on the DRAFT RESULT itself (never
+    # available from a roster join for an unrostered player), matching
+    # `parse_draft_results`'s own doc that ownership never depended on the
+    # roster join in the first place.
+    topped_up = yahoo.parse_live_draft(
+        draft_json, teams_json, my_guid="MEGUID",
+        extra_players={"99": NormPlayer(name="Puka Nacua", pos="WR", team="LAR")})
+    assert [p.overall for p in topped_up.picks] == [1, 2, 3]
+    assert topped_up.picks[2].name == "Puka Nacua" and topped_up.picks[2].pos == "WR"
+    assert topped_up.picks[2].owner == "Team Ari" and topped_up.picks[2].is_mine is True
+    assert topped_up.meta["resolved"] == 3 and topped_up.meta["unresolved_ids"] == []
+
+    # A player top-up doesn't have — extra_players still leaves him unresolved,
+    # same as before this existed, rather than fabricating a name.
+    still_missing = yahoo.parse_live_draft(draft_json, teams_json, my_guid="MEGUID",
+                                           extra_players={"11": NormPlayer(name="x", pos="RB", team="")})
+    assert still_missing.meta["unresolved_ids"] == ["99"]
+
+    # `parse_players_by_key` — the raw players;player_keys= collection shape,
+    # same player-node format `_player_from_node` already parses off a roster.
+    players_json = {"fantasy_content": {"league": [
+        {"league_key": "449.l.1"},
+        {"players": {"count": 1, "0": yplayer("99", "Puka Nacua", "WR")}},
+    ]}}
+    resolved_by_key = yahoo.parse_players_by_key(players_json)
+    assert resolved_by_key["99"].name == "Puka Nacua" and resolved_by_key["99"].pos == "WR"
+    assert yahoo.parse_players_by_key({}) == {}
 
     # The guid match failing (a real case this was built for — see
     # YahooKeeperAutofill.tsx's fix for the same failure mode): no manager
